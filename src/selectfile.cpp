@@ -727,7 +727,9 @@ bool processInstrumentationRequests(const char *fname)
           break; /* Found the end of exclude list. */
         }
 
-        if ((inbuf[0] == '#') || (inbuf[0] == '\0')) {
+        /* Inside a list block '#' is the wildcard, not a comment marker
+           (issue #64; matches TAU's LLVM plugin). Only blank lines skip. */
+        if (inbuf[0] == '\0') {
           continue;
         }
         if (inbuf[0] == '"') {
@@ -762,7 +764,8 @@ bool processInstrumentationRequests(const char *fname)
       	if (strcmp(inbuf, END_INCLUDE_TOKEN) == 0) {
           break; /* Found the end of exclude list. */
         }
-        if ((inbuf[0] == '#') || (inbuf[0] == '\0')) {
+        /* '#' is the wildcard inside list blocks, not a comment marker. */
+        if (inbuf[0] == '\0') {
           continue;
         }
         if (inbuf[0] == '"') {
@@ -797,7 +800,8 @@ bool processInstrumentationRequests(const char *fname)
       	if (strcmp(inbuf, END_FILE_INCLUDE_TOKEN) == 0) {
           break; /* Found the end of file include list. */
         }
-        if ((inbuf[0] == '#') || (inbuf[0] == '\0')) {
+        /* '#' is the wildcard inside list blocks, not a comment marker. */
+        if (inbuf[0] == '\0') {
           continue;
         }
         // strip quotes
@@ -830,7 +834,8 @@ bool processInstrumentationRequests(const char *fname)
       	if (strcmp(inbuf, END_FILE_EXCLUDE_TOKEN) == 0) {
           break; /* Found the end of file exclude list. */
         }
-        if ((inbuf[0] == '#') || (inbuf[0] == '\0')) {
+        /* '#' is the wildcard inside list blocks, not a comment marker. */
+        if (inbuf[0] == '\0') {
           continue;
         }
         // strip quotes
