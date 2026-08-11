@@ -1,0 +1,6 @@
+# A quoted entry whose closing quote is missing. Parsing stays lenient for
+# TAU compatibility (pattern is everything after the opening quote), but the
+# instrumentor must warn the user about the unterminated quote.
+BEGIN_EXCLUDE_LIST
+"#noinst#
+END_EXCLUDE_LIST

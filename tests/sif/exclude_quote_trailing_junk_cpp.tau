@@ -1,0 +1,6 @@
+# A quoted entry with stray text after the closing quote. The text is ignored
+# (pattern ends at the closing quote, TAU-compatible), but the instrumentor
+# must warn that part of the line was dropped.
+BEGIN_EXCLUDE_LIST
+"#noinst#"junk
+END_EXCLUDE_LIST

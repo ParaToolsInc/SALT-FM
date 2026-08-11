@@ -819,7 +819,7 @@ bool processInstrumentationRequests(const char *fname)
         else {
           fileincludelist.push_back(std::string(inbuf));
         }
-      	DPRINT("Parsing inst. file: adding %s to file include list\n", inbuf);
+	DPRINT("Parsing inst. file: adding %s to file include list\n", inbuf);
       }
     }
 
