@@ -91,6 +91,21 @@ llvm::cl::opt<std::string> selectfile("tau_select_file",
                                       llvm::cl::desc("Provide a selective instrumentation specification file"),
                                       llvm::cl::value_desc("filename"), llvm::cl::cat(MyToolCategory));
 
+static bool getEnvFabricateDefault() {
+    const char *val = getenv("SALT_FABRICATE_UNKNOWN_TYPES");
+    if (val == nullptr) {
+        return false;
+    }
+    std::string s(val);
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return !(s.empty() || s == "0" || s == "false" || s == "no" || s == "off");
+}
+
+llvm::cl::opt<bool> fabricate_unknown_types("tau_fabricate_unknown_types",
+                                            llvm::cl::desc("Fabricate declarations for unknown qualified C++ names."),
+                                            llvm::cl::init(getEnvFabricateDefault()), llvm::cl::cat(MyToolCategory));
+
 #include "clang_header_includes.h"
 
 char **addHeadersToCommand(int *argc, const char **argv)

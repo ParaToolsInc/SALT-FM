@@ -35,6 +35,8 @@ extern llvm::cl::opt<bool> do_inline;
 
 extern llvm::cl::opt<std::string> selectfile;
 
+extern llvm::cl::opt<bool> fabricate_unknown_types;
+
 typedef struct inst_loc {
     int line = -1;
     int col = -1;

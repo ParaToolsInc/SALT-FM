@@ -419,6 +419,7 @@ set(SALT_HEADER_FILES
   ryml_all.hpp
   selectfile.hpp
   instrumentor.hpp
+  sema_fabricator.hpp
 )
 
 list(TRANSFORM SALT_HEADER_FILES PREPEND "${CMAKE_SOURCE_DIR}/include/")
@@ -439,6 +440,7 @@ set(CPARSE_LLVM_SRCS
   frontend.cpp
   instrumentor.cpp
   selectfile.cpp
+  sema_fabricator.cpp
 )
 
 list(TRANSFORM CPARSE_LLVM_SRCS PREPEND "${CMAKE_SOURCE_DIR}/src/")
@@ -1182,6 +1184,139 @@ if(TEST_FORTRAN)
     FAIL_REGULAR_EXPRESSION "${_sif_excluded_pattern_fortran}"
   )
 endif()
+
+# Fabrication tests (--tau_fabricate_unknown_types):
+function(add_fabricate_test name src with_flag pass_regex)
+  set(fail_regex "")
+  set(summary_regex
+      "Fabricated [0-9]+ namespaces, [0-9]+ class templates")
+  if(ARGC GREATER 4)
+    set(fail_regex "${ARGV4}")
+  endif()
+  if(ARGC GREATER 5)
+    set(summary_regex "${ARGV5}")
+  endif()
+  get_filename_component(_src_ext ${src} EXT)
+  set(out_file ${name}.fab.inst${_src_ext})
+  _salt_ext_to_label(${src} _lang_label)
+  if(with_flag)
+    set(flag_args --tau_fabricate_unknown_types)
+    set(instrument_pass_pattern "${summary_regex}")
+  else()
+    set(flag_args "")
+    set(instrument_pass_pattern "[Ii]nstrumentation:")
+  endif()
+  add_test(NAME instrument_fabricate_${name}
+    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+            ${flag_args}
+            --tau_output=${out_file}
+            ${CMAKE_SOURCE_DIR}/tests/${src}
+  )
+  set_tests_properties(instrument_fabricate_${name}
+    PROPERTIES
+    REQUIRED_FILES "${CMAKE_SOURCE_DIR}/tests/${src}"
+    ENVIRONMENT "SALT_FABRICATE_UNKNOWN_TYPES=0"
+    LABELS "${_lang_label};phase:instrument;fabricate"
+    PASS_REGULAR_EXPRESSION "${instrument_pass_pattern}"
+  )
+  add_test(NAME check_fabricate_${name}
+    COMMAND ${CMAKE_COMMAND} -E cat ./${out_file}
+  )
+  set_tests_properties(check_fabricate_${name}
+    PROPERTIES
+    DEPENDS instrument_fabricate_${name}
+    ENVIRONMENT "SALT_FABRICATE_UNKNOWN_TYPES=0"
+    LABELS "${_lang_label};phase:check;fabricate"
+    PASS_REGULAR_EXPRESSION "${pass_regex}"
+  )
+  if(NOT fail_regex STREQUAL "")
+    set_tests_properties(check_fabricate_${name}
+      PROPERTIES
+      FAIL_REGULAR_EXPRESSION "${fail_regex}"
+    )
+  endif()
+endfunction()
+
+add_fabricate_test(case1 fabricate_case1.cpp ON
+  "int test[(]testns::lemur<int>[)]")
+add_fabricate_test(nested_ns fabricate_nested_ns.cpp ON
+  "test2[(]aa::bb::cc<int>[)]")
+add_fabricate_test(return_type fabricate_return_type.cpp ON
+  "qq::rr<float> test3[(]int[)]")
+add_fabricate_test(multi_param fabricate_multi_param.cpp ON
+  "test4[(]n1::t1<int>, n2::t2<char>[)]")
+add_fabricate_test(case2 fabricate_case2.cpp ON
+  "int test[(]int[)]" ""
+  "SALT: fabricated 0 namespaces, 0 class templates")
+add_fabricate_test(case3 fabricate_case3.cpp ON
+  "int test[(]float, testns::lemur<int>[)]")
+add_fabricate_test(reuse fabricate_reuse.cpp ON
+  "int first[(]testns::lemur<int>[)]" ""
+  "SALT: fabricated 1 namespaces, 1 class templates")
+
+add_test(NAME check_fabricate_reuse_second
+  COMMAND ${CMAKE_COMMAND} -E cat ./reuse.fab.inst.cpp
+)
+set_tests_properties(check_fabricate_reuse_second
+  PROPERTIES
+  DEPENDS instrument_fabricate_reuse
+  LABELS "lang:CXX;phase:check;fabricate"
+  PASS_REGULAR_EXPRESSION "int second[(]testns::lemur<int>[)]"
+)
+
+add_fabricate_test(plain_qualified fabricate_plain_qualified.cpp ON
+  "int test[(]int[)]")
+add_fabricate_test(nontype_args fabricate_nontype_args.cpp ON
+  "int test[(]int[)]")
+add_fabricate_test(member_def fabricate_member_def.cpp ON
+  "void MyClass::method[(]void[)]")
+
+add_test(NAME check_fabricate_member_def_ctor
+  COMMAND ${CMAKE_COMMAND} -E cat ./member_def.fab.inst.cpp
+)
+set_tests_properties(check_fabricate_member_def_ctor
+  PROPERTIES
+  DEPENDS instrument_fabricate_member_def
+  LABELS "lang:CXX;phase:check;fabricate"
+  PASS_REGULAR_EXPRESSION "int MyClass::MyClass[(]void[)]"
+)
+
+add_fabricate_test(class_member fabricate_class_member.cpp ON
+  "int f[(]int[)]" ""
+  "SALT: fabricated 0 namespaces, 0 class templates")
+add_fabricate_test(control_on fabricate_control.cpp ON
+  "int add[(]int, int[)]" ""
+  "SALT: fabricated 0 namespaces, 0 class templates")
+add_fabricate_test(control_off fabricate_control.cpp OFF
+  "int add[(]int, int[)]")
+add_fabricate_test(c_control fabricate_control.c ON
+  "int add[(]int, int[)]" ""
+  "SALT: fabricated 0 namespaces, 0 class templates")
+add_fabricate_test(canary fabricate_case1.cpp OFF
+  "int test" "TAU_PROFILE_TIMER[^\n]*int test[(]")
+
+add_test(NAME instrument_fabricate_env
+  COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+          --tau_output=env.fab.inst.cpp
+          ${CMAKE_SOURCE_DIR}/tests/fabricate_case1.cpp
+)
+set_tests_properties(instrument_fabricate_env
+  PROPERTIES
+  REQUIRED_FILES "${CMAKE_SOURCE_DIR}/tests/fabricate_case1.cpp"
+  ENVIRONMENT "SALT_FABRICATE_UNKNOWN_TYPES=1"
+  LABELS "lang:CXX;phase:instrument;fabricate"
+  PASS_REGULAR_EXPRESSION
+    "SALT: fabricated [0-9]+ namespaces, [0-9]+ class templates"
+)
+add_test(NAME check_fabricate_env
+  COMMAND ${CMAKE_COMMAND} -E cat ./env.fab.inst.cpp
+)
+set_tests_properties(check_fabricate_env
+  PROPERTIES
+  DEPENDS instrument_fabricate_env
+  LABELS "lang:CXX;phase:check;fabricate"
+  PASS_REGULAR_EXPRESSION "int test[(]testns::lemur<int>[)]"
+)
 
 set(SALT_COMPILERS_TO_TEST gcc clang)
 # Per-toolchain build subdirs (GCC, LLVM) shared by C/C++ and Fortran tests.
