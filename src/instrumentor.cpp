@@ -14,7 +14,11 @@
 #include "clang/Basic/SourceManager.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendAction.h"
+#include "clang/Parse/ParseAST.h"
+#include "clang/Sema/Sema.h"
 #include "clang/Tooling/CommonOptionsParser.h"
+#include "llvm/ADT/IntrusiveRefCntPtr.h"
+#include "llvm/Config/llvm-config.h"
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -27,6 +31,7 @@
 
 #include "dprint.hpp"
 #include "selectfile.hpp"
+#include "sema_fabricator.hpp"
 
 using namespace clang;
 
@@ -565,7 +570,10 @@ class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
         if (encl_function->getReturnType()->isClassType())
         {
             CXXRecordDecl *decl = encl_function->getReturnType()->getAsCXXRecordDecl();
-            if (!(decl->hasSimpleCopyAssignment() || decl->hasTrivialCopyAssignment()))
+            // Check whether there's actually a definition.
+            // A fabricated type won't have one.
+            if (decl != nullptr && decl->hasDefinition() &&
+                !(decl->hasSimpleCopyAssignment() || decl->hasTrivialCopyAssignment()))
             {
                 needs_move = true;
             }
@@ -667,7 +675,10 @@ class FindFunctionVisitor : public RecursiveASTVisitor<FindFunctionVisitor>
         if (func->getReturnType()->isClassType())
         {
             CXXRecordDecl *decl = func->getReturnType()->getAsCXXRecordDecl();
-            if (!(decl->hasSimpleCopyAssignment() || decl->hasTrivialCopyAssignment()))
+            // Check whether there's actually a definition.
+            // A fabricated type won't have one.
+            if (decl != nullptr && decl->hasDefinition() &&
+                !(decl->hasSimpleCopyAssignment() || decl->hasTrivialCopyAssignment()))
             {
                 needs_move = true;
             }
@@ -718,6 +729,11 @@ class FindFunctionConsumer : public clang::ASTConsumer
         auto decls = context.getTranslationUnitDecl()->decls();
         for (auto &decl : decls)
         {
+            // Implicit decls don't have source locations
+            if (decl->isImplicit())
+            {
+                continue;
+            }
             SourceLocation srcloc = decl->getLocation();
             // always exclude system headers
             if (src_mgr.isInSystemHeader(srcloc) ||
@@ -767,10 +783,43 @@ class FindFunctionConsumer : public clang::ASTConsumer
 class FindFunctionAction : public ASTFrontendAction
 {
   public:
-    virtual std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &Compiler, llvm::StringRef InFile)
+    std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &Compiler, llvm::StringRef InFile) override
     {
         return std::make_unique<FindFunctionConsumer>(&Compiler.getASTContext(), Compiler.getSourceManager());
     }
+
+    void ExecuteAction() override
+    {
+        if (!fabricate_unknown_types)
+        {
+            ASTFrontendAction::ExecuteAction();
+            return;
+        }
+        CompilerInstance &CI = getCompilerInstance();
+        if (!CI.hasPreprocessor())
+        {
+            return;
+        }
+        if (!CI.hasSema())
+        {
+            CI.createSema(getTranslationUnitKind(), nullptr);
+        }
+        fabricator = llvm::makeIntrusiveRefCnt<salt::SaltSemaFabricator>();
+        fabricator->InitializeSema(CI.getSema());
+#if LLVM_VERSION_MAJOR >= 22
+        CI.getSema().addExternalSource(fabricator);
+#else
+        CI.getSema().addExternalSource(fabricator.get());
+#endif
+        ParseAST(CI.getSema(), CI.getFrontendOpts().ShowStats,
+                 CI.getFrontendOpts().SkipFunctionBodies);
+        llvm::outs() << "Fabricated " << fabricator->numNamespaces()
+                     << " namespaces, " << fabricator->numTemplates()
+                     << " class templates\n";
+    }
+
+  private:
+    llvm::IntrusiveRefCntPtr<salt::SaltSemaFabricator> fabricator;
 };
 
 instrumentor::instrumentor()

@@ -36,22 +36,23 @@ OPTIONS:
 
 Generic SALT-FM Options:
 
-  -h                           - Alias for --help
-  --help                       - Display available options (--help-hidden for more)
-  --help-fortran               - Display Fortran instrumentor options and usage information
-  --help-c                     - Display C/C++ instrumentor options and usage information
-  --help-cxx                   - Display C/C++ instrumentor options and usage information
-  --version                    - Display the version of this program
-  --lang=<string>              - Specify the language of the input source file (default: auto-detect)
-  --show                       - Print the command line that would be executed by the outter wrapper script
+  -h                            - Alias for --help
+  --help                        - Display available options (--help-hidden for more)
+  --help-fortran                - Display Fortran instrumentor options and usage information
+  --help-c                      - Display C/C++ instrumentor options and usage information
+  --help-cxx                    - Display C/C++ instrumentor options and usage information
+  --version                     - Display the version of this program
+  --lang=<string>               - Specify the language of the input source file (default: auto-detect)
+  --show                        - Print the command line that would be executed by the outter wrapper script
 
 TAU instrumentor options:
 
-  --config_file=<filename>     - Specify path to SALT-FM configuration YAML file
-  --tau_instrument_inline      - Instrument inlined functions (default: false)
-  --tau_output=<filename>      - Specify name of output instrumented file
-  --tau_select_file=<filename> - Provide a selective instrumentation specification file
-  --tau_use_cxx_api            - Use TAU's C++ instrumentation API
+  --config_file=<filename>      - Specify path to SALT-FM configuration YAML file
+  --tau_fabricate_unknown_types - Fabricate declarations for unknown qualified names (default: false)
+  --tau_instrument_inline       - Instrument inlined functions (default: false)
+  --tau_output=<filename>       - Specify name of output instrumented file
+  --tau_select_file=<filename>  - Provide a selective instrumentation specification file
+  --tau_use_cxx_api             - Use TAU's C++ instrumentation API
 EOF
 
 # Add a help/usage message function
