@@ -1084,6 +1084,20 @@ foreach(lang c cpp)
   )
 endforeach()
 
+# Issue #64: an exclude pattern that starts with the '#' wildcard, written
+# WITHOUT quotes, must still be parsed as a pattern inside the
+# BEGIN_/END_EXCLUDE_LIST block (TAU's LLVM plugin accepts this form; only
+# lines outside a list block are comments). Reproducer from the issue:
+# "#noinst#" must strip dosomething_noinst's timer while dosomething_inst
+# stays instrumented.
+add_sif_test(exclusion_unquoted_wildcard_prefix_cpp
+  cpp tests/sif_excl_wildcard_prefix.cpp tests/sif/exclude_unquoted_wildcard_prefix_cpp.tau)
+set_tests_properties(check_sif_exclusion_unquoted_wildcard_prefix_cpp
+  PROPERTIES
+  PASS_REGULAR_EXPRESSION "dosomething_inst[(]void[)] +\\[\\{"
+  FAIL_REGULAR_EXPRESSION "dosomething_noinst[(]void[)] +\\[\\{"
+)
+
 # File-level EXCLUDE_LIST: the C/C++ frontend short-circuits and emits no
 # .inst output at all when the source file is on the file exclude list.
 # Verified via absence of the "Instrumentation:" banner from cparse-llvm.
