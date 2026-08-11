@@ -685,7 +685,37 @@ void parseError(const char *message, char *line, int lineno, int column)
 //
 // } // END void parseInstrumentationCommand(char *line, int lineno)
 
-#define SALT_UNUSED(expr) do { (void)(expr); } while (0)
+/* Strip optional surrounding quotes from a list-block entry. Quoting lets a
+   pattern start with '#' unambiguously in files shared with older TAU tools;
+   the closing quote is optional for TAU compatibility. Warns about quoting
+   that silently changes or ignores part of the entry. */
+static std::string parseListEntry(const char *entry, const char *listname, int lineno)
+{
+  std::string result(entry);
+  if (result[0] != '"') {
+    return result;
+  }
+  const size_t close = result.find('"', 1);
+  if (close == std::string::npos) {
+    result.erase(0, 1);
+    fprintf(stderr,
+      "WARNING: missing closing quote in %s entry at selective instrumentation file line %d; using '%s'\n",
+      listname, lineno, result.c_str());
+  } else {
+    if (close + 1 < result.size()) {
+      fprintf(stderr,
+        "WARNING: ignoring text after closing quote in %s entry at selective instrumentation file line %d: %s\n",
+        listname, lineno, result.c_str() + close + 1);
+    }
+    result = result.substr(1, close - 1);
+  }
+  if (result.empty()) {
+    fprintf(stderr,
+      "WARNING: empty quoted %s entry at selective instrumentation file line %d matches nothing\n",
+      listname, lineno);
+  }
+  return result;
+}
 
 bool processInstrumentationRequests(const char *fname)
 {
@@ -694,7 +724,6 @@ bool processInstrumentationRequests(const char *fname)
   char line[INBUF_SIZE];
   char* inbuf;
   int lineno = 0;
-  SALT_UNUSED(lineno); // prevent compiler errors
 
 
   if (!input) {
@@ -732,24 +761,7 @@ bool processInstrumentationRequests(const char *fname)
         if (inbuf[0] == '\0') {
           continue;
         }
-        if (inbuf[0] == '"') {
-          /* What if the string begins with "? In that case remove quotes from
-             the string. "#foo" becomes #foo and is passed on to the
-             exclude list. */
-          char *exclude = strdup(&inbuf[1]);
-          for (size_t i = 0; i < strlen(exclude); i++) {
-            if (exclude[i] == '"') {
-              exclude[i]='\0';
-              break; /* out of the loop */
-            }
-          }
-          DPRINT("Passing %s as exclude string\n", exclude);
-          excludelist.push_back(std::string(exclude));
-          free(exclude);
-        }
-        else {
-          excludelist.push_back(std::string(inbuf));
-        }
+        excludelist.push_back(parseListEntry(inbuf, "exclude list", lineno));
       }
     }
 
@@ -768,24 +780,7 @@ bool processInstrumentationRequests(const char *fname)
         if (inbuf[0] == '\0') {
           continue;
         }
-        if (inbuf[0] == '"') {
-          /* What if the string begins with "? In that case remove quotes from
-             the string. "#foo" becomes #foo and is passed on to the
-             exclude list. */
-          char *exclude = strdup(&inbuf[1]);
-          for (size_t i = 0; i < strlen(exclude); i++) {
-            if (exclude[i] == '"') {
-              exclude[i]='\0';
-              break; /* out of the loop */
-            }
-          }
-          DPRINT("Passing %s as include string\n", exclude);
-          includelist.push_back(std::string(exclude));
-          free(exclude);
-        }
-        else {
-          includelist.push_back(std::string(inbuf));
-        }
+        includelist.push_back(parseListEntry(inbuf, "include list", lineno));
       }
     }
 
@@ -804,22 +799,7 @@ bool processInstrumentationRequests(const char *fname)
         if (inbuf[0] == '\0') {
           continue;
         }
-        // strip quotes
-        if (inbuf[0] == '"') {
-          char *include = strdup(&inbuf[1]);
-          for (size_t i = 0; i < strlen(include); i++) {
-            if (include[i] == '"') {
-              include[i] = '\0';
-              break;
-            }
-          }
-          fileincludelist.push_back(std::string(include));
-          free(include);
-        }
-        else {
-          fileincludelist.push_back(std::string(inbuf));
-        }
-	DPRINT("Parsing inst. file: adding %s to file include list\n", inbuf);
+        fileincludelist.push_back(parseListEntry(inbuf, "file include list", lineno));
       }
     }
 
@@ -838,21 +818,7 @@ bool processInstrumentationRequests(const char *fname)
         if (inbuf[0] == '\0') {
           continue;
         }
-        // strip quotes
-        if (inbuf[0] == '"') {
-          char *exclude = strdup(&inbuf[1]);
-          for (size_t i = 0; i < strlen(exclude); i++) {
-            if (exclude[i] == '"') {
-              exclude[i] = '\0';
-              break;
-            }
-          }
-          fileexcludelist.push_back(std::string(exclude));
-          free(exclude);
-        }
-        else {
-          fileexcludelist.push_back(std::string(inbuf));
-        }
+        fileexcludelist.push_back(parseListEntry(inbuf, "file exclude list", lineno));
       }
     }
 
