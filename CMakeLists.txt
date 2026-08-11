@@ -1284,6 +1284,15 @@ if(TEST_FORTRAN)
     FAIL_REGULAR_EXPRESSION "${_sif_keep_pattern_fortran};${_sif_excluded_pattern_fortran}"
   )
 
+  # Unquoted twin of the wildcard sanity check above (issue #64): same
+  # pattern without quotes must behave identically.
+  add_sif_test(routine_unquoted_wildcard_excludes_both_fortran
+    fortran tests/fortran/sif_excl.f90 tests/sif/exclude_unquoted_wildcard_routine_f90.tau)
+  set_tests_properties(check_sif_routine_unquoted_wildcard_excludes_both_fortran
+    PROPERTIES
+    FAIL_REGULAR_EXPRESSION "${_sif_keep_pattern_fortran};${_sif_excluded_pattern_fortran}"
+  )
+
   # Combined INCLUDE + EXCLUDE: per the TAU SIF spec the exclude list
   # operates on whatever survives the include filter. The SIF below
   # whitelists "#routine" (matches both subprograms) and then explicitly
@@ -1291,6 +1300,15 @@ if(TEST_FORTRAN)
   add_sif_test(include_wildcard_exclude_specific_fortran
     fortran tests/fortran/sif_excl.f90 tests/sif/include_wildcard_exclude_specific_f90.tau)
   set_tests_properties(check_sif_include_wildcard_exclude_specific_fortran
+    PROPERTIES
+    PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_fortran}"
+    FAIL_REGULAR_EXPRESSION "${_sif_excluded_pattern_fortran}"
+  )
+  # Unquoted twin of the combined INCLUDE + EXCLUDE test (issue #64 applies
+  # to every list kind). Same expectations as the quoted version.
+  add_sif_test(include_unquoted_wildcard_exclude_specific_fortran
+    fortran tests/fortran/sif_excl.f90 tests/sif/include_unquoted_wildcard_f90.tau)
+  set_tests_properties(check_sif_include_unquoted_wildcard_exclude_specific_fortran
     PROPERTIES
     PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_fortran}"
     FAIL_REGULAR_EXPRESSION "${_sif_excluded_pattern_fortran}"
