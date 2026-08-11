@@ -1134,9 +1134,11 @@ set_tests_properties(instrument_sif_exclusion_empty_quote_cpp
   PROPERTIES
   PASS_REGULAR_EXPRESSION "WARNING: empty quoted exclude list entry"
 )
+# Single regex spanning both timers (source order): a list here would be
+# OR'd, not AND'd. CMake's '.' matches newlines.
 set_tests_properties(check_sif_exclusion_empty_quote_cpp
   PROPERTIES
-  PASS_REGULAR_EXPRESSION "dosomething_noinst[(]void[)] +\\[\\{"
+  PASS_REGULAR_EXPRESSION "dosomething_inst[(]void[)] +\\[\\{.*dosomething_noinst[(]void[)] +\\[\\{"
 )
 
 # File-level EXCLUDE_LIST: the C/C++ frontend short-circuits and emits no
