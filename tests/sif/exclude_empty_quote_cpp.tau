@@ -1,0 +1,6 @@
+# A lone quote parses to an empty pattern that can never match a routine.
+# It is accepted (lenient, TAU-compatible) but must trigger a warning; both
+# routines keep their timers.
+BEGIN_EXCLUDE_LIST
+"
+END_EXCLUDE_LIST

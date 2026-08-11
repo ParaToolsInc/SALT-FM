@@ -1098,6 +1098,47 @@ set_tests_properties(check_sif_exclusion_unquoted_wildcard_prefix_cpp
   FAIL_REGULAR_EXPRESSION "dosomething_noinst[(]void[)] +\\[\\{"
 )
 
+# Suspicious quoting in list entries must produce a stderr warning while
+# parsing stays lenient (TAU-compatible). The instrument step asserts the
+# warning text; the check step asserts the lenient parse result.
+# - unclosed quote: pattern = rest of line, still excludes noinst
+# - text after closing quote: dropped, pattern still excludes noinst
+# - lone quote: empty pattern, matches nothing, both routines keep timers
+add_sif_test(exclusion_unclosed_quote_cpp
+  cpp tests/sif_excl_wildcard_prefix.cpp tests/sif/exclude_unclosed_quote_cpp.tau)
+set_tests_properties(instrument_sif_exclusion_unclosed_quote_cpp
+  PROPERTIES
+  PASS_REGULAR_EXPRESSION "WARNING: missing closing quote in exclude list entry"
+)
+set_tests_properties(check_sif_exclusion_unclosed_quote_cpp
+  PROPERTIES
+  PASS_REGULAR_EXPRESSION "dosomething_inst[(]void[)] +\\[\\{"
+  FAIL_REGULAR_EXPRESSION "dosomething_noinst[(]void[)] +\\[\\{"
+)
+
+add_sif_test(exclusion_quote_trailing_junk_cpp
+  cpp tests/sif_excl_wildcard_prefix.cpp tests/sif/exclude_quote_trailing_junk_cpp.tau)
+set_tests_properties(instrument_sif_exclusion_quote_trailing_junk_cpp
+  PROPERTIES
+  PASS_REGULAR_EXPRESSION "WARNING: ignoring text after closing quote in exclude list entry"
+)
+set_tests_properties(check_sif_exclusion_quote_trailing_junk_cpp
+  PROPERTIES
+  PASS_REGULAR_EXPRESSION "dosomething_inst[(]void[)] +\\[\\{"
+  FAIL_REGULAR_EXPRESSION "dosomething_noinst[(]void[)] +\\[\\{"
+)
+
+add_sif_test(exclusion_empty_quote_cpp
+  cpp tests/sif_excl_wildcard_prefix.cpp tests/sif/exclude_empty_quote_cpp.tau)
+set_tests_properties(instrument_sif_exclusion_empty_quote_cpp
+  PROPERTIES
+  PASS_REGULAR_EXPRESSION "WARNING: empty quoted exclude list entry"
+)
+set_tests_properties(check_sif_exclusion_empty_quote_cpp
+  PROPERTIES
+  PASS_REGULAR_EXPRESSION "dosomething_noinst[(]void[)] +\\[\\{"
+)
+
 # File-level EXCLUDE_LIST: the C/C++ frontend short-circuits and emits no
 # .inst output at all when the source file is on the file exclude list.
 # Verified via absence of the "Instrumentation:" banner from cparse-llvm.
