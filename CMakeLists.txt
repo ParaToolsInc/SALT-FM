@@ -1246,7 +1246,7 @@ add_fabricate_test(return_type fabricate_return_type.cpp ON
 add_fabricate_test(multi_param fabricate_multi_param.cpp ON
   "test4[(]n1::t1<int>, n2::t2<char>[)]")
 add_fabricate_test(case2 fabricate_case2.cpp ON
-  "int test[(]int[)]" ""
+  "int test[(]lemur<int>[)]" ""
   "Fabricated 0 namespaces, 0 class templates")
 add_fabricate_test(case3 fabricate_case3.cpp ON
   "int test[(]float, testns::lemur<int>[)]")
@@ -1281,8 +1281,9 @@ set_tests_properties(check_fabricate_mixed_kinds_template
   LABELS "lang:CXX;phase:check;fabricate"
   PASS_REGULAR_EXPRESSION "int usesTemplate[(]testns::lemur<int>[)]"
 )
+
 add_fabricate_test(nontype_args fabricate_nontype_args.cpp ON
-  "int test[(]int[)]")
+  "int test[(]testns::arr<int, 3>[)]")
 add_fabricate_test(member_def fabricate_member_def.cpp ON
   "void MyClass::method[(]void[)]")
 
@@ -1297,7 +1298,7 @@ set_tests_properties(check_fabricate_member_def_ctor
 )
 
 add_fabricate_test(class_member fabricate_class_member.cpp ON
-  "int f[(]int[)]" ""
+  "int f[(]Real::Unknown[)]" ""
   "Fabricated 0 namespaces, 0 class templates")
 add_fabricate_test(control_on fabricate_control.cpp ON
   "int add[(]int, int[)]" ""
@@ -1332,6 +1333,22 @@ set_tests_properties(check_fabricate_env
   LABELS "lang:CXX;phase:check;fabricate"
   PASS_REGULAR_EXPRESSION "int test[(]testns::lemur<int>[)]"
 )
+
+add_fabricate_test(srctext_zmobius fabricate_srctext_zmobius.cpp ON
+  "void computeZmobiusOmega[(]std::vector<ComplexD> &, const int, \
+const std::vector<RealD> &, const int, const RealD[)]")
+add_fabricate_test(srctext_default_arg fabricate_srctext_default_arg.cpp ON
+  "void withDefault[(]testns::tmpl<int>[)]"
+  "TAU_PROFILE_TIMER[^\n]*tmpl<int> *=")
+add_fabricate_test(srctext_fallback fabricate_srctext_fallback.cpp ON
+  "void fallbackUnnamed[(]int[)]")
+add_fabricate_test(srctext_comment fabricate_srctext_comment.cpp ON
+  "void commented[(]std::vector<RealD> &[)]"
+  "TAU_PROFILE_TIMER[^\n]*holds")
+add_fabricate_test(srctext_multiline fabricate_srctext_multiline.cpp ON
+  "void multiline[(]std::vector< RealD> &, const int[)]")
+add_fabricate_test(srctext_fn_template fabricate_srctext_fn_template.cpp ON
+  "void tmplFn[(]std::vector<RealD> &, T[)]")
 
 set(SALT_COMPILERS_TO_TEST gcc clang)
 # Per-toolchain build subdirs (GCC, LLVM) shared by C/C++ and Fortran tests.
