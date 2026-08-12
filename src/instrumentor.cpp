@@ -14,6 +14,7 @@
 #include "clang/Basic/SourceManager.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendAction.h"
+#include "clang/Lex/Lexer.h"
 #include "clang/Parse/ParseAST.h"
 #include "clang/Sema/Sema.h"
 #include "clang/Tooling/CommonOptionsParser.h"
@@ -24,6 +25,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <regex>
 #include <string>
 #include <vector>
@@ -435,6 +437,249 @@ bool check_file_against_list(std::list<std::string> list, std::string fname)
 }
 
 
+// Strip the elaborations the semantic type printer introduces
+static std::string cleanSemanticTypeName(std::string name)
+{
+    while (name.find("class ") != std::string::npos)
+    {
+        name.erase(name.find("class "), 6);
+    }
+    while (name.find("enum ") != std::string::npos)
+    {
+        name.erase(name.find("enum "), 5);
+    }
+    while (name.find("_Bool") != std::string::npos)
+    {
+        name.replace(name.find("_Bool"), 5, "bool");
+    }
+    return name;
+}
+
+// Extract the raw source text of a declarator with its name token spliced out
+static std::optional<std::string> extractDeclaratorText(SourceRange range,
+                                                        SourceLocation name_loc,
+                                                        SourceLocation cut_loc,
+                                                        const SourceManager &src_mgr,
+                                                        const LangOptions &lang_opts)
+{
+    if (range.isInvalid())
+    {
+        return std::nullopt;
+    }
+    bool failed = false;
+    auto charText = [&](SourceLocation begin, SourceLocation end) -> std::string
+    {
+        bool invalid = false;
+        llvm::StringRef text = Lexer::getSourceText(
+            CharSourceRange::getCharRange(begin, end), src_mgr, lang_opts, &invalid);
+        failed = failed || invalid;
+        return text.str();
+    };
+    SourceLocation end_loc = cut_loc.isValid()
+                                 ? cut_loc
+                                 : Lexer::getLocForEndOfToken(range.getEnd(), 0, src_mgr, lang_opts);
+    if (end_loc.isInvalid())
+    {
+        return std::nullopt;
+    }
+    std::string raw;
+    if (name_loc.isInvalid())
+    {
+        raw = charText(range.getBegin(), end_loc);
+    }
+    else
+    {
+        raw = charText(range.getBegin(), name_loc);
+        SourceLocation after_name = Lexer::getLocForEndOfToken(name_loc, 0, src_mgr, lang_opts);
+        if (after_name.isValid() && src_mgr.isBeforeInTranslationUnit(after_name, end_loc))
+        {
+            raw += charText(after_name, end_loc);
+        }
+    }
+    if (failed)
+    {
+        return std::nullopt;
+    }
+    return raw;
+}
+
+// Strip comments to remove comments inline in function declaration
+static std::string stripComments(const std::string &text)
+{
+    std::string result;
+    for (size_t i = 0; i < text.size();)
+    {
+        if (text[i] == '/' && i + 1 < text.size() && text[i + 1] == '*')
+        {
+            size_t end = text.find("*/", i + 2);
+            i = (end == std::string::npos) ? text.size() : end + 2;
+            result += ' ';
+            continue;
+        }
+        if (text[i] == '/' && i + 1 < text.size() && text[i + 1] == '/')
+        {
+            size_t end = text.find('\n', i + 2);
+            i = (end == std::string::npos) ? text.size() : end;
+            result += ' ';
+            continue;
+        }
+        result += text[i++];
+    }
+    return result;
+}
+
+// Collapse whitespace runs to single spaces
+static std::string collapseWhitespace(const std::string &text)
+{
+    std::string result;
+    bool in_whitespace = false;
+    for (char c : text)
+    {
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r')
+        {
+            in_whitespace = true;
+            continue;
+        }
+        if (in_whitespace && !result.empty())
+        {
+            result += ' ';
+        }
+        in_whitespace = false;
+        result += c;
+    }
+    return result;
+}
+
+// Escape '\' and '"' so the text can be embedded in generated TAU_PROFILE_TIMER("...") string literal.
+static std::string escapeForStringLiteral(const std::string &text)
+{
+    std::string result;
+    for (char c : text)
+    {
+        if (c == '\\' || c == '"')
+        {
+            result += '\\';
+        }
+        result += c;
+    }
+    return result;
+}
+
+// Reconstruct the source-spelled text of a declarator's type
+static std::optional<std::string> spelledTypeText(SourceRange range,
+                                                  SourceLocation name_loc,
+                                                  SourceLocation cut_loc,
+                                                  const SourceManager &src_mgr,
+                                                  const LangOptions &lang_opts)
+{
+    std::optional<std::string> raw =
+        extractDeclaratorText(range, name_loc, cut_loc, src_mgr, lang_opts);
+    if (!raw)
+    {
+        return std::nullopt;
+    }
+    std::string clean = collapseWhitespace(stripComments(*raw));
+    // Drop a trailing '=' left over from a removed default argument
+    while (!clean.empty() && (clean.back() == '=' || clean.back() == ' '))
+    {
+        clean.pop_back();
+    }
+    if (clean.empty())
+    {
+        return std::nullopt;
+    }
+    return escapeForStringLiteral(clean);
+}
+
+static std::optional<std::string> spelledParamType(const ParmVarDecl *param,
+                                                   const SourceManager &src_mgr,
+                                                   const LangOptions &lang_opts)
+{
+    SourceLocation name_loc;
+    if (!param->getDeclName().isEmpty())
+    {
+        name_loc = param->getLocation();
+    }
+    SourceLocation cut_loc;
+    if (param->hasDefaultArg() || param->hasUnparsedDefaultArg() ||
+        param->hasUninstantiatedDefaultArg())
+    {
+        SourceRange default_range = param->getDefaultArgRange();
+        if (default_range.isValid())
+        {
+            cut_loc = default_range.getBegin();
+        }
+    }
+    return spelledTypeText(param->getSourceRange(), name_loc, cut_loc, src_mgr, lang_opts);
+}
+
+static std::string spelledOrSemantic(std::optional<std::string> spelled, QualType semantic)
+{
+    if (spelled && !spelled->empty())
+    {
+        return *spelled;
+    }
+    return cleanSemanticTypeName(semantic.getAsString());
+}
+
+// Assemble a signature using spelled text for the return type
+// when the function is invalid and for each
+// parameter that is invalid or belongs to an invalid function.
+static std::string spelledSignature(FunctionDecl *func, SourceManager &src_mgr,
+                                    const LangOptions &lang_opts)
+{
+    const bool func_invalid = func->isInvalidDecl();
+    std::string ret_str = spelledOrSemantic(
+        func_invalid ? spelledTypeText(func->getReturnTypeSourceRange(), SourceLocation(),
+                                       SourceLocation(), src_mgr, lang_opts)
+                     : std::nullopt,
+        func->getReturnType());
+    std::string params;
+    for (const ParmVarDecl *param : func->parameters())
+    {
+        if (!params.empty())
+        {
+            params += ", ";
+        }
+        params += spelledOrSemantic((func_invalid || param->isInvalidDecl())
+                                        ? spelledParamType(param, src_mgr, lang_opts)
+                                        : std::nullopt,
+                                    param->getType());
+    }
+    if (params.empty())
+    {
+        params = func->isVariadic() ? "..." : "void";
+    }
+    else if (func->isVariadic())
+    {
+        params += ", ...";
+    }
+    const char *sep = (!ret_str.empty() && (ret_str.back() == '*' || ret_str.back() == '&'))
+                          ? ""
+                          : " ";
+    return ret_str + sep + "(" + params + ")";
+}
+
+static bool useSpelledSignature(const FunctionDecl *func)
+{
+    if (!fabricate_unknown_types)
+    {
+        return false;
+    }
+    if (func->isInvalidDecl())
+    {
+        return true;
+    }
+    for (const ParmVarDecl *param : func->parameters())
+    {
+        if (param->isInvalidDecl())
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 void makeFuncAndTimerNames(FunctionDecl *func, ASTContext *context, SourceManager &src_mgr, std::string &func_name,
                          std::string &timer_name)
 {
@@ -456,23 +701,31 @@ void makeFuncAndTimerNames(FunctionDecl *func, ASTContext *context, SourceManage
 
     func_name = func->getQualifiedNameAsString();
     QualType type = func->getType();
-    std::string sig = type.getAsString();
-    while (sig.find("class ") != std::string::npos)
+    std::string sig;
+    if (useSpelledSignature(func))
     {
-        sig.erase(sig.find("class "), 6);
+        sig = spelledSignature(func, src_mgr, context->getLangOpts());
     }
-    while (sig.find("enum ") != std::string::npos)
+    else
     {
-        sig.erase(sig.find("enum "), 5);
-    }
-    // not sure we need this yet
-    // while (sig.find("struct ") != std::string::npos) {
-    //     sig.erase(sig.find("struct "), 7);
-    // }
-    while (sig.find("_Bool") != std::string::npos)
-    {
-        // printf("%s\n", sig.c_str());
-        sig.replace(sig.find("_Bool"), 5, "bool");
+        sig = type.getAsString();
+        while (sig.find("class ") != std::string::npos)
+        {
+            sig.erase(sig.find("class "), 6);
+        }
+        while (sig.find("enum ") != std::string::npos)
+        {
+            sig.erase(sig.find("enum "), 5);
+        }
+        // not sure we need this yet
+        // while (sig.find("struct ") != std::string::npos) {
+        //     sig.erase(sig.find("struct "), 7);
+        // }
+        while (sig.find("_Bool") != std::string::npos)
+        {
+            // printf("%s\n", sig.c_str());
+            sig.replace(sig.find("_Bool"), 5, "bool");
+        }
     }
     sig.insert(sig.find_first_of("("), func_name);
 
