@@ -1247,12 +1247,12 @@ add_fabricate_test(multi_param fabricate_multi_param.cpp ON
   "test4[(]n1::t1<int>, n2::t2<char>[)]")
 add_fabricate_test(case2 fabricate_case2.cpp ON
   "int test[(]int[)]" ""
-  "SALT: fabricated 0 namespaces, 0 class templates")
+  "Fabricated 0 namespaces, 0 class templates")
 add_fabricate_test(case3 fabricate_case3.cpp ON
   "int test[(]float, testns::lemur<int>[)]")
 add_fabricate_test(reuse fabricate_reuse.cpp ON
   "int first[(]testns::lemur<int>[)]" ""
-  "SALT: fabricated 1 namespaces, 1 class templates")
+  "Fabricated 1 namespaces, 1 class templates")
 
 add_test(NAME check_fabricate_reuse_second
   COMMAND ${CMAKE_COMMAND} -E cat ./reuse.fab.inst.cpp
@@ -1265,7 +1265,22 @@ set_tests_properties(check_fabricate_reuse_second
 )
 
 add_fabricate_test(plain_qualified fabricate_plain_qualified.cpp ON
-  "int test[(]int[)]")
+  "int test[(]testns::Foo[)]" ""
+  "Fabricated 1 namespaces, 0 class templates, 1 records")
+
+add_fabricate_test(mixed_kinds fabricate_mixed_kinds.cpp ON
+  "int usesPlain[(]testns::Foo[)]" ""
+  "Fabricated 1 namespaces, 1 class templates, 1 records")
+
+add_test(NAME check_fabricate_mixed_kinds_template
+  COMMAND ${CMAKE_COMMAND} -E cat ./mixed_kinds.fab.inst.cpp
+)
+set_tests_properties(check_fabricate_mixed_kinds_template
+  PROPERTIES
+  DEPENDS instrument_fabricate_mixed_kinds
+  LABELS "lang:CXX;phase:check;fabricate"
+  PASS_REGULAR_EXPRESSION "int usesTemplate[(]testns::lemur<int>[)]"
+)
 add_fabricate_test(nontype_args fabricate_nontype_args.cpp ON
   "int test[(]int[)]")
 add_fabricate_test(member_def fabricate_member_def.cpp ON
@@ -1283,15 +1298,15 @@ set_tests_properties(check_fabricate_member_def_ctor
 
 add_fabricate_test(class_member fabricate_class_member.cpp ON
   "int f[(]int[)]" ""
-  "SALT: fabricated 0 namespaces, 0 class templates")
+  "Fabricated 0 namespaces, 0 class templates")
 add_fabricate_test(control_on fabricate_control.cpp ON
   "int add[(]int, int[)]" ""
-  "SALT: fabricated 0 namespaces, 0 class templates")
+  "Fabricated 0 namespaces, 0 class templates")
 add_fabricate_test(control_off fabricate_control.cpp OFF
   "int add[(]int, int[)]")
 add_fabricate_test(c_control fabricate_control.c ON
   "int add[(]int, int[)]" ""
-  "SALT: fabricated 0 namespaces, 0 class templates")
+  "Fabricated 0 namespaces, 0 class templates")
 add_fabricate_test(canary fabricate_case1.cpp OFF
   "int test" "TAU_PROFILE_TIMER[^\n]*int test[(]")
 
@@ -1306,7 +1321,7 @@ set_tests_properties(instrument_fabricate_env
   ENVIRONMENT "SALT_FABRICATE_UNKNOWN_TYPES=1"
   LABELS "lang:CXX;phase:instrument;fabricate"
   PASS_REGULAR_EXPRESSION
-    "SALT: fabricated [0-9]+ namespaces, [0-9]+ class templates"
+    "Fabricated [0-9]+ namespaces, [0-9]+ class templates"
 )
 add_test(NAME check_fabricate_env
   COMMAND ${CMAKE_COMMAND} -E cat ./env.fab.inst.cpp

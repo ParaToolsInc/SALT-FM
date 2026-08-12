@@ -23,6 +23,7 @@ public:
 
     unsigned numNamespaces() const { return num_namespaces; }
     unsigned numTemplates() const { return num_templates; }
+    unsigned numRecords() const { return num_records; }
 
 private:
     clang::NamedDecl *findExisting(clang::DeclContext *DC,
@@ -31,10 +32,13 @@ private:
                                              clang::IdentifierInfo *II);
     clang::ClassTemplateDecl *fabricateClassTemplate(clang::DeclContext *DC,
                                                      clang::IdentifierInfo *II);
+    clang::CXXRecordDecl *fabricateRecord(clang::DeclContext *DC,
+                                          clang::IdentifierInfo *II);
 
     clang::Sema *sema = nullptr;
     unsigned num_namespaces = 0;
     unsigned num_templates = 0;
+    unsigned num_records = 0;
 };
 
 } // namespace salt
