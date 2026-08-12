@@ -67,6 +67,22 @@ ClassTemplateDecl *SaltSemaFabricator::fabricateClassTemplate(DeclContext *DC,
     return CTD;
 }
 
+// Create a plain class for an encountered unresolved non-template type
+CXXRecordDecl *SaltSemaFabricator::fabricateRecord(DeclContext *DC,
+                                                   IdentifierInfo *II)
+{
+    ASTContext &Ctx = sema->getASTContext();
+    CXXRecordDecl *RD = CXXRecordDecl::Create(
+        Ctx, TagTypeKind::Class, DC, SourceLocation(), SourceLocation(), II);
+    RD->setImplicit(true);
+    // Give the class an empty definition
+    RD->startDefinition();
+    RD->completeDefinition();
+    DC->addDecl(RD);
+    ++num_records;
+    return RD;
+}
+
 TypoCorrection SaltSemaFabricator::CorrectTypo(
     const DeclarationNameInfo &Typo, int LookupKind, Scope *S, CXXScopeSpec *SS,
     CorrectionCandidateCallback &CCC, DeclContext *MemberContext,
@@ -114,13 +130,20 @@ TypoCorrection SaltSemaFabricator::CorrectTypo(
         return TC;
     }
 
-    // Otherwise, fabricate a class template
+    // Otherwise, fabricate a type for the unknown qualified name.
     if (SS && SS->isNotEmpty())
     {
         NamedDecl *D = findExisting(DC, II);
         if (!D)
         {
-            D = fabricateClassTemplate(DC, II);
+            if (CCC.WantTypeSpecifiers)
+            {
+                D = fabricateRecord(DC, II);
+            }
+            else
+            {
+                D = fabricateClassTemplate(DC, II);
+            }
         }
         TypoCorrection TC(II);
         TC.addCorrectionDecl(D);

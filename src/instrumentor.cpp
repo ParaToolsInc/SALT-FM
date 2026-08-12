@@ -815,7 +815,8 @@ class FindFunctionAction : public ASTFrontendAction
                  CI.getFrontendOpts().SkipFunctionBodies);
         llvm::outs() << "Fabricated " << fabricator->numNamespaces()
                      << " namespaces, " << fabricator->numTemplates()
-                     << " class templates\n";
+                     << " class templates, " << fabricator->numRecords()
+                     << " records\n";
     }
 
   private:
