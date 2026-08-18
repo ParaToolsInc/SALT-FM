@@ -873,7 +873,7 @@ class FindFunctionVisitor : public RecursiveASTVisitor<FindFunctionVisitor>
         // }
         // short circuit on hasBody() first to protect check_func_against_list (and makeFuncInstLoc) from segfaults
         if (func->hasBody() &&
-            (!func->isInlined() || inst_inline || check_func_against_list(includelist, func, context, src_mgr)))
+            (!func->isInlined() || do_inline || check_func_against_list(includelist, func, context, src_mgr)))
         { //
             makeFuncInstLoc(func);
             return_visitor.encl_function = func;

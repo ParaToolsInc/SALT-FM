@@ -309,8 +309,6 @@ int main(int argc, const char **argv)
     CodeInstrumentor.Tool = new tooling::ClangTool(OptionsParser.getCompilations(), OptionsParser.getSourcePathList());
     CodeInstrumentor.set_exec_name(argv[0]);
 
-    inst_inline = do_inline;
-
     if (!selectfile.empty())
     {
         processInstrumentationRequests(selectfile.c_str());
