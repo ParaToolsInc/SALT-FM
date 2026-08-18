@@ -930,6 +930,63 @@ set_tests_properties(check_pure_virtual_skips_bodyless
     "TAU_PROFILE_TIMER[^\n]*Abstract::unimplemented;TAU_PROFILE_TIMER[^\n]*undefined_free_fn"
 )
 
+# --tau_instrument_inline tests
+# Verify that inline functions are skipped without flag
+# and are instrumented with it
+add_test(NAME instrument_inline_off
+  COMMAND
+    ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+    --tau_output=instrument_inline_off.inst.cpp
+    ${CMAKE_SOURCE_DIR}/tests/instrument_inline.cpp)
+set_tests_properties(instrument_inline_off
+  PROPERTIES
+  REQUIRED_FILES "${CMAKE_SOURCE_DIR}/tests/instrument_inline.cpp"
+  LABELS "lang:CXX;phase:instrument"
+  PASS_REGULAR_EXPRESSION "[Ii]nstrumentation:"
+)
+
+add_test(NAME check_inline_off_skips_inline
+  COMMAND ${CMAKE_COMMAND} -E cat instrument_inline_off.inst.cpp)
+set_tests_properties(check_inline_off_skips_inline
+  PROPERTIES
+  DEPENDS instrument_inline_off
+  LABELS "lang:CXX;phase:check"
+  PASS_REGULAR_EXPRESSION "TAU_PROFILE_SET_NODE"
+  FAIL_REGULAR_EXPRESSION
+    "TAU_PROFILE_TIMER[^\n]*method_in_class_body;TAU_PROFILE_TIMER[^\n]*free_fn_marked_inline"
+)
+
+add_test(NAME instrument_inline_on
+  COMMAND
+    ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+    --tau_instrument_inline
+    --tau_output=instrument_inline_on.inst.cpp
+    ${CMAKE_SOURCE_DIR}/tests/instrument_inline.cpp)
+set_tests_properties(instrument_inline_on
+  PROPERTIES
+  REQUIRED_FILES "${CMAKE_SOURCE_DIR}/tests/instrument_inline.cpp"
+  LABELS "lang:CXX;phase:instrument"
+  PASS_REGULAR_EXPRESSION "[Ii]nstrumentation:"
+)
+
+add_test(NAME check_inline_on_instruments_method
+  COMMAND ${CMAKE_COMMAND} -E cat instrument_inline_on.inst.cpp)
+set_tests_properties(check_inline_on_instruments_method
+  PROPERTIES
+  DEPENDS instrument_inline_on
+  LABELS "lang:CXX;phase:check"
+  PASS_REGULAR_EXPRESSION "TAU_PROFILE_TIMER[^\n]*method_in_class_body"
+)
+
+add_test(NAME check_inline_on_instruments_free_fn
+  COMMAND ${CMAKE_COMMAND} -E cat instrument_inline_on.inst.cpp)
+set_tests_properties(check_inline_on_instruments_free_fn
+  PROPERTIES
+  DEPENDS instrument_inline_on
+  LABELS "lang:CXX;phase:check"
+  PASS_REGULAR_EXPRESSION "TAU_PROFILE_TIMER[^\n]*free_fn_marked_inline"
+)
+
 # Selective Instrumentation File (SIF) tests.
 #
 # Each test runs the SALT instrumentor against a small source file containing

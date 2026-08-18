@@ -60,7 +60,6 @@ bool check_file_against_list(std::list<std::string> list, std::string fname);
 static std::vector<inst_loc*> inst_locs;
 static std::vector<std::string> files_to_go;
 static std::vector<std::string> files_skipped;
-static bool inst_inline = false;
 
 class instrumentor {
 public:
