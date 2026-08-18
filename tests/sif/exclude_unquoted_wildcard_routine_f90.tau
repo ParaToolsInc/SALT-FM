@@ -1,0 +1,6 @@
+# Same as exclude_wildcard_routine_f90.tau but with the pattern unquoted:
+# a leading-# wildcard inside a list block is a pattern, not a comment
+# (issue #64). Both subprograms lose their timers.
+BEGIN_EXCLUDE_LIST
+#routine
+END_EXCLUDE_LIST

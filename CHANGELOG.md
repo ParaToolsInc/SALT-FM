@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Selective instrumentation files now accept unquoted patterns starting
+  with the `#` wildcard inside `BEGIN_`/`END_` list blocks; `#` starts a
+  comment only outside list blocks, matching TAU's LLVM plugin. Quoted
+  patterns keep working. Suspicious quoting (missing closing quote, text
+  after the closing quote, empty quoted pattern) now emits a warning
+  instead of silently altering the entry
+  ([#65](https://github.com/ParaToolsInc/SALT-FM/pull/65) by @zbeekman):
+  - [#64](https://github.com/ParaToolsInc/SALT-FM/issues/64) - exclude
+    list entries starting with a wildcard were dropped as comments unless
+    quoted (reported by @giltirn).
+
 ## [0.4.1] - 2026-05-12
 
 - macOS build robustness: configure-time auto-detection of

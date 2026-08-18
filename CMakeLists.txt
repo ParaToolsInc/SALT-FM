@@ -1084,6 +1084,63 @@ foreach(lang c cpp)
   )
 endforeach()
 
+# Issue #64: an exclude pattern that starts with the '#' wildcard, written
+# WITHOUT quotes, must still be parsed as a pattern inside the
+# BEGIN_/END_EXCLUDE_LIST block (TAU's LLVM plugin accepts this form; only
+# lines outside a list block are comments). Reproducer from the issue:
+# "#noinst#" must strip dosomething_noinst's timer while dosomething_inst
+# stays instrumented.
+add_sif_test(exclusion_unquoted_wildcard_prefix_cpp
+  cpp tests/sif_excl_wildcard_prefix.cpp tests/sif/exclude_unquoted_wildcard_prefix_cpp.tau)
+set_tests_properties(check_sif_exclusion_unquoted_wildcard_prefix_cpp
+  PROPERTIES
+  PASS_REGULAR_EXPRESSION "dosomething_inst[(]void[)] +\\[\\{"
+  FAIL_REGULAR_EXPRESSION "dosomething_noinst[(]void[)] +\\[\\{"
+)
+
+# Suspicious quoting in list entries must produce a stderr warning while
+# parsing stays lenient (TAU-compatible). The instrument step asserts the
+# warning text; the check step asserts the lenient parse result.
+# - unclosed quote: pattern = rest of line, still excludes noinst
+# - text after closing quote: dropped, pattern still excludes noinst
+# - lone quote: empty pattern, matches nothing, both routines keep timers
+add_sif_test(exclusion_unclosed_quote_cpp
+  cpp tests/sif_excl_wildcard_prefix.cpp tests/sif/exclude_unclosed_quote_cpp.tau)
+set_tests_properties(instrument_sif_exclusion_unclosed_quote_cpp
+  PROPERTIES
+  PASS_REGULAR_EXPRESSION "WARNING: missing closing quote in exclude list entry"
+)
+set_tests_properties(check_sif_exclusion_unclosed_quote_cpp
+  PROPERTIES
+  PASS_REGULAR_EXPRESSION "dosomething_inst[(]void[)] +\\[\\{"
+  FAIL_REGULAR_EXPRESSION "dosomething_noinst[(]void[)] +\\[\\{"
+)
+
+add_sif_test(exclusion_quote_trailing_junk_cpp
+  cpp tests/sif_excl_wildcard_prefix.cpp tests/sif/exclude_quote_trailing_junk_cpp.tau)
+set_tests_properties(instrument_sif_exclusion_quote_trailing_junk_cpp
+  PROPERTIES
+  PASS_REGULAR_EXPRESSION "WARNING: ignoring text after closing quote in exclude list entry"
+)
+set_tests_properties(check_sif_exclusion_quote_trailing_junk_cpp
+  PROPERTIES
+  PASS_REGULAR_EXPRESSION "dosomething_inst[(]void[)] +\\[\\{"
+  FAIL_REGULAR_EXPRESSION "dosomething_noinst[(]void[)] +\\[\\{"
+)
+
+add_sif_test(exclusion_empty_quote_cpp
+  cpp tests/sif_excl_wildcard_prefix.cpp tests/sif/exclude_empty_quote_cpp.tau)
+set_tests_properties(instrument_sif_exclusion_empty_quote_cpp
+  PROPERTIES
+  PASS_REGULAR_EXPRESSION "WARNING: empty quoted exclude list entry"
+)
+# Single regex spanning both timers (source order): a list here would be
+# OR'd, not AND'd. CMake's '.' matches newlines.
+set_tests_properties(check_sif_exclusion_empty_quote_cpp
+  PROPERTIES
+  PASS_REGULAR_EXPRESSION "dosomething_inst[(]void[)] +\\[\\{.*dosomething_noinst[(]void[)] +\\[\\{"
+)
+
 # File-level EXCLUDE_LIST: the C/C++ frontend short-circuits and emits no
 # .inst output at all when the source file is on the file exclude list.
 # Verified via absence of the "Instrumentation:" banner from cparse-llvm.
@@ -1229,6 +1286,15 @@ if(TEST_FORTRAN)
     FAIL_REGULAR_EXPRESSION "${_sif_keep_pattern_fortran};${_sif_excluded_pattern_fortran}"
   )
 
+  # Unquoted twin of the wildcard sanity check above (issue #64): same
+  # pattern without quotes must behave identically.
+  add_sif_test(routine_unquoted_wildcard_excludes_both_fortran
+    fortran tests/fortran/sif_excl.f90 tests/sif/exclude_unquoted_wildcard_routine_f90.tau)
+  set_tests_properties(check_sif_routine_unquoted_wildcard_excludes_both_fortran
+    PROPERTIES
+    FAIL_REGULAR_EXPRESSION "${_sif_keep_pattern_fortran};${_sif_excluded_pattern_fortran}"
+  )
+
   # Combined INCLUDE + EXCLUDE: per the TAU SIF spec the exclude list
   # operates on whatever survives the include filter. The SIF below
   # whitelists "#routine" (matches both subprograms) and then explicitly
@@ -1236,6 +1302,15 @@ if(TEST_FORTRAN)
   add_sif_test(include_wildcard_exclude_specific_fortran
     fortran tests/fortran/sif_excl.f90 tests/sif/include_wildcard_exclude_specific_f90.tau)
   set_tests_properties(check_sif_include_wildcard_exclude_specific_fortran
+    PROPERTIES
+    PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_fortran}"
+    FAIL_REGULAR_EXPRESSION "${_sif_excluded_pattern_fortran}"
+  )
+  # Unquoted twin of the combined INCLUDE + EXCLUDE test (issue #64 applies
+  # to every list kind). Same expectations as the quoted version.
+  add_sif_test(include_unquoted_wildcard_exclude_specific_fortran
+    fortran tests/fortran/sif_excl.f90 tests/sif/include_unquoted_wildcard_f90.tau)
+  set_tests_properties(check_sif_include_unquoted_wildcard_exclude_specific_fortran
     PROPERTIES
     PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_fortran}"
     FAIL_REGULAR_EXPRESSION "${_sif_excluded_pattern_fortran}"

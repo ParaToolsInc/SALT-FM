@@ -1,0 +1,8 @@
+# Issue #64 reproducer: a routine exclude pattern that STARTS with the '#'
+# wildcard, written WITHOUT surrounding quotes. TAU's LLVM plugin treats every
+# non-blank line inside a BEGIN_/END_ list as an entry, so SALT must parse the
+# line below as a pattern, not a comment. (Comments like these, outside the
+# list, are still comments.)
+BEGIN_EXCLUDE_LIST
+#noinst#
+END_EXCLUDE_LIST

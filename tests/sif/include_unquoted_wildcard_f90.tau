@@ -1,0 +1,10 @@
+# Unquoted twin of include_wildcard_exclude_specific_f90.tau; issue #64
+# applies to every list kind. "#routine" whitelists both subprograms, the
+# exclude list pulls excluded_routine back out. Only keep_routine keeps its
+# timer. Include-list whitelisting exists only in the Fortran frontend.
+BEGIN_INCLUDE_LIST
+#routine
+END_INCLUDE_LIST
+BEGIN_EXCLUDE_LIST
+excluded_routine
+END_EXCLUDE_LIST
