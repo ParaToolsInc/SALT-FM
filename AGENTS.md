@@ -27,7 +27,8 @@ Mirror CI locally: run the jobs in `.github/workflows/` with the same commands a
 ## CI Failures
 
 - Fetch the complete log with `gh`.
-- Reproduce failures locally before fixing.
+- Reproduce failures locally before fixing when possible: Linux failures in the `salt-dev` Docker containers CI uses.
+- Some failures can't be reproduced locally: race conditions, network glitches, or an OS, hardware, or compiler you don't have (e.g. Apple silicon). Re-run the job once first; if it passes, report it as flaky. Otherwise say so, explain the likely cause from the log, and fix from the log.
 
 ## AI Attribution
 
