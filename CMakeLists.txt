@@ -1084,15 +1084,45 @@ foreach(lang c cpp)
   )
 endforeach()
 
-# Issue #64: an exclude pattern that starts with the '#' wildcard, written
-# WITHOUT quotes, must still be parsed as a pattern inside the
-# BEGIN_/END_EXCLUDE_LIST block (TAU's LLVM plugin accepts this form; only
-# lines outside a list block are comments). Reproducer from the issue:
-# "#noinst#" must strip dosomething_noinst's timer while dosomething_inst
-# stays instrumented.
-add_sif_test(exclusion_unquoted_wildcard_prefix_cpp
-  cpp tests/sif_excl_wildcard_prefix.cpp tests/sif/exclude_unquoted_wildcard_prefix_cpp.tau)
-set_tests_properties(check_sif_exclusion_unquoted_wildcard_prefix_cpp
+# Issue #64: as in TAU and PDT, a leading '#' starts a comment even inside
+# a BEGIN_/END_ list block; quoting ("#noinst#") is how a pattern starts
+# with the '#' wildcard. The unquoted reproducer from the issue (and
+# "##noinst", "#*noinst", "#@noinst", non-ASCII "#énoinst") is ignored,
+# so both routines keep their timers, but because each line looks like a
+# pattern the instrumentor must warn and suggest quoting it. One regex in
+# line order, since a list would be OR'd.
+string(CONCAT _sif_hash_comment_warning
+  "WARNING: '#noinst#' at selective instrumentation file line 7 treated "
+  "as a comment in exclude list[.] Quote it [(]\"#noinst#\"[)] to use it "
+  "as a wildcard.*'##noinst' at selective instrumentation file line 8 "
+  "treated as a comment.*'#[*]noinst' at selective instrumentation file "
+  "line 9 treated as a comment.*'#@noinst' at selective instrumentation "
+  "file line 10 treated as a comment.*'#énoinst' at selective "
+  "instrumentation file line 11 treated as a comment")
+add_sif_test(exclusion_unquoted_hash_comment_cpp
+  cpp tests/sif_excl_wildcard_prefix.cpp tests/sif/exclude_unquoted_hash_comment_cpp.tau)
+set_tests_properties(instrument_sif_exclusion_unquoted_hash_comment_cpp
+  PROPERTIES
+  PASS_REGULAR_EXPRESSION "${_sif_hash_comment_warning}"
+)
+# Single regex spanning both timers (source order): a list here would be
+# OR'd, not AND'd. CMake's '.' matches newlines.
+set_tests_properties(check_sif_exclusion_unquoted_hash_comment_cpp
+  PROPERTIES
+  PASS_REGULAR_EXPRESSION "dosomething_inst[(]void[)] +\\[\\{.*dosomething_noinst[(]void[)] +\\[\\{"
+)
+
+# Ordinary comments in a routine list ('#' then whitespace, a lone '#',
+# punctuation rulers like '#=====') and '#' lines in FILE lists (whose
+# wildcard is '*') must not warn. The quoted "#noinst#" entry in the same
+# SIF still excludes dosomething_noinst.
+add_sif_test(exclusion_no_warning_cpp
+  cpp tests/sif_excl_wildcard_prefix.cpp tests/sif/exclude_no_warning_cpp.tau)
+set_tests_properties(instrument_sif_exclusion_no_warning_cpp
+  PROPERTIES
+  FAIL_REGULAR_EXPRESSION "treated as a comment"
+)
+set_tests_properties(check_sif_exclusion_no_warning_cpp
   PROPERTIES
   PASS_REGULAR_EXPRESSION "dosomething_inst[(]void[)] +\\[\\{"
   FAIL_REGULAR_EXPRESSION "dosomething_noinst[(]void[)] +\\[\\{"
@@ -1140,7 +1170,6 @@ set_tests_properties(check_sif_exclusion_empty_quote_cpp
   PROPERTIES
   PASS_REGULAR_EXPRESSION "dosomething_inst[(]void[)] +\\[\\{.*dosomething_noinst[(]void[)] +\\[\\{"
 )
-
 # File-level EXCLUDE_LIST: the C/C++ frontend short-circuits and emits no
 # .inst output at all when the source file is on the file exclude list.
 # Verified via absence of the "Instrumentation:" banner from cparse-llvm.
@@ -1286,13 +1315,19 @@ if(TEST_FORTRAN)
     FAIL_REGULAR_EXPRESSION "${_sif_keep_pattern_fortran};${_sif_excluded_pattern_fortran}"
   )
 
-  # Unquoted twin of the wildcard sanity check above (issue #64): same
-  # pattern without quotes must behave identically.
-  add_sif_test(routine_unquoted_wildcard_excludes_both_fortran
-    fortran tests/fortran/sif_excl.f90 tests/sif/exclude_unquoted_wildcard_routine_f90.tau)
-  set_tests_properties(check_sif_routine_unquoted_wildcard_excludes_both_fortran
+  # Unquoted twin of the wildcard sanity check above (issue #64): without
+  # quotes the leading '#' starts a comment, so nothing is excluded and
+  # both subprograms keep their timers (single regex in source order, since
+  # a list would be OR'd). The instrumentor must warn about the line.
+  add_sif_test(routine_unquoted_hash_comment_fortran
+    fortran tests/fortran/sif_excl.f90 tests/sif/exclude_unquoted_hash_comment_f90.tau)
+  set_tests_properties(instrument_sif_routine_unquoted_hash_comment_fortran
     PROPERTIES
-    FAIL_REGULAR_EXPRESSION "${_sif_keep_pattern_fortran};${_sif_excluded_pattern_fortran}"
+    PASS_REGULAR_EXPRESSION "'#routine' at .* line 6 treated as a comment in exclude list"
+  )
+  set_tests_properties(check_sif_routine_unquoted_hash_comment_fortran
+    PROPERTIES
+    PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_fortran}.*${_sif_excluded_pattern_fortran}"
   )
 
   # Combined INCLUDE + EXCLUDE: per the TAU SIF spec the exclude list
@@ -1306,14 +1341,18 @@ if(TEST_FORTRAN)
     PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_fortran}"
     FAIL_REGULAR_EXPRESSION "${_sif_excluded_pattern_fortran}"
   )
-  # Unquoted twin of the combined INCLUDE + EXCLUDE test (issue #64 applies
-  # to every list kind). Same expectations as the quoted version.
-  add_sif_test(include_unquoted_wildcard_exclude_specific_fortran
-    fortran tests/fortran/sif_excl.f90 tests/sif/include_unquoted_wildcard_f90.tau)
-  set_tests_properties(check_sif_include_unquoted_wildcard_exclude_specific_fortran
+  # Include-list twin of routine_unquoted_hash_comment_fortran: unquoted
+  # "#keep_routine" is a comment, the include list stays empty and both
+  # subprograms keep their timers (quoted, only keep_routine would).
+  add_sif_test(include_unquoted_hash_comment_fortran
+    fortran tests/fortran/sif_excl.f90 tests/sif/include_unquoted_hash_comment_f90.tau)
+  set_tests_properties(instrument_sif_include_unquoted_hash_comment_fortran
     PROPERTIES
-    PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_fortran}"
-    FAIL_REGULAR_EXPRESSION "${_sif_excluded_pattern_fortran}"
+    PASS_REGULAR_EXPRESSION "'#keep_routine' at .* line 7 treated as a comment in include list"
+  )
+  set_tests_properties(check_sif_include_unquoted_hash_comment_fortran
+    PROPERTIES
+    PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_fortran}.*${_sif_excluded_pattern_fortran}"
   )
 endif()
 
