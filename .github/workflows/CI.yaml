@@ -69,5 +69,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: spack/setup-spack@v3
+      # spack.yaml's compiler externals turn off PATH auto-detection, so
+      # add the runner's compilers explicitly.
       - name: Concretize spack environment
-        run: spack -e . concretize -f
+        run: |
+          spack compiler find
+          spack -e . concretize -f
