@@ -1,0 +1,6 @@
+# FILE lists share the routine lists' quote handling and warnings. The text
+# after the closing quote is dropped with a warning and the quoted file name
+# still excludes sif_excl.cpp, so no instrumented output is produced.
+BEGIN_FILE_EXCLUDE_LIST
+"sif_excl.cpp"junk
+END_FILE_EXCLUDE_LIST

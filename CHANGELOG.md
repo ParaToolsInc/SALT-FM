@@ -14,9 +14,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   but whitespace or one of a few punctuation characters used in rulers,
   such as `=`, `/` or `|`) and suggests quoting it; comments such as
   `# note` or `#=====` stay silent. Suspicious quoting in any list
-  block (missing closing quote, text after the closing quote, empty
-  quoted pattern) also emits a warning instead of silently altering the
-  entry
+  block, FILE lists included (missing closing quote, non-blank text after
+  the closing quote, empty quoted pattern), also emits a warning instead
+  of silently altering the entry
   ([#65](https://github.com/ParaToolsInc/SALT-FM/pull/65) by @zbeekman):
   - [#64](https://github.com/ParaToolsInc/SALT-FM/issues/64) - exclude
     list entries starting with an unquoted wildcard were silently
