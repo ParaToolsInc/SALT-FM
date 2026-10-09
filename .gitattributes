@@ -47,6 +47,10 @@ LICENSE         text eol=lf
 *.patch         text eol=lf
 *.diff          text eol=lf
 
+# Test SIF whose trailing spaces and tab are deliberate; skip git's
+# whitespace checks and fixes for it
+tests/sif/exclude_no_warning_cpp.tau -whitespace
+
 # Windows-only scripts (none today, but reserve correct EOL if added)
 *.bat           text eol=crlf
 *.cmd           text eol=crlf

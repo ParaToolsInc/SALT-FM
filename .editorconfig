@@ -1,0 +1,3 @@
+# Test SIF whose trailing spaces are deliberate
+[tests/sif/exclude_no_warning_cpp.tau]
+trim_trailing_whitespace = false
