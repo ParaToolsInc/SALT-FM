@@ -6,16 +6,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-- Selective instrumentation files now accept unquoted patterns starting
-  with the `#` wildcard inside `BEGIN_`/`END_` list blocks; `#` starts a
-  comment only outside list blocks, matching TAU's LLVM plugin. Quoted
-  patterns keep working. Suspicious quoting (missing closing quote, text
-  after the closing quote, empty quoted pattern) now emits a warning
-  instead of silently altering the entry
+- Selective instrumentation files keep the TAU/PDT syntax: a leading `#`
+  inside `BEGIN_`/`END_` list blocks still starts a comment, and a
+  pattern starting with the `#` wildcard must be quoted (`"#foo#"`).
+  SALT-FM now warns when a comment line in a routine include or exclude
+  list could be an unquoted pattern (`#` followed directly by anything
+  but whitespace or one of a few punctuation characters used in rulers,
+  such as `=`, `/` or `|`) and suggests quoting it; comments such as
+  `# note` or `#=====` stay silent. Suspicious quoting in any list
+  block (missing closing quote, text after the closing quote, empty
+  quoted pattern) also emits a warning instead of silently altering the
+  entry
   ([#65](https://github.com/ParaToolsInc/SALT-FM/pull/65) by @zbeekman):
   - [#64](https://github.com/ParaToolsInc/SALT-FM/issues/64) - exclude
-    list entries starting with a wildcard were dropped as comments unless
-    quoted (reported by @giltirn).
+    list entries starting with an unquoted wildcard were silently
+    dropped as comments (reported by @giltirn).
 
 ## [0.4.1] - 2026-05-12
 
