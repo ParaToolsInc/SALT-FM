@@ -1001,16 +1001,37 @@ set_tests_properties(check_inline_on_instruments_free_fn
 # Each test passes --tau_output so parallel ctest invocations don't clobber a
 # shared default output path (saltfm writes to <basename>.inst.<ext> by default).
 
+# Sets <test>'s regexes so its output holds exactly the SIF list-entry
+# warnings in `warnings`: one regex per expected warning, in log order;
+# each must match within one warning line and no two may match the same
+# line. With no `warnings`, any list-entry warning fails. Only the
+# list-entry wording is counted, since the Fortran plugin's verbose
+# output has unrelated "WARNING:" lines. `fail` holds other
+# FAIL_REGULAR_EXPRESSION entries; all are OR'd with the count.
+function(_sif_set_warning_checks test warnings fail)
+  # Fail on one list-entry warning more than expected and require the
+  # expected ones.
+  set(entry_warning "WARNING: [^\n]*selective instrumentation file line")
+  set(too_many "${entry_warning}")
+  foreach(expected_warning IN LISTS warnings)
+    string(APPEND too_many ".*${entry_warning}")
+  endforeach()
+  list(APPEND fail "${too_many}")
+  set_tests_properties(${test} PROPERTIES FAIL_REGULAR_EXPRESSION "${fail}")
+  if(NOT warnings STREQUAL "")
+    list(JOIN warnings ".*" expected_warnings)
+    set_tests_properties(${test} PROPERTIES PASS_REGULAR_EXPRESSION "${expected_warnings}")
+  endif()
+endfunction()
+
 # Standard SIF test: instrumented output IS produced and inspected by
 # check_sif_<test_name>. The caller is responsible for setting
 # PASS_REGULAR_EXPRESSION / FAIL_REGULAR_EXPRESSION on the check test.
-# warn_sif_<test_name> checks the instrumentor's output against the
-# optional WARN_PASS / WARN_FAIL regexes; with neither, it fails on any
-# SIF list-entry warning. Only that wording is matched, since the Fortran
-# plugin's verbose output has unrelated "WARNING:" lines.
+# warn_sif_<test_name> checks the instrumentor's SIF list-entry warnings
+# against the optional WARNINGS (see _sif_set_warning_checks).
 # `sif` is relative to the source tree unless absolute (e.g. generated).
 function(add_sif_test test_name lang src sif)
-  cmake_parse_arguments(PARSE_ARGV 4 ARG "" "WARN_PASS;WARN_FAIL" "")
+  cmake_parse_arguments(PARSE_ARGV 4 ARG "" "" "WARNINGS")
   set(name sif_${test_name})
   cmake_path(ABSOLUTE_PATH sif BASE_DIRECTORY "${CMAKE_SOURCE_DIR}")
   get_filename_component(_src_ext ${src} EXT)
@@ -1059,17 +1080,7 @@ function(add_sif_test test_name lang src sif)
   add_test(NAME warn_${name}
     COMMAND ${CMAKE_COMMAND} -E cat "./${log_file}"
   )
-  if(DEFINED ARG_WARN_PASS)
-    set_tests_properties(warn_${name} PROPERTIES PASS_REGULAR_EXPRESSION "${ARG_WARN_PASS}")
-  endif()
-  # WARN_FAIL replaces the default list-entry warning check rather than
-  # adding to it; include that pattern in WARN_FAIL to keep it.
-  if(DEFINED ARG_WARN_FAIL)
-    set_tests_properties(warn_${name} PROPERTIES FAIL_REGULAR_EXPRESSION "${ARG_WARN_FAIL}")
-  elseif(NOT DEFINED ARG_WARN_PASS)
-    set_tests_properties(warn_${name} PROPERTIES
-      FAIL_REGULAR_EXPRESSION "WARNING: [^\n]*selective instrumentation file line")
-  endif()
+  _sif_set_warning_checks(warn_${name} "${ARG_WARNINGS}" "")
   # Fixtures (not DEPENDS) so `ctest -R check_...` alone also runs the
   # rm and instrument steps first.
   set_tests_properties(check_${name} warn_${name}
@@ -1083,8 +1094,10 @@ endfunction()
 # (e.g. the source is on a FILE_EXCLUDE_LIST or fails the FILE_INCLUDE_LIST
 # whitelist). Verified by the absence of cparse-llvm's "Instrumentation:"
 # banner. Pass --tau_output to a per-test unique path so parallel ctest runs
-# cannot race on a shared default location.
+# cannot race on a shared default location. The same step checks the SIF
+# list-entry warnings against the optional WARNINGS, as in add_sif_test.
 function(add_sif_test_no_output test_name lang src sif)
+  cmake_parse_arguments(PARSE_ARGV 4 ARG "" "" "WARNINGS")
   set(name sif_${test_name})
   get_filename_component(_src_ext ${src} EXT)
   set(out_file ${name}.inst${_src_ext})
@@ -1099,8 +1112,8 @@ function(add_sif_test_no_output test_name lang src sif)
     PROPERTIES
     REQUIRED_FILES "${CMAKE_SOURCE_DIR}/${src};${CMAKE_SOURCE_DIR}/${sif}"
     LABELS "${_lang_label};phase:instrument;sif"
-    FAIL_REGULAR_EXPRESSION "Instrumentation:"
   )
+  _sif_set_warning_checks(instrument_${name} "${ARG_WARNINGS}" "Instrumentation:")
 endfunction()
 
 # Pattern helpers: regex fragments that match a TAU_PROFILE_TIMER timer string
@@ -1131,19 +1144,18 @@ endforeach()
 # with the '#' wildcard. The unquoted reproducer from the issue (and
 # "##noinst", "#*noinst", "#@noinst", non-ASCII "#énoinst") is ignored,
 # so both routines keep their timers, but because each line looks like a
-# pattern the instrumentor must warn and suggest quoting it. One regex in
-# line order, since a list would be OR'd.
+# pattern the instrumentor must warn and suggest quoting it, once per line.
 string(CONCAT _sif_hash_comment_warning
   "WARNING: '#noinst#' at selective instrumentation file line 7 treated "
   "as a comment in exclude list[.] Quote it [(]\"#noinst#\"[)] to use it "
-  "as a wildcard.*'##noinst' at selective instrumentation file line 8 "
-  "treated as a comment.*'#[*]noinst' at selective instrumentation file "
-  "line 9 treated as a comment.*'#@noinst' at selective instrumentation "
-  "file line 10 treated as a comment.*'#énoinst' at selective "
-  "instrumentation file line 11 treated as a comment")
+  "as a wildcard")
 add_sif_test(exclusion_unquoted_hash_comment_cpp
   cpp tests/sif_excl_wildcard_prefix.cpp tests/sif/exclude_unquoted_hash_comment_cpp.tau
-  WARN_PASS "${_sif_hash_comment_warning}")
+  WARNINGS "${_sif_hash_comment_warning}"
+    "'##noinst' at selective instrumentation file line 8 treated as a comment"
+    "'#[*]noinst' at selective instrumentation file line 9 treated as a comment"
+    "'#@noinst' at selective instrumentation file line 10 treated as a comment"
+    "'#énoinst' at selective instrumentation file line 11 treated as a comment")
 # Single regex spanning both timers (source order): a list here would be
 # OR'd, not AND'd. CMake's '.' matches newlines.
 set_tests_properties(check_sif_exclusion_unquoted_hash_comment_cpp
@@ -1177,8 +1189,11 @@ file(WRITE "${CMAKE_BINARY_DIR}/sif_exclude_no_warning_cpp.tau"
   "END_FILE_EXCLUDE_LIST\n")
 add_sif_test(exclusion_no_warning_cpp
   cpp tests/sif_excl_wildcard_prefix.cpp
-  "${CMAKE_BINARY_DIR}/sif_exclude_no_warning_cpp.tau"
-  WARN_FAIL "WARNING")
+  "${CMAKE_BINARY_DIR}/sif_exclude_no_warning_cpp.tau")
+# This C++ log has no unrelated warnings, so fail on any "WARNING", not
+# just list-entry ones (e.g. "Instrument section is not supported yet").
+set_tests_properties(warn_sif_exclusion_no_warning_cpp
+  PROPERTIES FAIL_REGULAR_EXPRESSION "WARNING")
 set_tests_properties(check_sif_exclusion_no_warning_cpp
   PROPERTIES
   PASS_REGULAR_EXPRESSION "dosomething_inst[(]void[)] +\\[\\{"
@@ -1195,7 +1210,7 @@ set_tests_properties(check_sif_exclusion_no_warning_cpp
 # - FILE lists share the quote handling and warnings
 add_sif_test(exclusion_unclosed_quote_cpp
   cpp tests/sif_excl_wildcard_prefix.cpp tests/sif/exclude_unclosed_quote_cpp.tau
-  WARN_PASS "WARNING: missing closing quote in exclude list entry")
+  WARNINGS "WARNING: missing closing quote in exclude list entry")
 set_tests_properties(check_sif_exclusion_unclosed_quote_cpp
   PROPERTIES
   PASS_REGULAR_EXPRESSION "dosomething_inst[(]void[)] +\\[\\{"
@@ -1204,7 +1219,7 @@ set_tests_properties(check_sif_exclusion_unclosed_quote_cpp
 
 add_sif_test(exclusion_quote_trailing_junk_cpp
   cpp tests/sif_excl_wildcard_prefix.cpp tests/sif/exclude_quote_trailing_junk_cpp.tau
-  WARN_PASS "WARNING: ignoring text after closing quote in exclude list entry")
+  WARNINGS "WARNING: ignoring text after closing quote in exclude list entry")
 set_tests_properties(check_sif_exclusion_quote_trailing_junk_cpp
   PROPERTIES
   PASS_REGULAR_EXPRESSION "dosomething_inst[(]void[)] +\\[\\{"
@@ -1213,8 +1228,7 @@ set_tests_properties(check_sif_exclusion_quote_trailing_junk_cpp
 
 add_sif_test(exclusion_empty_quote_cpp
   cpp tests/sif_excl_wildcard_prefix.cpp tests/sif/exclude_empty_quote_cpp.tau
-  WARN_PASS "WARNING: empty quoted exclude list entry"
-  WARN_FAIL "missing closing quote")
+  WARNINGS "WARNING: empty quoted exclude list entry")
 # Single regex spanning both timers (source order): a list here would be
 # OR'd, not AND'd. CMake's '.' matches newlines.
 set_tests_properties(check_sif_exclusion_empty_quote_cpp
@@ -1223,11 +1237,8 @@ set_tests_properties(check_sif_exclusion_empty_quote_cpp
 )
 
 add_sif_test_no_output(file_exclude_quote_trailing_junk_cpp
-  cpp tests/sif_excl.cpp tests/sif/file_exclude_quote_trailing_junk_cpp.tau)
-set_tests_properties(instrument_sif_file_exclude_quote_trailing_junk_cpp
-  PROPERTIES
-  PASS_REGULAR_EXPRESSION "WARNING: ignoring text after closing quote in file exclude list entry"
-)
+  cpp tests/sif_excl.cpp tests/sif/file_exclude_quote_trailing_junk_cpp.tau
+  WARNINGS "WARNING: ignoring text after closing quote in file exclude list entry")
 
 # File-level EXCLUDE_LIST: the C/C++ frontend short-circuits and emits no
 # .inst output at all when the source file is on the file exclude list.
@@ -1380,7 +1391,7 @@ if(TEST_FORTRAN)
   # a list would be OR'd). The instrumentor must warn about the line.
   add_sif_test(routine_unquoted_hash_comment_fortran
     fortran tests/fortran/sif_excl.f90 tests/sif/exclude_unquoted_hash_comment_f90.tau
-    WARN_PASS "'#routine' at .* line 6 treated as a comment in exclude list")
+    WARNINGS "'#routine' at [^\n]* line 6 treated as a comment in exclude list")
   set_tests_properties(check_sif_routine_unquoted_hash_comment_fortran
     PROPERTIES
     PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_fortran}.*${_sif_excluded_pattern_fortran}"
@@ -1402,7 +1413,7 @@ if(TEST_FORTRAN)
   # subprograms keep their timers (quoted, only keep_routine would).
   add_sif_test(include_unquoted_hash_comment_fortran
     fortran tests/fortran/sif_excl.f90 tests/sif/include_unquoted_hash_comment_f90.tau
-    WARN_PASS "'#keep_routine' at .* line 7 treated as a comment in include list")
+    WARNINGS "'#keep_routine' at [^\n]* line 7 treated as a comment in include list")
   set_tests_properties(check_sif_include_unquoted_hash_comment_fortran
     PROPERTIES
     PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_fortran}.*${_sif_excluded_pattern_fortran}"
