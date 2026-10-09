@@ -721,23 +721,22 @@ static std::string parseListEntry(const char *entry, const char *listname, int l
     return result;
   }
   const size_t close = result.find('"', 1);
-  if (close == std::string::npos) {
-    result.erase(0, 1);
+  const bool closed = close != std::string::npos;
+  if (closed && result.find_first_not_of(" \t\r\n\v\f", close + 1) != std::string::npos) {
     fprintf(stderr,
-      "WARNING: missing closing quote in %s entry at selective instrumentation file line %d; using '%s'\n",
-      listname, lineno, result.c_str());
-  } else {
-    if (close + 1 < result.size()) {
-      fprintf(stderr,
-        "WARNING: ignoring text after closing quote in %s entry at selective instrumentation file line %d: %s\n",
-        listname, lineno, result.c_str() + close + 1);
-    }
-    result = result.substr(1, close - 1);
+      "WARNING: ignoring text after closing quote in %s entry at selective instrumentation file line %d: %s\n",
+      listname, lineno, result.c_str() + close + 1);
   }
+  result = closed ? result.substr(1, close - 1) : result.substr(1);
+  /* A lone '"' gets only the empty-pattern warning. */
   if (result.empty()) {
     fprintf(stderr,
       "WARNING: empty quoted %s entry at selective instrumentation file line %d matches nothing\n",
       listname, lineno);
+  } else if (!closed) {
+    fprintf(stderr,
+      "WARNING: missing closing quote in %s entry at selective instrumentation file line %d; using '%s'\n",
+      listname, lineno, result.c_str());
   }
   return result;
 }
@@ -789,6 +788,7 @@ bool processInstrumentationRequests(const char *fname)
           continue;
         }
         excludelist.push_back(parseListEntry(inbuf, "exclude list", lineno));
+        DPRINT("Passing %s as exclude string\n", excludelist.back().c_str());
       }
     }
 
@@ -811,6 +811,7 @@ bool processInstrumentationRequests(const char *fname)
           continue;
         }
         includelist.push_back(parseListEntry(inbuf, "include list", lineno));
+        DPRINT("Passing %s as include string\n", includelist.back().c_str());
       }
     }
 
@@ -829,6 +830,7 @@ bool processInstrumentationRequests(const char *fname)
           continue;
         }
         fileincludelist.push_back(parseListEntry(inbuf, "file include list", lineno));
+        DPRINT("Parsing inst. file: adding %s to file include list\n", fileincludelist.back().c_str());
       }
     }
 
