@@ -21,8 +21,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - [#64](https://github.com/ParaToolsInc/SALT-FM/issues/64) - exclude
     list entries starting with an unquoted wildcard were silently
     dropped as comments (reported by @giltirn).
-- `spack.yaml` lists its compilers as package externals, since Spack 1.3
-  removed the `compilers` section
+- `spack.yaml` lists its compilers as package externals, since Spack's
+  `develop` branch (the upcoming 1.3), which CI uses through
+  `setup-spack`, removed the `compilers` section; released Spack 0.23
+  and later already read compiler externals
   ([#65](https://github.com/ParaToolsInc/SALT-FM/pull/65) by @zbeekman).
 
 ## [0.4.1] - 2026-05-12
