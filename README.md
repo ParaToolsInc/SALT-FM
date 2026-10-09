@@ -1,4 +1,4 @@
-[![CI](https://github.com/ParaToolsInc/salt/actions/workflows/CI.yaml/badge.svg)](https://github.com/ParaToolsInc/salt/actions/workflows/CI.yaml)
+[![CI](https://github.com/ParaToolsInc/SALT-FM/actions/workflows/CI.yaml/badge.svg)](https://github.com/ParaToolsInc/SALT-FM/actions/workflows/CI.yaml)
 
 SALT-FM: An LLVM-based Source Analysis Toolkit for HPC
 ======================================================
@@ -53,7 +53,7 @@ Below are the steps required to get started using SALT-FM:
 ### 1. Clone this repo:
 
 ``` shell
-git clone --recursive https://github.com/ParaToolsInc/salt.git
+git clone --recursive https://github.com/ParaToolsInc/SALT-FM.git
 ```
 Including the `--recursive` flag will ensure you have the patches
 that are applied to the `llvm`/`clang` installed CMake files available to you.
@@ -220,7 +220,7 @@ that is unexpected.
 [salt-dev]: https://github.com/ParaToolsInc/salt-dev
 [posted to Docker Hub]: https://hub.docker.com/repository/docker/paratools/salt-dev/general
 [salt-dev Docker Hub]: https://hub.docker.com/repository/docker/paratools/salt-dev/general
-[CMakeLists.txt file]: https://github.com/ParaToolsInc/salt/blob/364be5ddd0043281669ace6697dfaf05fe724511/CMakeLists.txt#L353-L386
+[CMakeLists.txt file]: https://github.com/ParaToolsInc/SALT-FM/blob/364be5ddd0043281669ace6697dfaf05fe724511/CMakeLists.txt#L353-L386
 
 ## Funding Acknowledgement
 
