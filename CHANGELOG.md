@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-09
+
+- New C/C++ option `--tau_fabricate_unknown_types` (or
+  `SALT_FABRICATE_UNKNOWN_TYPES=1`), off by default, fabricates
+  declarations for unknown namespaces, class templates, and qualified
+  types, so functions whose signatures use types the parser cannot
+  resolve are still instrumented. Timer names use the spelled types
+  when a type is invalid, so unknown types no longer show up as `int`
+  ([#67](https://github.com/ParaToolsInc/SALT-FM/pull/67) by @nchaimov).
+- `--tau_instrument_inline` now takes effect; it was stored in a
+  per-translation-unit `static` in a header, so the instrumentor never
+  saw it
+  ([#69](https://github.com/ParaToolsInc/SALT-FM/pull/69) by @nchaimov):
+  - [#68](https://github.com/ParaToolsInc/SALT-FM/issues/68) - C++
+    methods defined inside the class body can now be instrumented with
+    `--tau_instrument_inline` (reported by @giltirn).
 - Selective instrumentation files keep the TAU/PDT syntax: a leading `#`
   inside `BEGIN_`/`END_` list blocks still starts a comment, and a
   pattern starting with the `#` wildcard must be quoted (`"#foo#"`).
@@ -232,8 +248,9 @@ tag, ending with the v0.2.0 SALT-FM milestone.
 - Build fixed under Clang 15 with stricter pedantic diagnostics
   ([#13](https://github.com/ParaToolsInc/salt/pull/13) by @khuck).
 
-[Unreleased]: https://github.com/ParaToolsInc/salt/compare/v0.4.1...HEAD
-[0.4.1]: https://github.com/ParaToolsInc/salt/compare/v0.4.0...v0.4.1
-[0.4.0]: https://github.com/ParaToolsInc/salt/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/ParaToolsInc/salt/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/ParaToolsInc/salt/releases/tag/v0.2.0
+[Unreleased]: https://github.com/ParaToolsInc/SALT-FM/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/ParaToolsInc/SALT-FM/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/ParaToolsInc/SALT-FM/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/ParaToolsInc/SALT-FM/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/ParaToolsInc/SALT-FM/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/ParaToolsInc/SALT-FM/releases/tag/v0.2.0

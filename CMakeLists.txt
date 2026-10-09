@@ -127,7 +127,7 @@ set(CMAKE_CXX_STANDARD 17)
 project(saltfm
   VERSION "${SALT_VERSION_BASE}"
   DESCRIPTION "An LLVM-based Source Analysis Toolkit for HPC"
-  HOMEPAGE_URL "https://github.com/ParaToolsInc/salt"
+  HOMEPAGE_URL "https://github.com/ParaToolsInc/SALT-FM"
   LANGUAGES CXX C)
 
 # Force libc++ for the Homebrew/Spack/source-built Clang we require on
