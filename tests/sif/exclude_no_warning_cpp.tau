@@ -1,0 +1,28 @@
+# The tab in the "#<TAB>comment" line and the trailing spaces after
+# "#noinst#" are deliberate (see .gitattributes and .editorconfig).
+BEGIN_EXCLUDE_LIST
+# exclude the noinst routine
+#	comment
+#
+#=====
+#"
+#'
+#+
+#,
+#/
+#;
+#?
+#\
+#^
+#`
+#{
+#|
+#}
+"#noinst#"   
+END_EXCLUDE_LIST
+BEGIN_FILE_INCLUDE_LIST
+#sif_excl_wildcard_prefix.cpp
+END_FILE_INCLUDE_LIST
+BEGIN_FILE_EXCLUDE_LIST
+#sif_excl_wildcard_prefix.cpp
+END_FILE_EXCLUDE_LIST
