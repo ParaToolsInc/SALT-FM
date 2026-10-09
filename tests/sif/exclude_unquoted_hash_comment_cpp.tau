@@ -1,0 +1,12 @@
+# Issue #64 reproducer: a routine exclude pattern that starts with the '#'
+# wildcard, written WITHOUT surrounding quotes. As in TAU and PDT, a leading
+# '#' starts a comment even inside a BEGIN_/END_ list, so the lines below are
+# ignored and nothing is excluded. Because they look like wildcards, the
+# instrumentor warns and suggests quoting them ("#noinst#").
+BEGIN_EXCLUDE_LIST
+#noinst#
+##noinst
+#*noinst
+#@noinst
+#énoinst
+END_EXCLUDE_LIST

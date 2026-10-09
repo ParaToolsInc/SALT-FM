@@ -1,0 +1,8 @@
+# Include-list counterpart of exclude_unquoted_hash_comment_f90.tau (issue
+# #64). Quoted, "#keep_routine" would whitelist only keep_routine. Unquoted,
+# the leading '#' starts a comment, so the include list stays empty and both
+# subprograms keep their timers. The instrumentor warns and suggests quoting
+# the line. Include-list whitelisting exists only in the Fortran frontend.
+BEGIN_INCLUDE_LIST
+#keep_routine
+END_INCLUDE_LIST

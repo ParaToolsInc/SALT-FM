@@ -1,6 +1,7 @@
 // Reproducer for https://github.com/ParaToolsInc/salt-fm/issues/64
 // (contributed by @giltirn): dosomething_noinst is excluded via the
-// leading-wildcard pattern #noinst# in the companion SIF file.
+// quoted leading-wildcard pattern "#noinst#" in the companion SIF files;
+// unquoted, a leading '#' starts a comment.
 #include <cstdio>
 
 #include<thread>

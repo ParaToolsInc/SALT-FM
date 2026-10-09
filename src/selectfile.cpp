@@ -686,10 +686,34 @@ void parseError(const char *message, char *line, int lineno, int column)
 //
 // } // END void parseInstrumentationCommand(char *line, int lineno)
 
-/* Strip optional surrounding quotes from a list-block entry. Quoting lets a
-   pattern start with '#' unambiguously in files shared with older TAU tools;
-   the closing quote is optional for TAU compatibility. Warns about quoting
-   that silently changes or ignores part of the entry. */
+/* True if the '#' comment line could be an unquoted leading-'#' pattern.
+   Errs toward warning: only end of line, whitespace and these punctuation
+   characters stay quiet, since they make comment decoration or rulers
+   ('#=====', '#////', '#|') and are implausible at the start of a routine
+   pattern: " ' + , / ; = ? \ ^ ` { | }. Anything else, including
+   letters, digits, other punctuation and bytes >= 0x80, warns. */
+static bool looksLikeUnquotedPattern(const char *line)
+{
+  const unsigned char c = static_cast<unsigned char>(line[1]);
+  return c != '\0' && !isspace(c) && strchr("\"'+,/;=?\\^`{|}", c) == nullptr;
+}
+
+/* A leading '#' starts a comment even inside list blocks (TAU/PDT syntax).
+   In routine lists, where '#' is also the wildcard, warn when the comment
+   looks like an unquoted leading-'#' pattern. */
+static void warnIfUnquotedWildcard(const char *line, const char *listname, int lineno)
+{
+  if (looksLikeUnquotedPattern(line)) {
+    fprintf(stderr,
+      "WARNING: '%s' at selective instrumentation file line %d treated as a comment in %s. Quote it (\"%s\") to use it as a wildcard\n",
+      line, lineno, listname, line);
+  }
+}
+
+/* Strip optional surrounding quotes from a list-block entry. Quoting is how
+   a pattern starts with the '#' wildcard, since a bare leading '#' starts a
+   comment; the closing quote is optional for TAU compatibility. Warns about
+   quoting that silently changes or ignores part of the entry. */
 static std::string parseListEntry(const char *entry, const char *listname, int lineno)
 {
   std::string result(entry);
@@ -757,8 +781,10 @@ bool processInstrumentationRequests(const char *fname)
           break; /* Found the end of exclude list. */
         }
 
-        /* Inside a list block '#' is the wildcard, not a comment marker
-           (issue #64; matches TAU's LLVM plugin). Only blank lines skip. */
+        if (inbuf[0] == '#') {
+          warnIfUnquotedWildcard(inbuf, "exclude list", lineno);
+          continue;
+        }
         if (inbuf[0] == '\0') {
           continue;
         }
@@ -777,7 +803,10 @@ bool processInstrumentationRequests(const char *fname)
       	if (strcmp(inbuf, END_INCLUDE_TOKEN) == 0) {
           break; /* Found the end of exclude list. */
         }
-        /* '#' is the wildcard inside list blocks, not a comment marker. */
+        if (inbuf[0] == '#') {
+          warnIfUnquotedWildcard(inbuf, "include list", lineno);
+          continue;
+        }
         if (inbuf[0] == '\0') {
           continue;
         }
@@ -796,8 +825,7 @@ bool processInstrumentationRequests(const char *fname)
       	if (strcmp(inbuf, END_FILE_INCLUDE_TOKEN) == 0) {
           break; /* Found the end of file include list. */
         }
-        /* '#' is the wildcard inside list blocks, not a comment marker. */
-        if (inbuf[0] == '\0') {
+        if ((inbuf[0] == '#') || (inbuf[0] == '\0')) {
           continue;
         }
         fileincludelist.push_back(parseListEntry(inbuf, "file include list", lineno));
@@ -815,8 +843,7 @@ bool processInstrumentationRequests(const char *fname)
       	if (strcmp(inbuf, END_FILE_EXCLUDE_TOKEN) == 0) {
           break; /* Found the end of file exclude list. */
         }
-        /* '#' is the wildcard inside list blocks, not a comment marker. */
-        if (inbuf[0] == '\0') {
+        if ((inbuf[0] == '#') || (inbuf[0] == '\0')) {
           continue;
         }
         fileexcludelist.push_back(parseListEntry(inbuf, "file exclude list", lineno));

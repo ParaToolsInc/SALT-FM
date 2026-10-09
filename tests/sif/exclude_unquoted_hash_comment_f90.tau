@@ -1,0 +1,7 @@
+# Unquoted twin of exclude_wildcard_routine_f90.tau (issue #64): a leading
+# '#' starts a comment even inside a list block, so "#routine" is ignored,
+# nothing is excluded and both subprograms keep their timers. The
+# instrumentor warns and suggests quoting the line to use it as a wildcard.
+BEGIN_EXCLUDE_LIST
+#routine
+END_EXCLUDE_LIST

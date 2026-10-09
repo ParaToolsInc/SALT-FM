@@ -1,7 +1,6 @@
 # Wildcard "#routine" should match both keep_routine and excluded_routine
 # (kleene-star # at the front matches the leading prefix).
-# Quoting is optional since issue #64; quoted form kept to lock PDT-style
-# support (unquoted coverage lives in the *_unquoted_* tests).
+# The pattern is quoted because '#' at column 0 is the SIF comment marker.
 BEGIN_EXCLUDE_LIST
 "#routine"
 END_EXCLUDE_LIST
