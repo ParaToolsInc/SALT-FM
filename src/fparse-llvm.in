@@ -289,6 +289,8 @@ cmd=(flang-new
     -plugin salt-instrument
     -module-suffix "${_SALT_MOD_SUFFIX}"
     -I"${_SALT_INC_DIR}"
+    # Flang 23+ resolves `use, intrinsic` only from intrinsic module paths
+    -fintrinsic-modules-path "${_SALT_INC_DIR}"
     "${input_file}"
     -o "${output_file}"
     ${args[@]+"${args[@]}"})

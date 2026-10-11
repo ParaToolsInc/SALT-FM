@@ -83,6 +83,16 @@ limitations under the License.
                     c.u);
 #endif
             },
+#if LLVM_VERSION_MAJOR >= 23
+            [&](const Fortran::parser::OmpSectionDirective &c) -> std::optional<
+        Fortran::parser::SourcePosition> {
+                return locationFromSource(parsing, c.source, end);
+            },
+            [&](const Fortran::parser::OmpUtilityDirective &c) -> std::optional<
+        Fortran::parser::SourcePosition> {
+                return locationFromSource(parsing, c.source, end);
+            },
+#else
             [&](const Fortran::parser::OpenMPSectionConstruct &c) -> std::optional<
         Fortran::parser::SourcePosition> {
                 const Fortran::parser::CharBlock &source{c.source};
@@ -93,6 +103,7 @@ limitations under the License.
         Fortran::parser::SourcePosition> {
                 return locationFromSource(parsing, c.source, end);
             },
+#endif
 #endif
         },
         construct.u);
@@ -155,7 +166,9 @@ limitations under the License.
          common::Indirection<OpenACCConstruct>
          common::Indirection<AccEndCombinedDirective>
          common::Indirection<OpenMPConstruct>
-         common::Indirection<OmpEndLoopDirective>
+         common::Indirection<OpenMPMisplacedEndDirective>  (LLVM >= 22)
+         common::Indirection<OpenMPInvalidDirective>       (LLVM >= 22)
+         common::Indirection<OmpEndLoopDirective>          (LLVM < 22)
          common::Indirection<CUFKernelDoConstruct>
     */
     return std::visit(
@@ -169,6 +182,11 @@ limitations under the License.
                 return locationFromSource(parsing, c.value().source, end);
             },
             [&](const Fortran::common::Indirection<Fortran::parser::OpenMPInvalidDirective> &c) ->
+        std::optional<Fortran::parser::SourcePosition> {
+                return locationFromSource(parsing, c.value().source, end);
+            },
+#else
+            [&](const Fortran::common::Indirection<Fortran::parser::OmpEndLoopDirective> &c) ->
         std::optional<Fortran::parser::SourcePosition> {
                 return locationFromSource(parsing, c.value().source, end);
             },
@@ -186,10 +204,6 @@ limitations under the License.
                 }
                 return locationFromSource(parsing,
                     std::get<Fortran::parser::CUFKernelDoConstruct::Directive>(c.value().t).source, end);
-            },
-            [&](const Fortran::common::Indirection<Fortran::parser::OmpEndLoopDirective> &c) ->
-        std::optional<Fortran::parser::SourcePosition> {
-                return locationFromSource(parsing, c.value().source, end);
             },
             [&](const Fortran::common::Indirection<Fortran::parser::OpenMPConstruct> &c) ->
         std::optional<Fortran::parser::SourcePosition> {

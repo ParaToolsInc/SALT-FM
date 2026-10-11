@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- The Flang plugin builds and runs with LLVM and Flang 23: it follows
+  the renamed OpenMP parse-tree nodes, finds the intrinsic modules in
+  the Clang resource directory, and passes them to the frontend as
+  intrinsic module paths
+  ([#70](https://github.com/ParaToolsInc/SALT-FM/issues/70)).
+
 ## [0.5.0] - 2026-10-09
 
 - New C/C++ option `--tau_fabricate_unknown_types` (or

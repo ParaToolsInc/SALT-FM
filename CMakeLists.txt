@@ -520,16 +520,42 @@ if(MLIR_FOUND AND Flang_FOUND)
     set(FLANG_INTRINSIC_MOD_DIR ${FLANG_INSTALL_PREFIX})
   endif()
   message(DEBUG "FLANG_INTRINSIC_MOD_DIR: ${FLANG_INTRINSIC_MOD_DIR}")
+  # Flang 23+ installs them in <resource-dir>/finclude/flang/<triple>,
+  # the path its driver passes to the frontend; ask the driver for both,
+  # preferring the one installed with the Flang package found above.
+  find_program(_salt_flang_driver NAMES flang-new flang
+    PATHS "${FLANG_INSTALL_PREFIX}/bin" "${LLVM_TOOLS_BINARY_DIR}"
+    NO_DEFAULT_PATH NO_CACHE)
+  if(NOT _salt_flang_driver)
+    find_program(_salt_flang_driver NAMES flang-new flang NO_CACHE)
+  endif()
+  if(_salt_flang_driver)
+    execute_process(COMMAND ${_salt_flang_driver} -print-resource-dir
+      OUTPUT_VARIABLE _salt_flang_resource_dir
+      OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    execute_process(COMMAND ${_salt_flang_driver} -print-target-triple
+      OUTPUT_VARIABLE _salt_flang_triple
+      OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+  endif()
+  message(STATUS "Flang driver for intrinsic modules: ${_salt_flang_driver}")
+  if(_salt_flang_resource_dir AND _salt_flang_triple)
+    set(_salt_flang_mod_hint
+      "${_salt_flang_resource_dir}/finclude/flang/${_salt_flang_triple}")
+  endif()
   find_path(FLANG_INTRINSIC_MODS
     NAMES
       "ISO_Fortran_env.mod"
       "iso_fortran_env.mod"
       "ISO_fortran_env.mod"
       "iso_Fortran_env.mod"
-    HINTS ${FLANG_INCLUDE_DIRS}
+    HINTS ${FLANG_INCLUDE_DIRS} ${_salt_flang_mod_hint}
     PATH_SUFFIXES "flang" "${CMAKE_INSTALL_INCLUDEDIR}/flang"
     REQUIRED
   )
+  unset(_salt_flang_driver)
+  unset(_salt_flang_resource_dir)
+  unset(_salt_flang_triple)
+  unset(_salt_flang_mod_hint)
   message(STATUS "FLANG_INTRINSIC_MODS_DIR: ${FLANG_INTRINSIC_MODS}")
 
   # Get a list of intrinsic module files that we will need to copy and change
@@ -1967,6 +1993,52 @@ if(TEST_FORTRAN)
       LABELS "lang:Fortran;phase:check"
     )
   endforeach()
+
+  # OpenMP constructs opening a procedure body: with -fopenmp the
+  # plugin takes the start line from the construct's parse-tree node,
+  # so the timer start must sit directly above each listed directive.
+  function(_salt_add_omp_start_tests src)
+    get_filename_component(_base ${src} NAME_WLE)
+    add_test(NAME instrument_${src}
+      COMMAND
+        ./${CMAKE_INSTALL_BINDIR}/saltfm -fopenmp
+        ${CMAKE_SOURCE_DIR}/tests/fortran/${src}
+    )
+    set(required_files
+      "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm"
+      "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm")
+    set_tests_properties(instrument_${src}
+      PROPERTIES
+      REQUIRED_FILES "${required_files}"
+      ENVIRONMENT "SALT_FORTRAN_VERBOSE=1"
+      LABELS "lang:Fortran;phase:instrument"
+      PASS_REGULAR_EXPRESSION "SALT Instrumentor Plugin finished"
+      FAIL_REGULAR_EXPRESSION "ERROR:"
+    )
+    foreach(directive IN LISTS ARGN)
+      string(REPLACE " " "_" _name "${directive}")
+      string(CONCAT _start_above_directive
+        "TAU_PROFILE_START\\(tauProfileTimer\\)[\r\n]+"
+        "#line [0-9]+ \"[^\"]*\"[\r\n]+"
+        " *!\\$omp ${directive}[\r\n]")
+      add_test(NAME check_omp_start_${_name}
+        COMMAND ${CMAKE_COMMAND} -E cat ${CMAKE_BINARY_DIR}/${_base}.inst.F90
+      )
+      set_tests_properties(check_omp_start_${_name}
+        PROPERTIES
+        PASS_REGULAR_EXPRESSION "${_start_above_directive}"
+        DEPENDS instrument_${src}
+        LABELS "lang:Fortran;phase:check"
+      )
+    endforeach()
+  endfunction()
+
+  _salt_add_omp_start_tests(omp-first-construct.f90
+    "parallel" "parallel do" "sections" "barrier" "critical" "atomic update")
+  # Flang 19 does not parse the `nothing` utility directive.
+  if(LLVM_VERSION_MAJOR GREATER_EQUAL 20)
+    _salt_add_omp_start_tests(omp-nothing.f90 "nothing")
+  endif()
 
   set(SALT_FORTRAN_COMPILERS_TO_TEST gfortran flang-new)
 
