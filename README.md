@@ -23,6 +23,7 @@ The same images are also published to [Docker Hub][salt-dev Docker Hub] under th
 | 20                 | `ghcr.io/paratoolsinc/salt-dev:1.4` | `paratools/salt-dev:1.4`  |
 | 21                 | `ghcr.io/paratoolsinc/salt-dev:1.5` | `paratools/salt-dev:1.5`  |
 | 22                 | `ghcr.io/paratoolsinc/salt-dev:1.6` | `paratools/salt-dev:1.6`  |
+| 23                 | `ghcr.io/paratoolsinc/salt-dev:1.7` | `paratools/salt-dev:1.7`  |
 
 ## Getting Started
 
@@ -105,7 +106,7 @@ then you may add `-G Ninja` to the penultimate line above:
 cmake -Wdev -Wdeprecated -S . -B build -G Ninja
 ```
 
-#### macOS (Homebrew LLVM 22)
+#### macOS (Homebrew LLVM 23)
 
 Apple's bundled clang does not ship `flang`. Install the Homebrew formulae
 ([instructions](https://formulae.brew.sh/formula/llvm) and
@@ -130,8 +131,7 @@ CMake auto-detects the rest:
 
 - `CMAKE_PREFIX_PATH` is seeded from the active C++ compiler's prefix,
   `llvm-config`, and `flang-new` (no Homebrew/Spack/conda queries) so
-  `find_package(LLVM)` and `find_package(Flang)` resolve without
-  `-DCMAKE_PREFIX_PATH=...`.
+  `find_package(LLVM)` resolves without `-DCMAKE_PREFIX_PATH=...`.
 - `CMAKE_OSX_SYSROOT` falls back to the active Xcode SDK; you do not
   need to pass it explicitly.
 - A configure-time `try_compile` of `<ryml_all.hpp>` with the resolved

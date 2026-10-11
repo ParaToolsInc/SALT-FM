@@ -16,6 +16,8 @@ jobs:
             image: ghcr.io/paratoolsinc/salt-dev:1.5
           - llvm: 22
             image: ghcr.io/paratoolsinc/salt-dev:1.6
+          - llvm: 23
+            image: ghcr.io/paratoolsinc/salt-dev:1.7
     container:
       image: ${{ matrix.image }}
     steps:

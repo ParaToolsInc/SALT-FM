@@ -7,7 +7,7 @@ Use American English spelling in code, comments, docs and commit messages.
 Update `README.md` when the behavior it describes changes, and note user-visible changes under `## [Unreleased]` in `CHANGELOG.md`.
 Write code test-first, red-green-refactor: add a failing test and see it fail, write the least code to pass it, then refactor with the suite green; only push green commits.
 Tests are ctest cases defined in `CMakeLists.txt`, with sources and fixtures under `tests/`.
-Mirror CI locally: run the jobs in `.github/workflows/` with the same commands and flags. The Linux matrix (`CI.yaml`, LLVM 19-22 with TAU in `salt-dev` containers) needs Docker; without it, say it was not reproduced.
+Mirror CI locally: run the jobs in `.github/workflows/` with the same commands and flags. The Linux matrix (`CI.yaml`, LLVM 19-23 with TAU in `salt-dev` containers) needs Docker; without it, say it was not reproduced.
 
 ## Git
 
