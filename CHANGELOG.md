@@ -11,6 +11,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the Clang resource directory, and passes them to the frontend as
   intrinsic module paths
   ([#70](https://github.com/ParaToolsInc/SALT-FM/issues/70)).
+- CI builds and tests against LLVM 23 in
+  `ghcr.io/paratoolsinc/salt-dev:1.7`, and the README lists that image
+  in its supported-versions table
+  ([#70](https://github.com/ParaToolsInc/SALT-FM/issues/70)).
 
 ## [0.5.0] - 2026-10-09
 
