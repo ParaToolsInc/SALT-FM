@@ -116,6 +116,9 @@ Apple's bundled clang does not ship `flang`. Install the Homebrew formulae
 brew install llvm flang ninja
 ```
 
+Homebrew `flang` ships no CMake package, so SALT-FM builds without the
+Flang plugin (C/C++ only).
+
 Configure and build the same way as on Linux, pointing the compiler at
 the Homebrew LLVM clang so `flang-new` is reachable:
 

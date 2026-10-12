@@ -1859,6 +1859,11 @@ if(TEST_FORTRAN)
     separate-module-procedure.f90
     pure-and-elemental.f90
   )
+  # Flang 19-22 do not find `use, intrinsic` modules with SALT-FM's
+  # module suffix, even through -fintrinsic-modules-path.
+  if(LLVM_VERSION_MAJOR GREATER_EQUAL 23)
+    list(APPEND FORTRAN_TESTS_SOURCES_LIST use-intrinsic.f90)
+  endif()
 
   # Sources that use obsolescent (but still standard) features
   # require relaxed compile flags: -Wpedantic emits warnings the
