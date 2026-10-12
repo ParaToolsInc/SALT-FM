@@ -15,6 +15,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `ghcr.io/paratoolsinc/salt-dev:1.7`, and the README lists that image
   in its supported-versions table
   ([#70](https://github.com/ParaToolsInc/SALT-FM/issues/70)).
+- With LLVM 19 to 22, SALT-FM now instruments Fortran sources that use
+  `use, intrinsic :: <module>` or `use omp_lib`, and SALT-FM's copies
+  of the compiler modules no longer hide a user module of the same
+  name, such as a user `iso_fortran_env`
+  ([#74](https://github.com/ParaToolsInc/SALT-FM/issues/74)).
 
 ## [0.5.0] - 2026-10-09
 

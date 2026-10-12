@@ -61,6 +61,10 @@ limitations under the License.
 #include "flang/Common/indirection.h"
 #include "flang/Semantics/symbol.h"
 #include "flang/Evaluate/tools.h"
+#include "llvm/Config/llvm-config.h"
+#if LLVM_VERSION_MAJOR < 23
+#include "flang/Frontend/CompilerInstance.h"
+#endif
 
 #include "flang_instrumentation_constants.hpp"
 #include "selectfile.hpp"
@@ -1027,6 +1031,37 @@ namespace salt::fortran {
             verboseStream() << "Exclude list:\n";
             std::for_each(excludelist.cbegin(), excludelist.cend(), printStr);
         }
+
+#if LLVM_VERSION_MAJOR < 23
+        /**
+         * Runs the frontend steps before executeAction(). Flang 19-22 put
+         * the -fintrinsic-modules-path directories only in the ordinary
+         * module search, so `use, intrinsic` cannot find SALT-FM's module
+         * copies, and the copies hide user modules of the same name. Add
+         * the directories to the intrinsic module directories first, as
+         * Flang 23 does.
+         */
+        bool beginSourceFileAction() override {
+            auto &ci{getInstance()};
+            auto &invoc{ci.getInvocation()};
+            const auto &extra{invoc.getPreprocessorOpts().searchDirectoriesFromIntrModPath};
+#if LLVM_VERSION_MAJOR >= 21
+            // runSemanticChecks() makes a new context from these options
+            auto &dirs{invoc.getFortranOpts().intrinsicModuleDirectories};
+            dirs.insert(dirs.begin(), extra.begin(), extra.end());
+#else
+            // LLVM 19, 20: the context exists before this action runs
+            auto &ctx{ci.getSemanticsContext()};
+            std::vector<std::string> dirs{extra};
+            dirs.insert(dirs.end(), ctx.intrinsicModuleDirectories().begin(),
+                        ctx.intrinsicModuleDirectories().end());
+            ctx.set_intrinsicModuleDirectories(dirs);
+#endif
+            // Same steps as PrescanAndSemaAction::beginSourceFileAction (private)
+            return runPrescan() && runParse(/*emitMessages=*/false) &&
+                   runSemanticChecks() && generateRtTypeTables();
+        }
+#endif
 
         /**
          * This is the entry point for the plugin.

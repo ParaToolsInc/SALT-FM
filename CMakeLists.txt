@@ -1859,12 +1859,9 @@ if(TEST_FORTRAN)
     submodule_test.f90
     separate-module-procedure.f90
     pure-and-elemental.f90
+    use-intrinsic.f90
+    use-intrinsic-c-binding.f90
   )
-  # Flang 19-22 do not find `use, intrinsic` modules with SALT-FM's
-  # module suffix, even through -fintrinsic-modules-path.
-  if(LLVM_VERSION_MAJOR GREATER_EQUAL 23)
-    list(APPEND FORTRAN_TESTS_SOURCES_LIST use-intrinsic.f90)
-  endif()
 
   # Sources that use obsolescent (but still standard) features
   # require relaxed compile flags: -Wpedantic emits warnings the
@@ -2045,6 +2042,56 @@ if(TEST_FORTRAN)
   if(LLVM_VERSION_MAJOR GREATER_EQUAL 20)
     _salt_add_omp_start_tests(omp-nothing.f90 "nothing")
   endif()
+  _salt_add_omp_start_tests(use-omp-lib.f90)
+
+  # SALT-FM's copies of the compiler modules must not hide a user
+  # module of the same name, whether its directory is given with -I
+  # or -J. The fixture writes the user module with SALT-FM's suffix
+  # into a fresh directory; Flang does not create the -J directory.
+  set(_user_mod_dir ${CMAKE_BINARY_DIR}/user-mod)
+  set(_required_files
+    "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm"
+    "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm")
+  add_test(NAME rm_old_user_mod_dir
+    COMMAND ${CMAKE_COMMAND} -E rm -rf ${_user_mod_dir})
+  add_test(NAME mkdir_user_mod_dir
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${_user_mod_dir})
+  add_test(NAME make_user_iso_fortran_env_mod
+    COMMAND
+      ./${CMAKE_INSTALL_BINDIR}/saltfm -J${_user_mod_dir}
+      --tau_output=${_user_mod_dir}/user-iso-fortran-env.inst.F90
+      ${CMAKE_SOURCE_DIR}/tests/fortran/user-iso-fortran-env.f90)
+  set_tests_properties(
+    rm_old_user_mod_dir mkdir_user_mod_dir make_user_iso_fortran_env_mod
+    PROPERTIES
+    FIXTURES_SETUP user_iso_fortran_env_mod
+    LABELS "lang:Fortran;phase:setup")
+  set_tests_properties(mkdir_user_mod_dir PROPERTIES
+    DEPENDS rm_old_user_mod_dir)
+  set_tests_properties(make_user_iso_fortran_env_mod PROPERTIES
+    DEPENDS mkdir_user_mod_dir
+    REQUIRED_FILES "${_required_files}"
+    ENVIRONMENT "SALT_FORTRAN_VERBOSE=1"
+    PASS_REGULAR_EXPRESSION "SALT Instrumentor Plugin finished")
+  # Instruments `src` with the user module directory given by `flag`.
+  function(_salt_add_user_mod_test src flag)
+    get_filename_component(base ${src} NAME_WLE)
+    set(name instrument_${base}${flag})
+    add_test(NAME ${name}
+      COMMAND
+        ./${CMAKE_INSTALL_BINDIR}/saltfm ${flag}${_user_mod_dir}
+        --tau_output=${base}${flag}.inst.F90
+        ${CMAKE_SOURCE_DIR}/tests/fortran/${src})
+    set_tests_properties(${name} PROPERTIES
+      FIXTURES_REQUIRED user_iso_fortran_env_mod
+      REQUIRED_FILES "${_required_files}"
+      ENVIRONMENT "SALT_FORTRAN_VERBOSE=1"
+      LABELS "lang:Fortran;phase:instrument"
+      PASS_REGULAR_EXPRESSION "SALT Instrumentor Plugin finished")
+  endfunction()
+  _salt_add_user_mod_test(use-user-iso-fortran-env.f90 -I)
+  _salt_add_user_mod_test(use-user-iso-fortran-env.f90 -J)
+  _salt_add_user_mod_test(use-mixed-nature.f90 -I)
 
   set(SALT_FORTRAN_COMPILERS_TO_TEST gfortran flang-new)
 
