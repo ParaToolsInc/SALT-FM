@@ -24,6 +24,9 @@ set -o pipefail
 readonly _SALTFM_PLUGIN_SO="libsalt-flang-plugin@CMAKE_SHARED_LIBRARY_SUFFIX@"
 readonly _VERSION="@SALT_VERSION_FULL@"
 readonly _SALT_MOD_SUFFIX=@SALT_MOD_SUFFIX@
+# Flang driver and LLVM major version that SALT-FM was built with
+readonly _RECORDED_FLANG_EXE="@salt_flang_driver@"
+readonly _LLVM_VERSION_MAJOR=@LLVM_VERSION_MAJOR@
 
 # get the absolute path of this script
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,6 +52,7 @@ Generic Options:
 TAU instrumentor options:
 
   --config_file=<filename>     - Specify path to SALT-FM configuration YAML file
+  --flang_exe=<path>           - Flang driver to run (default: \$SALT_FLANG_EXE, else the one SALT-FM was built with)
   --tau_output=<filename>      - Specify name of output instrumented file
   --tau_select_file=<filename> - Provide a selective instrumentation specification file
   --show                       - Print the command line that would be executed by the wrapper script
@@ -161,16 +165,18 @@ expecting_arg_to_forward=false
 expecting_output_file=false
 expecting_config_file=false
 expecting_select_file=false
+expecting_flang_exe=false
+unset flang_exe
 show=false
+version=false
 for arg in "$@"; do
     #echo "working on arg: $arg"
     if [[ $arg == --help || $arg == -h ]]; then
         usage
         exit 0
     elif [[ $arg == --version ]]; then
-        echo "SALT-FM Version: ${_VERSION}"
-        flang-new --version
-        exit 0
+        version=true
+        shift || true
     elif $expecting_arg_to_forward; then
         args+=("$arg")
         expecting_arg_to_forward=false
@@ -191,6 +197,16 @@ for arg in "$@"; do
         expecting_select_file=false
         shift
         #echo "args remaining: $*"
+    elif $expecting_flang_exe; then
+        flang_exe="$arg"
+        expecting_flang_exe=false
+        shift
+    elif [[ $arg == --flang_exe ]]; then
+        expecting_flang_exe=true
+        shift || true
+    elif [[ $arg == --flang_exe=* ]]; then
+        flang_exe="${arg#--flang_exe=}"
+        shift || true
     elif [[ $arg == --tau_output ]]; then
         expecting_output_file=true
         shift || true
@@ -250,6 +266,52 @@ for arg in "$@"; do
     fi
 done
 
+if $expecting_flang_exe || [[ -n ${flang_exe+set} && -z ${flang_exe} ]]; then
+    echo "ERROR: --flang_exe needs a path" >&2
+    exit 1
+fi
+# Select the Flang driver: --flang_exe, then SALT_FLANG_EXE, then the
+# driver SALT-FM was built with, then flang or flang-new on PATH
+flang_exe_override="${flang_exe:-${SALT_FLANG_EXE:-}}"
+flang_exe="${flang_exe_override}"
+if [[ -z "${flang_exe}" ]]; then
+    if [[ -f "${_RECORDED_FLANG_EXE}" && -x "${_RECORDED_FLANG_EXE}" ]]; then
+        flang_exe="${_RECORDED_FLANG_EXE}"
+    else
+        # Empty when configure found no driver
+        if [[ -n "${_RECORDED_FLANG_EXE}" ]]; then
+            echo "WARNING: recorded Flang driver '${_RECORDED_FLANG_EXE}' is missing" >&2
+            echo "or not executable; searching PATH for flang and flang-new." >&2
+        fi
+        flang_exe="$(type -P flang || type -P flang-new || true)"
+    fi
+fi
+if [[ -z "${flang_exe}" ]]; then
+    echo "ERROR: no flang or flang-new on PATH. Select a Flang ${_LLVM_VERSION_MAJOR} driver" >&2
+    echo "with --flang_exe=<path> or SALT_FLANG_EXE." >&2
+    exit 1
+fi
+# The plugin only loads into the LLVM major version it was built with
+flang_version="$("${flang_exe}" --version || true)"
+flang_major=unknown
+if [[ ${flang_version%%$'\n'*} =~ version\ ([0-9]+)\. ]]; then
+    flang_major="${BASH_REMATCH[1]}"
+fi
+if [[ ${flang_major} != "${_LLVM_VERSION_MAJOR}" ]]; then
+    echo "ERROR: Flang driver '${flang_exe}' has LLVM major version ${flang_major}," >&2
+    echo "but SALT-FM was built with LLVM ${_LLVM_VERSION_MAJOR}. Select a Flang ${_LLVM_VERSION_MAJOR} driver with" >&2
+    echo "--flang_exe=<path> or SALT_FLANG_EXE." >&2
+    exit 1
+fi
+if [[ ${flang_exe_override##*/} == flang-new && ${flang_major} -ge 20 ]]; then
+    echo "Note: flang-new is an old name for the Flang ${flang_major} driver; use flang" >&2
+fi
+if $version; then
+    echo "SALT-FM Version: ${_VERSION}"
+    echo "${flang_version}"
+    exit 0
+fi
+
 #echo "args: \"${args[*]}\""
 # print the argument list
 if [[ -z "${input_file:-}" ]]; then
@@ -283,7 +345,7 @@ echo "output file: ${output_file:-\"<None given>\" }"
 echo "Remaining Arguments: ${args[*]:-}"
 
 # This script invokes an LLVM flang frontend plugin to parse and instrument Fortran code
-cmd=(flang-new
+cmd=("${flang_exe}"
     -fc1
     -load "${SALT_PLUGIN_SO}"
     -plugin salt-instrument

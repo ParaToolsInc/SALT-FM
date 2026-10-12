@@ -48,6 +48,7 @@ Generic SALT-FM Options:
 TAU instrumentor options:
 
   --config_file=<filename>      - Specify path to SALT-FM configuration YAML file
+  --flang_exe=<path>            - Flang driver for Fortran (default: \$SALT_FLANG_EXE, else the one SALT-FM was built with)
   --tau_fabricate_unknown_types - Fabricate declarations for unknown qualified names (default: false)
   --tau_instrument_inline       - Instrument inlined functions (default: false)
   --tau_output=<filename>       - Specify name of output instrumented file
@@ -99,11 +100,7 @@ for arg in "$@"; do
         "${_SCRIPT_DIR}/cparse-llvm" --help
         exit 0
     elif [[ $arg == --version ]]; then
-        echo "SALT-FM Version: ${_VERSION}"
-        if [[ -n "${tool:-}" ]]; then
-            "${_SCRIPT_DIR}/${tool}" --version
-        fi
-        exit 0
+        version=true
     elif [[ $arg == *.[Ff]90 || $arg == *.[Ff] || $arg == *.[Ff]03 ]]; then
         args+=("$arg")
         if [[ -z "${tool:-}" ]]; then
@@ -120,6 +117,17 @@ for arg in "$@"; do
         args+=("$arg")
     fi
 done
+
+if [[ "${version:-false}" == "true" ]]; then
+    echo "SALT-FM Version: ${_VERSION}"
+    if [[ "${tool:-}" == fparse-llvm ]]; then
+        # Forward the arguments so --flang_exe selects the driver
+        "${_SCRIPT_DIR}/${tool}" --version ${args[@]+"${args[@]}"}
+    elif [[ -n "${tool:-}" ]]; then
+        "${_SCRIPT_DIR}/${tool}" --version
+    fi
+    exit 0
+fi
 
 if [[ -z "${tool:-}" ]]; then
     echo "No source files provided, language not detected."

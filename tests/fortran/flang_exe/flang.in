@@ -1,0 +1,9 @@
+#!/bin/sh
+# Stub Flang driver that reports LLVM major version @_fx_major@ and
+# fails for anything else
+if [ "$1" = --version ]; then
+  echo "flang version @_fx_major@.0.0 (stub)"
+  exit 0
+fi
+echo "stub driver must not run: $0 $*" >&2
+exit 1
