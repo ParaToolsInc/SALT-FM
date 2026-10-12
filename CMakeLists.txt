@@ -523,11 +523,12 @@ if(MLIR_FOUND AND Flang_FOUND)
   # Flang 23+ installs them in <resource-dir>/finclude/flang/<triple>,
   # the path its driver passes to the frontend; ask the driver for both,
   # preferring the one installed with the Flang package found above.
-  find_program(_salt_flang_driver NAMES flang-new flang
+  find_program(_salt_flang_driver NAMES flang-new flang NAMES_PER_DIR
     PATHS "${FLANG_INSTALL_PREFIX}/bin" "${LLVM_TOOLS_BINARY_DIR}"
     NO_DEFAULT_PATH NO_CACHE)
   if(NOT _salt_flang_driver)
-    find_program(_salt_flang_driver NAMES flang-new flang NO_CACHE)
+    find_program(_salt_flang_driver NAMES flang-new flang NAMES_PER_DIR
+      NO_CACHE)
   endif()
   if(_salt_flang_driver)
     execute_process(COMMAND ${_salt_flang_driver} -print-resource-dir
