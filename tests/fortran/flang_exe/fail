@@ -1,0 +1,4 @@
+#!/bin/sh
+# Stub Flang driver that fails whenever it runs
+echo "stub driver must not run: $0 $*" >&2
+exit 1

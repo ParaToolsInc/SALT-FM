@@ -20,6 +20,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of the compiler modules no longer hide a user module of the same
   name, such as a user `iso_fortran_env`
   ([#74](https://github.com/ParaToolsInc/SALT-FM/issues/74)).
+- `fparse-llvm` runs the Flang driver that SALT-FM was configured with,
+  not the first `flang-new` on `PATH`, and stops with an error when the
+  driver's LLVM major version differs from the build's. If that driver
+  is missing, it warns and uses `flang` or `flang-new` from `PATH`. The
+  new `--flang_exe=<path>` option (also accepted by `saltfm`) and the
+  `SALT_FLANG_EXE` environment variable select another driver
+  ([#75](https://github.com/ParaToolsInc/SALT-FM/issues/75)).
 
 ## [0.5.0] - 2026-10-09
 

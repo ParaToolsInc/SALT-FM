@@ -553,7 +553,6 @@ if(MLIR_FOUND AND Flang_FOUND)
     PATH_SUFFIXES "flang" "${CMAKE_INSTALL_INCLUDEDIR}/flang"
     REQUIRED
   )
-  unset(_salt_flang_driver)
   unset(_salt_flang_resource_dir)
   unset(_salt_flang_triple)
   unset(_salt_flang_mod_hint)
@@ -632,10 +631,19 @@ if(MLIR_FOUND AND Flang_FOUND)
 
   install(TARGETS salt-flang-plugin DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
-  configure_file(
-    ${CMAKE_SOURCE_DIR}/src/fparse-llvm.in
+  # Configure fparse-llvm at `out`, recording Flang driver
+  # `salt_flang_driver` (nothing if configure found none); it runs that
+  # driver by default.
+  function(_salt_configure_fparse_llvm out salt_flang_driver)
+    if(NOT salt_flang_driver)
+      set(salt_flang_driver "")
+    endif()
+    configure_file(${CMAKE_SOURCE_DIR}/src/fparse-llvm.in ${out} @ONLY)
+  endfunction()
+  _salt_configure_fparse_llvm(
     ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm
-    @ONLY)
+    "${_salt_flang_driver}")
+  unset(_salt_flang_driver)
   install(PROGRAMS ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm
     TYPE BIN) # TYPE BIN installs into CMAKE_INSTALL_BINDIR
 
@@ -1881,6 +1889,169 @@ if(TEST_FORTRAN)
     LABELS "lang:Fortran;phase:smoke"
     PASS_REGULAR_EXPRESSION "USAGE"
   )
+
+  # Flang driver selection in fparse-llvm. Stub drivers in
+  # flang_exe/<kind>/{flang,flang-new}: `fail` fails whenever it runs,
+  # `match` and `other` report the build's LLVM major version and
+  # another one, then fail for anything but --version. `nodriver` holds
+  # only what fparse-llvm needs to start. fparse-llvm-no-driver and
+  # fparse-llvm-no-record are copies of fparse-llvm whose recorded driver
+  # is missing, or was not found at configure time.
+  set(_fx_dir ${CMAKE_BINARY_DIR}/flang_exe)
+  set(_fx_bin ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR})
+  set(_fx_src ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+  math(EXPR _fx_other "${LLVM_VERSION_MAJOR} + 1")
+  foreach(fx_name flang flang-new)
+    configure_file(${CMAKE_SOURCE_DIR}/tests/fortran/flang_exe/fail
+      ${_fx_dir}/fail/${fx_name} COPYONLY)
+    set(_fx_major ${LLVM_VERSION_MAJOR})
+    configure_file(${CMAKE_SOURCE_DIR}/tests/fortran/flang_exe/flang.in
+      ${_fx_dir}/match/${fx_name} @ONLY)
+    set(_fx_major ${_fx_other})
+    configure_file(${CMAKE_SOURCE_DIR}/tests/fortran/flang_exe/flang.in
+      ${_fx_dir}/other/${fx_name} @ONLY)
+  endforeach()
+  file(MAKE_DIRECTORY ${_fx_dir}/nodriver)
+  foreach(fx_name bash dirname)
+    find_program(_fx_tool ${fx_name} REQUIRED NO_CACHE)
+    file(CREATE_LINK ${_fx_tool} ${_fx_dir}/nodriver/${fx_name} SYMBOLIC)
+    unset(_fx_tool)
+  endforeach()
+  _salt_configure_fparse_llvm(${_fx_bin}/fparse-llvm-no-driver
+    ${_fx_dir}/missing/flang)
+  _salt_configure_fparse_llvm(${_fx_bin}/fparse-llvm-no-record
+    _salt_flang_driver-NOTFOUND)
+
+  # Add test `name` running ARGN whose output must match `pass` and
+  # must not match `fail`, with SALT_FLANG_EXE unset.
+  function(_salt_add_flang_exe_test name pass fail)
+    add_test(NAME ${name} COMMAND ${ARGN})
+    set_tests_properties(${name} PROPERTIES
+      PASS_REGULAR_EXPRESSION "${pass}"
+      FAIL_REGULAR_EXPRESSION "${fail}"
+      ENVIRONMENT_MODIFICATION "SALT_FLANG_EXE=unset:"
+      LABELS "lang:Fortran;phase:smoke")
+  endfunction()
+  set(_fx_stub_ran "stub driver must not run")
+  set(_fx_note "Note: [^\n]*flang-new[^\n]* flang")
+  set(_fx_match_cmd "cmd: [^ ]*/flang_exe/match/flang -fc1 ")
+
+  # Stubs earlier on PATH do not replace the recorded driver.
+  _salt_add_flang_exe_test(fparse_flang_exe_recorded
+    "SALT Instrumentor Plugin finished" "${_fx_stub_ran};WARNING: recorded;${_fx_note}"
+    ${_fx_bin}/fparse-llvm --tau_output=${_fx_dir}/recorded.inst.F90
+    ${_fx_src})
+  set_tests_properties(fparse_flang_exe_recorded PROPERTIES
+    ENVIRONMENT "SALT_FORTRAN_VERBOSE=1")
+  set_property(TEST fparse_flang_exe_recorded APPEND PROPERTY
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_fx_dir}/fail")
+
+  # A missing recorded driver warns and falls back to PATH.
+  string(CONCAT _fx_pass
+    "WARNING: [^\n]*'[^']*/flang_exe/missing/flang'.*"
+    "Running: /[^ ]*/flang(-new)? -fc1 .*"
+    "SALT Instrumentor Plugin finished")
+  _salt_add_flang_exe_test(fparse_flang_exe_missing_recorded
+    "${_fx_pass}" "ERROR"
+    ${_fx_bin}/fparse-llvm-no-driver --tau_output=${_fx_dir}/path.inst.F90
+    ${_fx_src})
+  set_tests_properties(fparse_flang_exe_missing_recorded PROPERTIES
+    ENVIRONMENT "SALT_FORTRAN_VERBOSE=1")
+
+  # A driver of another LLVM major version stops before it runs.
+  string(CONCAT _fx_pass
+    "ERROR: Flang driver '[^']*/flang_exe/other/flang' has LLVM major version "
+    "${_fx_other},\nbut SALT-FM was built with LLVM ${LLVM_VERSION_MAJOR}\\..*"
+    "--flang_exe=<path> or SALT_FLANG_EXE")
+  _salt_add_flang_exe_test(fparse_flang_exe_other_version
+    "${_fx_pass}" "${_fx_stub_ran};Running:"
+    ${_fx_bin}/fparse-llvm-no-driver --tau_output=${_fx_dir}/other.inst.F90
+    ${_fx_src})
+  set_property(TEST fparse_flang_exe_other_version APPEND PROPERTY
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_fx_dir}/other")
+
+  # So does a driver whose version cannot be read.
+  string(CONCAT _fx_pass
+    "ERROR: Flang driver '[^']*/flang_exe/fail/flang' has LLVM major version "
+    "unknown,\nbut SALT-FM was built with LLVM ${LLVM_VERSION_MAJOR}\\.")
+  _salt_add_flang_exe_test(fparse_flang_exe_unreadable_version
+    "${_fx_pass}" "cmd:"
+    ${_fx_bin}/fparse-llvm --show --flang_exe=${_fx_dir}/fail/flang
+    ${_fx_src})
+
+  # No recorded driver and none on PATH.
+  _salt_add_flang_exe_test(fparse_flang_exe_none_found
+    "ERROR: no flang or flang-new on PATH" "cmd:"
+    ${_fx_bin}/fparse-llvm-no-driver --show ${_fx_src})
+  set_tests_properties(fparse_flang_exe_none_found PROPERTIES
+    ENVIRONMENT "PATH=${_fx_dir}/nodriver")
+
+  # A driver configure did not find is not recorded: no warning.
+  _salt_add_flang_exe_test(fparse_flang_exe_no_record
+    "${_fx_match_cmd}" "WARNING: recorded"
+    ${_fx_bin}/fparse-llvm-no-record --show ${_fx_src})
+  set_property(TEST fparse_flang_exe_no_record APPEND PROPERTY
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_fx_dir}/match")
+
+  # --flang_exe (both forms, also through saltfm) and SALT_FLANG_EXE
+  # select the driver; the flag has priority.
+  _salt_add_flang_exe_test(fparse_flang_exe_flag
+    "${_fx_match_cmd}" "${_fx_stub_ran};${_fx_note}"
+    ${_fx_bin}/fparse-llvm --show --flang_exe=${_fx_dir}/match/flang
+    ${_fx_src})
+  _salt_add_flang_exe_test(fparse_flang_exe_flag_space
+    "${_fx_match_cmd}" "${_fx_stub_ran};${_fx_note}"
+    ${_fx_bin}/fparse-llvm --show --flang_exe ${_fx_dir}/match/flang
+    ${_fx_src})
+  _salt_add_flang_exe_test(saltfm_flang_exe_flag
+    "${_fx_match_cmd}" "${_fx_stub_ran};${_fx_note}"
+    ${_fx_bin}/saltfm --show --flang_exe=${_fx_dir}/match/flang ${_fx_src})
+  _salt_add_flang_exe_test(fparse_flang_exe_env
+    "${_fx_match_cmd}" "${_fx_stub_ran};${_fx_note}"
+    ${_fx_bin}/fparse-llvm --show ${_fx_src})
+  set_property(TEST fparse_flang_exe_env APPEND PROPERTY
+    ENVIRONMENT_MODIFICATION "SALT_FLANG_EXE=set:${_fx_dir}/match/flang")
+  _salt_add_flang_exe_test(fparse_flang_exe_flag_over_env
+    "${_fx_match_cmd}" "${_fx_stub_ran};ERROR"
+    ${_fx_bin}/fparse-llvm --show --flang_exe=${_fx_dir}/match/flang
+    ${_fx_src})
+  set_property(TEST fparse_flang_exe_flag_over_env APPEND PROPERTY
+    ENVIRONMENT_MODIFICATION "SALT_FLANG_EXE=set:${_fx_dir}/fail/flang")
+  # --flang_exe without a path stops.
+  _salt_add_flang_exe_test(fparse_flang_exe_flag_no_path
+    "ERROR: --flang_exe needs a path" "cmd:"
+    ${_fx_bin}/fparse-llvm --show ${_fx_src} --flang_exe)
+  _salt_add_flang_exe_test(fparse_flang_exe_flag_empty
+    "ERROR: --flang_exe needs a path" "cmd:"
+    ${_fx_bin}/fparse-llvm --show --flang_exe= ${_fx_src})
+  # --version reports the selected driver, wherever the flag is.
+  set(_fx_match_version
+    "flang version ${LLVM_VERSION_MAJOR}\\.0\\.0 \\(stub\\)")
+  _salt_add_flang_exe_test(fparse_flang_exe_version
+    "${_fx_match_version}" "${_fx_stub_ran}"
+    ${_fx_bin}/fparse-llvm --version --flang_exe=${_fx_dir}/match/flang)
+  _salt_add_flang_exe_test(saltfm_flang_exe_version
+    "${_fx_match_version}" "${_fx_stub_ran}"
+    ${_fx_bin}/saltfm --lang=fortran --version
+    --flang_exe ${_fx_dir}/match/flang)
+  _salt_add_flang_exe_test(saltfm_flang_exe_version_before
+    "ERROR: Flang driver '[^']*/flang_exe/fail/flang'" "flang version"
+    ${_fx_bin}/saltfm --lang=fortran --flang_exe=${_fx_dir}/fail/flang
+    --version)
+
+  # Since LLVM 20 the driver is `flang`; an override naming `flang-new`
+  # gets a note.
+  if(LLVM_VERSION_MAJOR GREATER_EQUAL 20)
+    _salt_add_flang_exe_test(fparse_flang_exe_flang_new_note
+      "${_fx_note}" "${_fx_stub_ran}"
+      ${_fx_bin}/fparse-llvm --show --flang_exe=${_fx_dir}/match/flang-new
+      ${_fx_src})
+    _salt_add_flang_exe_test(fparse_flang_exe_env_flang_new_note
+      "${_fx_note}" "${_fx_stub_ran}"
+      ${_fx_bin}/fparse-llvm --show ${_fx_src})
+    set_property(TEST fparse_flang_exe_env_flang_new_note APPEND PROPERTY
+      ENVIRONMENT_MODIFICATION "SALT_FLANG_EXE=set:${_fx_dir}/match/flang-new")
+  endif()
 
   foreach(test_source IN LISTS FORTRAN_TESTS_SOURCES_LIST)
     add_test(NAME instrument_${test_source}
