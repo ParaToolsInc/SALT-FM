@@ -836,7 +836,7 @@ set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_CLEAN_FILES
 
 # Fixture <sub>_dir creates test-output/<sub>, so `ctest -R <test>` works
 # in a fresh build directory. The TAU and user-mod fixtures are below.
-set(_salt_test_output_subdirs instrument sif fabricate)
+set(_salt_test_output_subdirs instrument sif fabricate output_error)
 if(TEST_FORTRAN)
   list(APPEND _salt_test_output_subdirs flang_exe)
 endif()
@@ -1067,6 +1067,47 @@ _salt_in_test_output(instrument
   instrument_inline_off check_inline_off_skips_inline
   instrument_inline_on check_inline_on_instruments_method
   check_inline_on_instruments_free_fn)
+
+# saltfm must fail with an error naming its output file when it cannot
+# write it. These failures hit root too, so the tests run in CI's
+# root containers. The setup makes each default output name in
+# test-output/output_error a directory, replacing any stray file, and
+# removes `missing/`.
+add_test(NAME make_output_error_paths
+  COMMAND sh -c "rm -rf missing hello.inst.c c11test.inst.cpp hello.inst.F90 &&
+    mkdir hello.inst.c c11test.inst.cpp hello.inst.F90")
+set_tests_properties(make_output_error_paths PROPERTIES
+  FIXTURES_SETUP output_error_paths
+  LABELS "phase:setup")
+_salt_in_test_output(output_error make_output_error_paths)
+# Adds output_error_<name>: saltfm `ARGN` run in test-output/output_error
+# must fail, naming `file`.
+function(_salt_add_output_error_test name file label)
+  add_test(NAME output_error_${name}
+    COMMAND ${CMAKE_COMMAND} -DFILE=${file}
+      -P ${CMAKE_SOURCE_DIR}/tests/expect_output_error.cmake --
+      ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm ${ARGN})
+  set_tests_properties(output_error_${name} PROPERTIES
+    FIXTURES_REQUIRED output_error_paths
+    LABELS "${label};phase:instrument")
+  _salt_in_test_output(output_error output_error_${name})
+endfunction()
+# Adds output_error_isdir_<name>, where the output path is a directory,
+# and output_error_nodir_<name>, where its directory does not exist.
+function(_salt_add_output_error_tests name out label src)
+  _salt_add_output_error_test(isdir_${name} ${out} ${label} ${src})
+  _salt_add_output_error_test(nodir_${name} missing/${out} ${label}
+    --tau_output=missing/${out} ${src})
+endfunction()
+_salt_add_output_error_tests(c hello.inst.c "lang:C"
+  ${CMAKE_SOURCE_DIR}/tests/hello.c)
+_salt_add_output_error_tests(cxx c11test.inst.cpp "lang:CXX"
+  ${CMAKE_SOURCE_DIR}/tests/c11test.cpp)
+# A full disk fails the writes, not the open.
+if(EXISTS /dev/full)
+  _salt_add_output_error_test(full_c /dev/full "lang:C"
+    --tau_output=/dev/full ${CMAKE_SOURCE_DIR}/tests/hello.c)
+endif()
 
 # Selective Instrumentation File (SIF) tests.
 #
@@ -2341,6 +2382,9 @@ if(TEST_FORTRAN)
   _salt_add_user_mod_test(use-user-iso-fortran-env.f90 -I)
   _salt_add_user_mod_test(use-user-iso-fortran-env.f90 -J)
   _salt_add_user_mod_test(use-mixed-nature.f90 -I)
+
+  _salt_add_output_error_tests(fortran hello.inst.F90 "lang:Fortran"
+    ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
 
   set(SALT_FORTRAN_COMPILERS_TO_TEST gfortran flang-new)
 
