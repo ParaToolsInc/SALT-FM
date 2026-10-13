@@ -1653,11 +1653,10 @@ if(HAVE_TAU)
   # Emit profile-dir cleanup + creation fixture pair. `comp_id`/`test_id` go
   # into test names; `test_base` names the .d profile dir; `dir` is the
   # toolchain and language build subdir (e.g. GCC/c); `fixture_name` is
-  # the FIXTURES_SETUP value; `parent_dep` is the test the rm step
-  # DEPENDS on.
+  # the FIXTURES_SETUP value; `dir_fix` is the fixture that creates `dir`.
   function(_salt_tau_emit_profile_dir_fixture
       comp_id test_id test_base dir
-      lang_label tc_label fixture_name parent_dep)
+      lang_label tc_label fixture_name dir_fix)
     add_test(NAME rm_old_${comp_id}_${test_id}_profiles
       COMMAND ${CMAKE_COMMAND} -E rm -rf ${test_base}.d
       WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${dir}
@@ -1665,7 +1664,7 @@ if(HAVE_TAU)
     set_tests_properties(rm_old_${comp_id}_${test_id}_profiles
       PROPERTIES
       FIXTURES_SETUP ${fixture_name}
-      DEPENDS ${parent_dep}
+      FIXTURES_REQUIRED ${dir_fix}
       LABELS "${lang_label};${tc_label};phase:setup"
     )
     add_test(NAME mkdir_${test_base}.${comp_id}.d
@@ -1675,6 +1674,7 @@ if(HAVE_TAU)
     set_tests_properties(mkdir_${test_base}.${comp_id}.d
       PROPERTIES
       FIXTURES_SETUP ${fixture_name}
+      FIXTURES_REQUIRED ${dir_fix}
       DEPENDS rm_old_${comp_id}_${test_id}_profiles
       LABELS "${lang_label};${tc_label};phase:setup"
     )
@@ -1688,8 +1688,9 @@ if(HAVE_TAU)
   #   LANG_LABEL/TC_LABEL — ctest LABELS.
   #   TAU_MAKEFILE     — resolved TAU Makefile path.
   #   COMPILE_DEP      — compile test, and its FIXTURES_SETUP name, that
-  #                      run_* and check_*_profile need, so neither uses
-  #                      a stale binary after a failed compile.
+  #                      run_* needs, so it never uses a stale binary
+  #                      after a failed compile. run_* is in turn the
+  #                      fixture check_*_profile needs.
   #   PROFILE_FIX      — FIXTURES_REQUIRED set name (profile-dir fixture).
   function(_salt_tau_emit_run_check)
     set(kw COMP_ID TEST_ID TEST_BASE DIR BINARY LANG_LABEL TC_LABEL
@@ -1706,8 +1707,8 @@ if(HAVE_TAU)
         "TAU_MAKEFILE=${ARG_TAU_MAKEFILE};PROFILEDIR=${ARG_TEST_BASE}.d"
       ENVIRONMENT_MODIFICATION
         "PATH=path_list_prepend:${TAU_BIN_DIR}"
-      DEPENDS ${ARG_COMPILE_DEP}
       FIXTURES_REQUIRED "${ARG_PROFILE_FIX};${ARG_COMPILE_DEP}"
+      FIXTURES_SETUP run_${ARG_COMP_ID}_${ARG_TEST_ID}
       LABELS "${ARG_LANG_LABEL};${ARG_TC_LABEL};phase:run"
       FAIL_REGULAR_EXPRESSION
         "[Cc]ommand not found;[Ss]egmentation;[Ff]ault;[Ee]rror"
@@ -1720,8 +1721,7 @@ if(HAVE_TAU)
       PROPERTIES
       PASS_REGULAR_EXPRESSION "GROUP=\"TAU_DEFAULT\""
       FAIL_REGULAR_EXPRESSION "addr=\<0x"
-      DEPENDS run_${ARG_COMP_ID}_${ARG_TEST_ID}
-      FIXTURES_REQUIRED ${ARG_COMPILE_DEP}
+      FIXTURES_REQUIRED run_${ARG_COMP_ID}_${ARG_TEST_ID}
       LABELS "${ARG_LANG_LABEL};${ARG_TC_LABEL};phase:check"
     )
   endfunction()
@@ -1749,7 +1749,7 @@ if(HAVE_TAU)
     set_tests_properties(rm_${lower_comp}_${test_name}_objects
       PROPERTIES
       FIXTURES_SETUP ${obj_fix}
-      DEPENDS setup_${dir}_dir
+      FIXTURES_REQUIRED ${dir}_dir
       LABELS "${_lang_label};${tc_label};phase:setup"
     )
     # Per-test extra sources can be supplied via an
@@ -1775,7 +1775,7 @@ if(HAVE_TAU)
     )
     _salt_tau_emit_profile_dir_fixture(
       ${lower_comp} ${test_name} ${test_base_name} ${lang_dir}
-      "${_lang_label}" "${tc_label}" ${prof_fix} setup_${dir}_dir)
+      "${_lang_label}" "${tc_label}" ${prof_fix} ${dir}_dir)
     _salt_tau_emit_run_check(
       COMP_ID ${lower_comp}
       TEST_ID ${test_name}
@@ -2331,7 +2331,7 @@ if(TEST_FORTRAN)
         )
         _salt_tau_emit_profile_dir_fixture(
           ${upper_comp} ${test_source} ${test_base_name} ${dir}/fortran
-          "lang:Fortran" "${tc_label}" ${PROF_FIX} setup_${dir}_dir)
+          "lang:Fortran" "${tc_label}" ${PROF_FIX} ${dir}_dir)
         _salt_tau_emit_run_check(
           COMP_ID ${upper_comp}
           TEST_ID ${test_source}
