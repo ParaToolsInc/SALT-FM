@@ -29,10 +29,13 @@ jobs:
             echo "Working directory: $(pwd)"
             echo "Working directory contents:"
             ls -la
+      # Require MLIR and Flang so the Fortran tests cannot drop out.
       - name: Configure SALT-FM
         run: >
           cmake -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
-          -DSALT_REQUIRE_TAU=ON -Wdev -Wdeprecated -G Ninja -S . -B build
+          -DSALT_REQUIRE_TAU=ON -DCMAKE_REQUIRE_FIND_PACKAGE_MLIR=ON
+          -DCMAKE_REQUIRE_FIND_PACKAGE_Flang=ON
+          -Wdev -Wdeprecated -G Ninja -S . -B build
       - name: Compile SALT-FM
         id: build
         run: |

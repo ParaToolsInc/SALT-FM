@@ -50,13 +50,17 @@ jobs:
       # for SALT-FM's macOS auto-detect logic to populate so this CI leg
       # actually exercises the path the README recommends; if
       # auto-detect breaks, the configure-time <ryml_all.hpp> probe
-      # should fail fast here.
+      # should fail fast here. Requiring MLIR and Flang (find_package(Flang)
+      # only runs once MLIR is found) stops the Fortran tests from
+      # silently dropping out.
       - name: Configure SALT-FM (no TAU)
         run: >
           cmake -G Ninja -S . -B build
           -DCMAKE_C_COMPILER=${{ steps.paths.outputs.LLVM_PREFIX }}/bin/clang
           -DCMAKE_CXX_COMPILER=${{ steps.paths.outputs.LLVM_PREFIX }}/bin/clang++
           -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_REQUIRE_FIND_PACKAGE_MLIR=ON
+          -DCMAKE_REQUIRE_FIND_PACKAGE_Flang=ON
           -Wdev -Wdeprecated
 
       - name: Compile SALT-FM
