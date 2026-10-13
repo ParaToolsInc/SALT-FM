@@ -1687,7 +1687,9 @@ if(HAVE_TAU)
   #   BINARY           — executable basename in ${CMAKE_BINARY_DIR}/${DIR}.
   #   LANG_LABEL/TC_LABEL — ctest LABELS.
   #   TAU_MAKEFILE     — resolved TAU Makefile path.
-  #   COMPILE_DEP      — DEPENDS for run_*.
+  #   COMPILE_DEP      — compile test, and its FIXTURES_SETUP name, that
+  #                      run_* and check_*_profile need, so neither uses
+  #                      a stale binary after a failed compile.
   #   PROFILE_FIX      — FIXTURES_REQUIRED set name (profile-dir fixture).
   function(_salt_tau_emit_run_check)
     set(kw COMP_ID TEST_ID TEST_BASE DIR BINARY LANG_LABEL TC_LABEL
@@ -1705,7 +1707,7 @@ if(HAVE_TAU)
       ENVIRONMENT_MODIFICATION
         "PATH=path_list_prepend:${TAU_BIN_DIR}"
       DEPENDS ${ARG_COMPILE_DEP}
-      FIXTURES_REQUIRED ${ARG_PROFILE_FIX}
+      FIXTURES_REQUIRED "${ARG_PROFILE_FIX};${ARG_COMPILE_DEP}"
       LABELS "${ARG_LANG_LABEL};${ARG_TC_LABEL};phase:run"
       FAIL_REGULAR_EXPRESSION
         "[Cc]ommand not found;[Ss]egmentation;[Ff]ault;[Ee]rror"
@@ -1719,6 +1721,7 @@ if(HAVE_TAU)
       PASS_REGULAR_EXPRESSION "GROUP=\"TAU_DEFAULT\""
       FAIL_REGULAR_EXPRESSION "addr=\<0x"
       DEPENDS run_${ARG_COMP_ID}_${ARG_TEST_ID}
+      FIXTURES_REQUIRED ${ARG_COMPILE_DEP}
       LABELS "${ARG_LANG_LABEL};${ARG_TC_LABEL};phase:check"
     )
   endfunction()
@@ -1765,6 +1768,7 @@ if(HAVE_TAU)
       ENVIRONMENT_MODIFICATION
         "PATH=path_list_prepend:${TAU_BIN_DIR}"
       FIXTURES_REQUIRED ${obj_fix}
+      FIXTURES_SETUP compile_${lower_comp}_${test_name}
       DEPENDS ${depends_on}
       LABELS "${_lang_label};${tc_label};phase:compile"
       FAIL_REGULAR_EXPRESSION "${compile_fail_patterns}"
@@ -2321,6 +2325,7 @@ if(TEST_FORTRAN)
             "PATH=path_list_prepend:${TAU_BIN_DIR}"
           DEPENDS "instrument_${test_source}"
           FIXTURES_REQUIRED ${dir}_dir
+          FIXTURES_SETUP compile_${upper_comp}_${test_source}
           LABELS "lang:Fortran;${tc_label};phase:compile"
           FAIL_REGULAR_EXPRESSION "[^W][Ee]rror"
         )
