@@ -27,6 +27,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   new `--flang_exe=<path>` option (also accepted by `saltfm`) and the
   `SALT_FLANG_EXE` environment variable select another driver
   ([#75](https://github.com/ParaToolsInc/SALT-FM/issues/75)).
+- The tests write their outputs under `test-output/` in the build
+  directory instead of the build root. The new `clean-test-artifacts`
+  target removes `test-output/`, and `clean` now also removes
+  `test-output/` and CTest's `Testing/` directory. A narrow
+  `ctest -R <test>` also runs the setup and producer tests that it needs
+  ([#78](https://github.com/ParaToolsInc/SALT-FM/issues/78)).
 
 ## [0.5.0] - 2026-10-09
 

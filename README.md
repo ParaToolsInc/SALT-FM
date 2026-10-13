@@ -171,6 +171,14 @@ The tests are all located in the `tests` subdirectory of the project.
  * Old profiles associated with each test are removed just in time
  * New profiles are moved to subdirectories indicating which test they are associated with
 
+The tests write all their outputs (instrumented sources, logs, TAU binaries,
+and profiles) under `test-output/` in the build directory.
+`cmake --build build --target clean-test-artifacts` removes `test-output/` and
+keeps the built tools; `cmake --build build --target clean` also removes the
+compiled tools (`cparse-llvm` and the Flang plugin) and CTest's `Testing/`
+directory.
+A narrow `ctest -R <test>` also runs the setup and producer tests that it needs.
+
 By default, the tests assume a TAU installation matching the [salt-dev]
 development image (located at `/usr/local/x86_64/` with a GCC and Clang configuration).
 

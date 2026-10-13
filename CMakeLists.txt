@@ -820,6 +820,40 @@ set(TESTS_LIST
 
 include(CTest)
 
+# Tests write their outputs under test-output/<subdir>, never into the
+# build root. `clean-test-artifacts` removes test-output/; the built-in
+# `clean` also removes it and CTest's Testing/ directory.
+set(SALT_TEST_OUTPUT_DIR ${CMAKE_BINARY_DIR}/test-output)
+add_custom_target(clean-test-artifacts
+  COMMAND ${CMAKE_COMMAND} -E rm -rf ${SALT_TEST_OUTPUT_DIR}
+  COMMENT "Removing ${SALT_TEST_OUTPUT_DIR}"
+  VERBATIM)
+set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_CLEAN_FILES
+  ${SALT_TEST_OUTPUT_DIR} ${CMAKE_BINARY_DIR}/Testing)
+
+# Fixture <sub>_dir creates test-output/<sub>, so `ctest -R <test>` works
+# in a fresh build directory. The TAU and user-mod fixtures are below.
+set(_salt_test_output_subdirs instrument sif fabricate)
+if(TEST_FORTRAN)
+  list(APPEND _salt_test_output_subdirs flang_exe)
+endif()
+foreach(sub IN LISTS _salt_test_output_subdirs)
+  add_test(NAME setup_${sub}_dir
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${SALT_TEST_OUTPUT_DIR}/${sub})
+  set_tests_properties(setup_${sub}_dir
+    PROPERTIES
+    FIXTURES_SETUP ${sub}_dir
+    LABELS "phase:setup"
+  )
+endforeach()
+
+# Run the tests in ARGN in test-output/<sub>, after its fixture created it.
+function(_salt_in_test_output sub)
+  set_tests_properties(${ARGN}
+    PROPERTIES WORKING_DIRECTORY ${SALT_TEST_OUTPUT_DIR}/${sub})
+  set_property(TEST ${ARGN} APPEND PROPERTY FIXTURES_REQUIRED ${sub}_dir)
+endfunction()
+
 # Test label helpers. Labels are grouped by key:value so "Label Time
 # Summary" buckets meaningfully and `ctest -L "^lang:"` (etc.) filters
 # by dimension.
@@ -866,7 +900,7 @@ endfunction()
 
 # Map a compiler driver name to its toolchain build subdir (GCC or LLVM).
 # Same vendor classification as _salt_compiler_to_toolchain, but bare name
-# (no `toolchain:` prefix) suitable for use as a CMAKE_BINARY_DIR subdir
+# (no `toolchain:` prefix) suitable for use as a test-output/tau subdir
 # and as the inflection in TAU_<dir>_MAKEFILE variable lookups.
 function(_salt_compiler_to_dir comp out_var)
   string(TOLOWER "${comp}" _c)
@@ -930,6 +964,7 @@ function(add_instrumentor_test test_src)
     LABELS "${_lang_label};phase:check"
     PASS_REGULAR_EXPRESSION "TAU_PROFILE_SET_NODE"
   )
+  _salt_in_test_output(instrument ${test_name} ${test_name}_exists)
 endfunction()
 
 foreach(test_source IN LISTS TESTS_LIST)
@@ -1021,6 +1056,11 @@ set_tests_properties(check_inline_on_instruments_free_fn
   LABELS "lang:CXX;phase:check"
   PASS_REGULAR_EXPRESSION "TAU_PROFILE_TIMER[^\n]*free_fn_marked_inline"
 )
+_salt_in_test_output(instrument
+  check_forward_decl_skips_bodyless check_pure_virtual_skips_bodyless
+  instrument_inline_off check_inline_off_skips_inline
+  instrument_inline_on check_inline_on_instruments_method
+  check_inline_on_instruments_free_fn)
 
 # Selective Instrumentation File (SIF) tests.
 #
@@ -1121,6 +1161,8 @@ function(add_sif_test test_name lang src sif)
     FIXTURES_REQUIRED "${name}_output;${name}_inst"
     LABELS "${_lang_label};phase:check;sif"
   )
+  _salt_in_test_output(sif
+    rm_old_${name}_output instrument_${name} check_${name} warn_${name})
 endfunction()
 
 # SIF test where the instrumentor is expected NOT to emit instrumented code
@@ -1147,6 +1189,7 @@ function(add_sif_test_no_output test_name lang src sif)
     LABELS "${_lang_label};phase:instrument;sif"
   )
   _sif_set_warning_checks(instrument_${name} "${ARG_WARNINGS}" "Instrumentation:")
+  _salt_in_test_output(sif instrument_${name})
 endfunction()
 
 # Pattern helpers: regex fragments that match a TAU_PROFILE_TIMER timer string
@@ -1498,6 +1541,8 @@ function(add_fabricate_test name src with_flag pass_regex)
       FAIL_REGULAR_EXPRESSION "${fail_regex}"
     )
   endif()
+  _salt_in_test_output(fabricate
+    instrument_fabricate_${name} check_fabricate_${name})
 endfunction()
 
 add_fabricate_test(case1 fabricate_case1.cpp ON
@@ -1596,6 +1641,9 @@ set_tests_properties(check_fabricate_env
   LABELS "lang:CXX;phase:check;fabricate"
   PASS_REGULAR_EXPRESSION "int test[(]testns::lemur<int>[)]"
 )
+_salt_in_test_output(fabricate
+  check_fabricate_reuse_second check_fabricate_mixed_kinds_template
+  check_fabricate_member_def_ctor instrument_fabricate_env check_fabricate_env)
 
 add_fabricate_test(srctext_zmobius fabricate_srctext_zmobius.cpp ON
   "void computeZmobiusOmega[(]std::vector<ComplexD> &, const int, \
@@ -1614,13 +1662,14 @@ add_fabricate_test(srctext_fn_template fabricate_srctext_fn_template.cpp ON
   "void tmplFn[(]std::vector<RealD> &, T[)]")
 
 set(SALT_COMPILERS_TO_TEST gcc clang)
-# Per-toolchain build subdirs (GCC, LLVM) with one subdir per language:
-# TAU names objects and profiles after the source basename, so hello.c
-# and hello.f90 must not build in the same directory.
+# Per-toolchain build subdirs (GCC, LLVM) of test-output/tau with one
+# subdir per language: TAU names objects and profiles after the source
+# basename, so hello.c and hello.f90 must not build in the same directory.
+set(SALT_TAU_TEST_DIR ${SALT_TEST_OUTPUT_DIR}/tau)
 foreach(tc_name IN ITEMS GCC LLVM)
   add_test(NAME setup_${tc_name}_dir
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/${tc_name}/c
-      ${CMAKE_BINARY_DIR}/${tc_name}/cxx ${CMAKE_BINARY_DIR}/${tc_name}/fortran)
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${SALT_TAU_TEST_DIR}/${tc_name}/c
+      ${SALT_TAU_TEST_DIR}/${tc_name}/cxx ${SALT_TAU_TEST_DIR}/${tc_name}/fortran)
   set_tests_properties(setup_${tc_name}_dir
     PROPERTIES
     FIXTURES_SETUP ${tc_name}_dir
@@ -1652,14 +1701,15 @@ if(HAVE_TAU)
 
   # Emit profile-dir cleanup + creation fixture pair. `comp_id`/`test_id` go
   # into test names; `test_base` names the .d profile dir; `dir` is the
-  # toolchain and language build subdir (e.g. GCC/c); `fixture_name` is
-  # the FIXTURES_SETUP value; `dir_fix` is the fixture that creates `dir`.
+  # toolchain and language subdir of test-output/tau (e.g. GCC/c);
+  # `fixture_name` is the FIXTURES_SETUP value; `dir_fix` is the fixture
+  # that creates `dir`.
   function(_salt_tau_emit_profile_dir_fixture
       comp_id test_id test_base dir
       lang_label tc_label fixture_name dir_fix)
     add_test(NAME rm_old_${comp_id}_${test_id}_profiles
       COMMAND ${CMAKE_COMMAND} -E rm -rf ${test_base}.d
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${dir}
+      WORKING_DIRECTORY ${SALT_TAU_TEST_DIR}/${dir}
     )
     set_tests_properties(rm_old_${comp_id}_${test_id}_profiles
       PROPERTIES
@@ -1669,7 +1719,7 @@ if(HAVE_TAU)
     )
     add_test(NAME mkdir_${test_base}.${comp_id}.d
       COMMAND ${CMAKE_COMMAND} -E make_directory ${test_base}.d
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${dir}
+      WORKING_DIRECTORY ${SALT_TAU_TEST_DIR}/${dir}
     )
     set_tests_properties(mkdir_${test_base}.${comp_id}.d
       PROPERTIES
@@ -1683,8 +1733,9 @@ if(HAVE_TAU)
   # Emit run + check_*_profile pair. Keyword args:
   #   COMP_ID/TEST_ID  — go into emitted test names.
   #   TEST_BASE        — names the .d profile dir.
-  #   DIR              — toolchain and language build subdir (e.g. GCC/c).
-  #   BINARY           — executable basename in ${CMAKE_BINARY_DIR}/${DIR}.
+  #   DIR              — toolchain and language subdir of test-output/tau
+  #                      (e.g. GCC/c).
+  #   BINARY           — executable basename in ${SALT_TAU_TEST_DIR}/${DIR}.
   #   LANG_LABEL/TC_LABEL — ctest LABELS.
   #   TAU_MAKEFILE     — resolved TAU Makefile path.
   #   COMPILE_DEP      — compile test, and its FIXTURES_SETUP name, that
@@ -1699,7 +1750,7 @@ if(HAVE_TAU)
     _salt_tau_exec_tags(_run_tau_tags "${ARG_TAU_MAKEFILE}")
     add_test(NAME run_${ARG_COMP_ID}_${ARG_TEST_ID}
       COMMAND ${TAU_EXEC} -T ${_run_tau_tags} ./${ARG_BINARY}
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${ARG_DIR}
+      WORKING_DIRECTORY ${SALT_TAU_TEST_DIR}/${ARG_DIR}
     )
     set_tests_properties(run_${ARG_COMP_ID}_${ARG_TEST_ID}
       PROPERTIES
@@ -1715,7 +1766,7 @@ if(HAVE_TAU)
     )
     add_test(NAME check_${ARG_COMP_ID}_${ARG_TEST_ID}_profile
       COMMAND ${CMAKE_COMMAND} -E cat ./${ARG_TEST_BASE}.d/profile.0.0.0
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${ARG_DIR}
+      WORKING_DIRECTORY ${SALT_TAU_TEST_DIR}/${ARG_DIR}
     )
     set_tests_properties(check_${ARG_COMP_ID}_${ARG_TEST_ID}_profile
       PROPERTIES
@@ -1744,7 +1795,7 @@ if(HAVE_TAU)
         ${test_base_name}.o
         ${test_base_name}.inst.o
         ${test_base_name}.inst.${test_lang}
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${lang_dir}
+      WORKING_DIRECTORY ${SALT_TAU_TEST_DIR}/${lang_dir}
     )
     set_tests_properties(rm_${lower_comp}_${test_name}_objects
       PROPERTIES
@@ -1760,7 +1811,7 @@ if(HAVE_TAU)
       COMMAND ${tauc} ${tauc_opts} ${compile_opts}
         -o ${test_base_name}.${lower_comp}
         ${test_path} ${_${test_base_name}_extra_sources}
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${lang_dir}
+      WORKING_DIRECTORY ${SALT_TAU_TEST_DIR}/${lang_dir}
     )
     set_tests_properties(compile_${lower_comp}_${test_name}
       PROPERTIES
@@ -1942,6 +1993,7 @@ if(TEST_FORTRAN)
       FAIL_REGULAR_EXPRESSION "${fail}"
       ENVIRONMENT_MODIFICATION "SALT_FLANG_EXE=unset:"
       LABELS "lang:Fortran;phase:smoke")
+    _salt_in_test_output(flang_exe ${name})
   endfunction()
   set(_fx_stub_ran "stub driver must not run")
   set(_fx_note "Note: [^\n]*flang-new[^\n]* flang")
@@ -1950,7 +2002,7 @@ if(TEST_FORTRAN)
   # Stubs earlier on PATH do not replace the recorded driver.
   _salt_add_flang_exe_test(fparse_flang_exe_recorded
     "SALT Instrumentor Plugin finished" "${_fx_stub_ran};WARNING: recorded;${_fx_note}"
-    ${_fx_bin}/fparse-llvm --tau_output=${_fx_dir}/recorded.inst.F90
+    ${_fx_bin}/fparse-llvm --tau_output=recorded.inst.F90
     ${_fx_src})
   set_tests_properties(fparse_flang_exe_recorded PROPERTIES
     ENVIRONMENT "SALT_FORTRAN_VERBOSE=1")
@@ -1964,7 +2016,7 @@ if(TEST_FORTRAN)
     "SALT Instrumentor Plugin finished")
   _salt_add_flang_exe_test(fparse_flang_exe_missing_recorded
     "${_fx_pass}" "ERROR"
-    ${_fx_bin}/fparse-llvm-no-driver --tau_output=${_fx_dir}/path.inst.F90
+    ${_fx_bin}/fparse-llvm-no-driver --tau_output=path.inst.F90
     ${_fx_src})
   set_tests_properties(fparse_flang_exe_missing_recorded PROPERTIES
     ENVIRONMENT "SALT_FORTRAN_VERBOSE=1")
@@ -1976,7 +2028,7 @@ if(TEST_FORTRAN)
     "--flang_exe=<path> or SALT_FLANG_EXE")
   _salt_add_flang_exe_test(fparse_flang_exe_other_version
     "${_fx_pass}" "${_fx_stub_ran};Running:"
-    ${_fx_bin}/fparse-llvm-no-driver --tau_output=${_fx_dir}/other.inst.F90
+    ${_fx_bin}/fparse-llvm-no-driver --tau_output=other.inst.F90
     ${_fx_src})
   set_property(TEST fparse_flang_exe_other_version APPEND PROPERTY
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_fx_dir}/other")
@@ -2067,7 +2119,7 @@ if(TEST_FORTRAN)
   foreach(test_source IN LISTS FORTRAN_TESTS_SOURCES_LIST)
     add_test(NAME instrument_${test_source}
       COMMAND
-        ./${CMAKE_INSTALL_BINDIR}/saltfm
+        ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
         ${CMAKE_SOURCE_DIR}/tests/fortran/${test_source}
     )
     set(_required_files
@@ -2080,11 +2132,11 @@ if(TEST_FORTRAN)
       LABELS "lang:Fortran;phase:instrument"
       PASS_REGULAR_EXPRESSION "SALT Instrumentor Plugin finished"
     )
+    _salt_in_test_output(instrument instrument_${test_source})
   endforeach()
 
   add_test(NAME check-internal-func.f90
-    COMMAND ${CMAKE_COMMAND} -E cat ${CMAKE_BINARY_DIR}/internal-func.inst.F90
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMAND ${CMAKE_COMMAND} -E cat internal-func.inst.F90
   )
   set_tests_properties(check-internal-func.f90
     PROPERTIES
@@ -2101,8 +2153,7 @@ if(TEST_FORTRAN)
   # contain `implicit-main._implicit_main_`, and the source-range
   # field must not start at line 0.
   add_test(NAME check_implicit_main_timer_name
-    COMMAND ${CMAKE_COMMAND} -E cat ${CMAKE_BINARY_DIR}/implicit-main.inst.F90
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMAND ${CMAKE_COMMAND} -E cat implicit-main.inst.F90
   )
   set_tests_properties(check_implicit_main_timer_name
     PROPERTIES
@@ -2120,8 +2171,7 @@ if(TEST_FORTRAN)
   # list, not all-of.
   foreach(alt_value 1 2 3)
     add_test(NAME check_alternate-return-value-${alt_value}
-      COMMAND ${CMAKE_COMMAND} -E cat ${CMAKE_BINARY_DIR}/alternate-return.inst.F90
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+      COMMAND ${CMAKE_COMMAND} -E cat alternate-return.inst.F90
     )
     set_tests_properties(check_alternate-return-value-${alt_value}
       PROPERTIES
@@ -2129,7 +2179,10 @@ if(TEST_FORTRAN)
       DEPENDS instrument_alternate-return.f90
       LABELS "lang:Fortran;phase:check"
     )
+    _salt_in_test_output(instrument check_alternate-return-value-${alt_value})
   endforeach()
+  _salt_in_test_output(instrument
+    check-internal-func.f90 check_implicit_main_timer_name)
 
   # Per-form skip checks: each minimal source contains exactly one
   # pure / elemental / impure-elemental / module-procedure body and
@@ -2148,12 +2201,12 @@ if(TEST_FORTRAN)
   foreach(test_source IN LISTS FORTRAN_TESTS_PURE_SKIP_SOURCES)
     get_filename_component(test_base_name ${test_source} NAME_WLE)
     get_filename_component(test_lang ${test_source} LAST_EXT)
-    set(_inst_output ${CMAKE_BINARY_DIR}/${test_base_name}.inst${test_lang})
+    set(_inst_output ${test_base_name}.inst${test_lang})
     string(REPLACE "f90" "F90" _inst_output "${_inst_output}")
 
     add_test(NAME instrument_${test_source}
       COMMAND
-        ./${CMAKE_INSTALL_BINDIR}/saltfm
+        ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
         ${CMAKE_SOURCE_DIR}/tests/fortran/${test_source}
     )
     set(_required_files
@@ -2169,7 +2222,6 @@ if(TEST_FORTRAN)
 
     add_test(NAME check_no_tau_${test_source}
       COMMAND ${CMAKE_COMMAND} -E cat ${_inst_output}
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     )
     set_tests_properties(check_no_tau_${test_source}
       PROPERTIES
@@ -2177,6 +2229,8 @@ if(TEST_FORTRAN)
       DEPENDS instrument_${test_source}
       LABELS "lang:Fortran;phase:check"
     )
+    _salt_in_test_output(instrument
+      instrument_${test_source} check_no_tau_${test_source})
   endforeach()
 
   # OpenMP constructs opening a procedure body: with -fopenmp the
@@ -2186,7 +2240,7 @@ if(TEST_FORTRAN)
     get_filename_component(_base ${src} NAME_WLE)
     add_test(NAME instrument_${src}
       COMMAND
-        ./${CMAKE_INSTALL_BINDIR}/saltfm -fopenmp
+        ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm -fopenmp
         ${CMAKE_SOURCE_DIR}/tests/fortran/${src}
     )
     set(required_files
@@ -2200,6 +2254,7 @@ if(TEST_FORTRAN)
       PASS_REGULAR_EXPRESSION "SALT Instrumentor Plugin finished"
       FAIL_REGULAR_EXPRESSION "ERROR:"
     )
+    _salt_in_test_output(instrument instrument_${src})
     foreach(directive IN LISTS ARGN)
       string(REPLACE " " "_" _name "${directive}")
       string(CONCAT _start_above_directive
@@ -2207,7 +2262,7 @@ if(TEST_FORTRAN)
         "#line [0-9]+ \"[^\"]*\"[\r\n]+"
         " *!\\$omp ${directive}[\r\n]")
       add_test(NAME check_omp_start_${_name}
-        COMMAND ${CMAKE_COMMAND} -E cat ${CMAKE_BINARY_DIR}/${_base}.inst.F90
+        COMMAND ${CMAKE_COMMAND} -E cat ${_base}.inst.F90
       )
       set_tests_properties(check_omp_start_${_name}
         PROPERTIES
@@ -2215,6 +2270,7 @@ if(TEST_FORTRAN)
         DEPENDS instrument_${src}
         LABELS "lang:Fortran;phase:check"
       )
+      _salt_in_test_output(instrument check_omp_start_${_name})
     endforeach()
   endfunction()
 
@@ -2230,7 +2286,7 @@ if(TEST_FORTRAN)
   # module of the same name, whether its directory is given with -I
   # or -J. The fixture writes the user module with SALT-FM's suffix
   # into a fresh directory; Flang does not create the -J directory.
-  set(_user_mod_dir ${CMAKE_BINARY_DIR}/user-mod)
+  set(_user_mod_dir ${SALT_TEST_OUTPUT_DIR}/user-mod)
   set(_required_files
     "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm"
     "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm")
@@ -2240,7 +2296,7 @@ if(TEST_FORTRAN)
     COMMAND ${CMAKE_COMMAND} -E make_directory ${_user_mod_dir})
   add_test(NAME make_user_iso_fortran_env_mod
     COMMAND
-      ./${CMAKE_INSTALL_BINDIR}/saltfm -J${_user_mod_dir}
+      ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm -J${_user_mod_dir}
       --tau_output=${_user_mod_dir}/user-iso-fortran-env.inst.F90
       ${CMAKE_SOURCE_DIR}/tests/fortran/user-iso-fortran-env.f90)
   set_tests_properties(
@@ -2251,6 +2307,7 @@ if(TEST_FORTRAN)
   set_tests_properties(mkdir_user_mod_dir PROPERTIES
     DEPENDS rm_old_user_mod_dir)
   set_tests_properties(make_user_iso_fortran_env_mod PROPERTIES
+    WORKING_DIRECTORY ${_user_mod_dir}
     DEPENDS mkdir_user_mod_dir
     REQUIRED_FILES "${_required_files}"
     ENVIRONMENT "SALT_FORTRAN_VERBOSE=1"
@@ -2261,8 +2318,8 @@ if(TEST_FORTRAN)
     set(name instrument_${base}${flag})
     add_test(NAME ${name}
       COMMAND
-        ./${CMAKE_INSTALL_BINDIR}/saltfm ${flag}${_user_mod_dir}
-        --tau_output=${base}${flag}.inst.F90
+        ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+        ${flag}${_user_mod_dir} --tau_output=${base}${flag}.inst.F90
         ${CMAKE_SOURCE_DIR}/tests/fortran/${src})
     set_tests_properties(${name} PROPERTIES
       FIXTURES_REQUIRED user_iso_fortran_env_mod
@@ -2270,6 +2327,7 @@ if(TEST_FORTRAN)
       ENVIRONMENT "SALT_FORTRAN_VERBOSE=1"
       LABELS "lang:Fortran;phase:instrument"
       PASS_REGULAR_EXPRESSION "SALT Instrumentor Plugin finished")
+    _salt_in_test_output(instrument ${name})
   endfunction()
   _salt_add_user_mod_test(use-user-iso-fortran-env.f90 -I)
   _salt_add_user_mod_test(use-user-iso-fortran-env.f90 -J)
@@ -2316,7 +2374,7 @@ if(TEST_FORTRAN)
         add_test(NAME compile_${upper_comp}_${test_source}
           COMMAND ${TAUF90} ${TAU_F90_OPTS} -o ${test_base_name}
             -Wall ${EXTRA_FLAGS} ${TEST_INST_SOURCE}
-          WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${dir}/fortran
+          WORKING_DIRECTORY ${SALT_TAU_TEST_DIR}/${dir}/fortran
         )
         set_tests_properties(compile_${upper_comp}_${test_source}
           PROPERTIES
