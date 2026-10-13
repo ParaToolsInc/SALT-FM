@@ -37,7 +37,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   or write its output, for example a missing directory, an output path
   that is a directory, a read-only file or directory, or a full disk.
   Before, C and C++ instrumentation reported success and left the old
-  output in place, and Fortran crashed when it could not open the file.
+  output in place, and Fortran crashed when it could not open the file
+  and failed without naming the file when a write failed.
 - When testing is on, configuring stops with an error if the source or
   build directory path contains a space, since TAU's compiler wrappers
   and the test checks cannot handle such paths and the tests would fail.
