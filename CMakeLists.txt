@@ -1614,10 +1614,13 @@ add_fabricate_test(srctext_fn_template fabricate_srctext_fn_template.cpp ON
   "void tmplFn[(]std::vector<RealD> &, T[)]")
 
 set(SALT_COMPILERS_TO_TEST gcc clang)
-# Per-toolchain build subdirs (GCC, LLVM) shared by C/C++ and Fortran tests.
+# Per-toolchain build subdirs (GCC, LLVM) with one subdir per language:
+# TAU names objects and profiles after the source basename, so hello.c
+# and hello.f90 must not build in the same directory.
 foreach(tc_name IN ITEMS GCC LLVM)
   add_test(NAME setup_${tc_name}_dir
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/${tc_name})
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/${tc_name}/c
+      ${CMAKE_BINARY_DIR}/${tc_name}/cxx ${CMAKE_BINARY_DIR}/${tc_name}/fortran)
   set_tests_properties(setup_${tc_name}_dir
     PROPERTIES
     FIXTURES_SETUP ${tc_name}_dir
@@ -1649,8 +1652,9 @@ if(HAVE_TAU)
 
   # Emit profile-dir cleanup + creation fixture pair. `comp_id`/`test_id` go
   # into test names; `test_base` names the .d profile dir; `dir` is the
-  # toolchain build subdir (GCC, LLVM); `fixture_name` is the FIXTURES_SETUP
-  # value; `parent_dep` is the test the rm step DEPENDS on.
+  # toolchain and language build subdir (e.g. GCC/c); `fixture_name` is
+  # the FIXTURES_SETUP value; `parent_dep` is the test the rm step
+  # DEPENDS on.
   function(_salt_tau_emit_profile_dir_fixture
       comp_id test_id test_base dir
       lang_label tc_label fixture_name parent_dep)
@@ -1679,7 +1683,7 @@ if(HAVE_TAU)
   # Emit run + check_*_profile pair. Keyword args:
   #   COMP_ID/TEST_ID  — go into emitted test names.
   #   TEST_BASE        — names the .d profile dir.
-  #   DIR              — toolchain build subdir (GCC, LLVM).
+  #   DIR              — toolchain and language build subdir (e.g. GCC/c).
   #   BINARY           — executable basename in ${CMAKE_BINARY_DIR}/${DIR}.
   #   LANG_LABEL/TC_LABEL — ctest LABELS.
   #   TAU_MAKEFILE     — resolved TAU Makefile path.
@@ -1727,6 +1731,9 @@ if(HAVE_TAU)
     set(lower_comp ${comp})
     _salt_compiler_to_toolchain(${comp} tc_label)
     _salt_compiler_to_dir(${comp} dir)
+    # Language subdir of the toolchain dir: c or cxx
+    string(TOLOWER "${_lang_label}" lang_dir)
+    string(REPLACE "lang:" "${dir}/" lang_dir "${lang_dir}")
     set(obj_fix clean_${lower_comp}_${test_name}_objects)
     set(prof_fix clean_${lower_comp}_${test_name}_profiles)
     add_test(NAME rm_${lower_comp}_${test_name}_objects
@@ -1734,7 +1741,7 @@ if(HAVE_TAU)
         ${test_base_name}.o
         ${test_base_name}.inst.o
         ${test_base_name}.inst.${test_lang}
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${dir}
+      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${lang_dir}
     )
     set_tests_properties(rm_${lower_comp}_${test_name}_objects
       PROPERTIES
@@ -1750,7 +1757,7 @@ if(HAVE_TAU)
       COMMAND ${tauc} ${tauc_opts} ${compile_opts}
         -o ${test_base_name}.${lower_comp}
         ${test_path} ${_${test_base_name}_extra_sources}
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${dir}
+      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${lang_dir}
     )
     set_tests_properties(compile_${lower_comp}_${test_name}
       PROPERTIES
@@ -1763,13 +1770,13 @@ if(HAVE_TAU)
       FAIL_REGULAR_EXPRESSION "${compile_fail_patterns}"
     )
     _salt_tau_emit_profile_dir_fixture(
-      ${lower_comp} ${test_name} ${test_base_name} ${dir}
+      ${lower_comp} ${test_name} ${test_base_name} ${lang_dir}
       "${_lang_label}" "${tc_label}" ${prof_fix} setup_${dir}_dir)
     _salt_tau_emit_run_check(
       COMP_ID ${lower_comp}
       TEST_ID ${test_name}
       TEST_BASE ${test_base_name}
-      DIR ${dir}
+      DIR ${lang_dir}
       BINARY ${test_base_name}.${lower_comp}
       LANG_LABEL "${_lang_label}"
       TC_LABEL "${tc_label}"
@@ -2305,7 +2312,7 @@ if(TEST_FORTRAN)
         add_test(NAME compile_${upper_comp}_${test_source}
           COMMAND ${TAUF90} ${TAU_F90_OPTS} -o ${test_base_name}
             -Wall ${EXTRA_FLAGS} ${TEST_INST_SOURCE}
-          WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${dir}
+          WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${dir}/fortran
         )
         set_tests_properties(compile_${upper_comp}_${test_source}
           PROPERTIES
@@ -2318,13 +2325,13 @@ if(TEST_FORTRAN)
           FAIL_REGULAR_EXPRESSION "[^W][Ee]rror"
         )
         _salt_tau_emit_profile_dir_fixture(
-          ${upper_comp} ${test_source} ${test_base_name} ${dir}
+          ${upper_comp} ${test_source} ${test_base_name} ${dir}/fortran
           "lang:Fortran" "${tc_label}" ${PROF_FIX} setup_${dir}_dir)
         _salt_tau_emit_run_check(
           COMP_ID ${upper_comp}
           TEST_ID ${test_source}
           TEST_BASE ${test_base_name}
-          DIR ${dir}
+          DIR ${dir}/fortran
           BINARY ${test_base_name}
           LANG_LABEL "lang:Fortran"
           TC_LABEL "${tc_label}"
