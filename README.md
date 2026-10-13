@@ -179,6 +179,11 @@ compiled tools (`cparse-llvm` and the Flang plugin) and CTest's `Testing/`
 directory.
 A narrow `ctest -R <test>` also runs the setup and producer tests that it needs.
 
+TAU's compiler wrappers and the test checks cannot handle spaces in paths, so
+with testing on, configuring fails if the source or build directory path
+contains a space.
+Use paths without spaces, or configure with `-DBUILD_TESTING=OFF`.
+
 By default, the tests assume a TAU installation matching the [salt-dev]
 development image (located at `/usr/local/x86_64/` with a GCC and Clang configuration).
 
