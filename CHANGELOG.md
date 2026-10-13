@@ -33,6 +33,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `test-output/` and CTest's `Testing/` directory. A narrow
   `ctest -R <test>` also runs the setup and producer tests that it needs
   ([#78](https://github.com/ParaToolsInc/SALT-FM/issues/78)).
+- `saltfm` exits with an error that names the file when it cannot open
+  or write its output, for example a missing directory, an output path
+  that is a directory, a read-only file or directory, or a full disk.
+  Before, C and C++ instrumentation reported success and left the old
+  output in place, and Fortran crashed when it could not open the file.
 
 ## [0.5.0] - 2026-10-09
 

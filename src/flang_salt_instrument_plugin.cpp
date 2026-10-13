@@ -62,9 +62,7 @@ limitations under the License.
 #include "flang/Semantics/symbol.h"
 #include "flang/Evaluate/tools.h"
 #include "llvm/Config/llvm-config.h"
-#if LLVM_VERSION_MAJOR < 23
 #include "flang/Frontend/CompilerInstance.h"
-#endif
 
 #include "flang_instrumentation_constants.hpp"
 #include "selectfile.hpp"
@@ -1122,6 +1120,12 @@ namespace salt::fortran {
             // Open an output file for writing the instrumented code
             const std::string outputFileExtension = "inst."s + inputFileExtension;
             const auto outputFileStream = createOutputFile(outputFileExtension);
+            if (!outputFileStream) {
+                // Flang has reported why it could not open the file
+                llvm::errs() << "ERROR: Could not open output file "
+                        << getInstance().getFrontendOpts().outputFile << "\n";
+                std::exit(EXIT_FAILURE);
+            }
 
             // If visitor has skipInstrument set, no instrumentation points are added
             // so the file is output into the .inst file unchanged.

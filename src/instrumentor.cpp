@@ -22,6 +22,7 @@
 #include "llvm/Config/llvm-config.h"
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -60,6 +61,17 @@ const char *loc_typ_strs[NUM_LOC_TYPES] = {"begin func", "return", "multiline re
 
 void makeFuncAndTimerNames(FunctionDecl *func, ASTContext *context, SourceManager &src_mgr, std::string &func_name,
                          std::string &timer_name);
+
+// Exit with an error naming `file` and the reason when `failed`.
+static void exit_if_io_failed(bool failed, const char *what, const std::string &file)
+{
+    if (failed)
+    {
+        const int err = errno;
+        llvm::errs() << "ERROR: Could not " << what << " " << file << ": " << std::strerror(err) << "\n";
+        std::exit(EXIT_FAILURE);
+    }
+}
 
 // only works for inst_locs that are in the same file
 bool comp_inst_loc(inst_loc *first, inst_loc *second)
@@ -1305,7 +1317,9 @@ void instrumentor::instrument()
         DPRINT("new filename (inst): %s\n", newname.c_str());
 
         inst_file.open(newname);
+        exit_if_io_failed(!inst_file.is_open(), "open output file", newname);
         og_file.open(fname);
+        exit_if_io_failed(!og_file.is_open(), "open input file", fname);
 
         // check for cxxparse executable name. If so, force cxx api usage
         if (strstr(exec_name, "cxxparse") != nullptr)
@@ -1352,8 +1366,10 @@ void instrumentor::instrument()
 
         llvm::outs() << "Instrumentation: " << yaml_tree["instrumentation"].val() << "\n";
         instrument_file(og_file, inst_file, fname, inst_locations, use_cxx_api, yaml_tree);
+        exit_if_io_failed(!inst_file, "write output file", newname);
         og_file.close();
         inst_file.close();
+        exit_if_io_failed(!inst_file, "write output file", newname);
     }
 
     for (std::string fname : files_skipped)
@@ -1372,7 +1388,9 @@ void instrumentor::instrument()
         DPRINT("new filename (skip): %s\n", newname.c_str());
 
         inst_file.open(newname);
+        exit_if_io_failed(!inst_file.is_open(), "open output file", newname);
         og_file.open(fname);
+        exit_if_io_failed(!og_file.is_open(), "open input file", fname);
 
         inst_file << og_file.rdbuf();
 
