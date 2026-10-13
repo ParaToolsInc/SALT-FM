@@ -12,6 +12,7 @@ Mirror CI locally: run the jobs in `.github/workflows/` with the same commands a
 ## Git
 
 - Inspect `git diff` and keep it focused.
+- Never bypass git hooks: no `--no-verify`, `git commit -n`, or `core.hooksPath` override.
 - Never commit to `main`. Branch from `origin/main` with a short, relevant name.
 - Fold related fixes into the commit they fix and update its message rather than adding a follow-up commit, until the branch is pushed; after that, fix in a new commit and never rewrite pushed commits.
 - Pass multiline messages through `git commit -F` rather than literal `\n`.
