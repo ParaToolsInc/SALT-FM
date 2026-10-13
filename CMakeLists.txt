@@ -823,6 +823,20 @@ set(TESTS_LIST
 
 include(CTest)
 
+# TAU's compiler wrappers split the saltfm and source paths at spaces,
+# and some test checks match paths with `[^ ]*`, so tests would fail.
+if(BUILD_TESTING)
+  foreach(path_to_check IN ITEMS "${CMAKE_SOURCE_DIR}" "${CMAKE_BINARY_DIR}")
+    if(path_to_check MATCHES " ")
+      message(FATAL_ERROR
+        "The tests cannot run in '${path_to_check}': TAU's compiler wrappers "
+        "and the test checks cannot handle spaces in paths. Use source and "
+        "build directories whose paths have no spaces, or configure with "
+        "-DBUILD_TESTING=OFF.")
+    endif()
+  endforeach()
+endif()
+
 # Tests write their outputs under test-output/<subdir>, never into the
 # build root. `clean-test-artifacts` removes test-output/; the built-in
 # `clean` also removes it and CTest's Testing/ directory.

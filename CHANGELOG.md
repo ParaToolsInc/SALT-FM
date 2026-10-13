@@ -38,6 +38,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that is a directory, a read-only file or directory, or a full disk.
   Before, C and C++ instrumentation reported success and left the old
   output in place, and Fortran crashed when it could not open the file.
+- When testing is on, configuring stops with an error if the source or
+  build directory path contains a space, since TAU's compiler wrappers
+  and the test checks cannot handle such paths and the tests would fail.
+  Configure with `-DBUILD_TESTING=OFF` to build in such a path.
 
 ## [0.5.0] - 2026-10-09
 
