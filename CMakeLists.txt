@@ -2398,6 +2398,10 @@ if(TEST_FORTRAN)
 
   _salt_add_output_error_tests(fortran hello.inst.F90 "lang:Fortran"
     ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+  if(EXISTS /dev/full)
+    _salt_add_output_error_test(full_fortran /dev/full "lang:Fortran"
+      --tau_output=/dev/full ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+  endif()
 
   set(SALT_FORTRAN_COMPILERS_TO_TEST gfortran flang-new)
 

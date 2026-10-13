@@ -1143,6 +1143,15 @@ namespace salt::fortran {
             instrumentFile(inputFilePath, *outputFileStream, visitor, instMap);
 
             outputFileStream->flush();
+            // createOutputFile opens text output as a raw_fd_ostream
+            auto &outputFdStream{static_cast<llvm::raw_fd_ostream &>(*outputFileStream)};
+            if (outputFdStream.has_error()) {
+                llvm::errs() << "ERROR: Could not write output file "
+                        << getInstance().getFrontendOpts().outputFile << ": "
+                        << outputFdStream.error().message() << "\n";
+                outputFdStream.clear_error();
+                std::exit(EXIT_FAILURE);
+            }
 
             verboseStream() << "==== SALT Instrumentor Plugin finished ====\n";
         }
