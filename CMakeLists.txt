@@ -800,7 +800,10 @@ endfunction()
 #    - Makefile.tau-pthread-pdt
 
 # Care has been taken to break test inter-dependencies where possible and
-# express them explicitly with the DEPENDS test property.
+# express them explicitly. A test that reads another test's output
+# requires a fixture named after that test (FIXTURES_SETUP), so
+# `ctest -R <check>` also runs the producer, and a failed producer
+# leaves its checks Not Run.
 # Also each test should not enter a race condition or need to use the
 # RESOURCE_LOCK property.
 # e.g., Executable names are different when compiled with gcc vs clang and
@@ -952,6 +955,7 @@ function(add_instrumentor_test test_src)
   set_tests_properties(${test_name}
     PROPERTIES
     REQUIRED_FILES "${CMAKE_SOURCE_DIR}/tests/${test_src}"
+    FIXTURES_SETUP ${test_name}
     LABELS "${_lang_label};phase:instrument"
     PASS_REGULAR_EXPRESSION "[Ii]nstrumentation:"
   )
@@ -960,7 +964,7 @@ function(add_instrumentor_test test_src)
   )
   set_tests_properties(${test_name}_exists
     PROPERTIES
-    DEPENDS ${test_name}
+    FIXTURES_REQUIRED ${test_name}
     LABELS "${_lang_label};phase:check"
     PASS_REGULAR_EXPRESSION "TAU_PROFILE_SET_NODE"
   )
@@ -983,7 +987,7 @@ add_test(NAME check_forward_decl_skips_bodyless
   COMMAND ${CMAKE_COMMAND} -E cat forward_decl.inst.c)
 set_tests_properties(check_forward_decl_skips_bodyless
   PROPERTIES
-  DEPENDS instrument_forward_decl_exists
+  FIXTURES_REQUIRED instrument_forward_decl
   LABELS "lang:C;phase:check"
   PASS_REGULAR_EXPRESSION "TAU_PROFILE_SET_NODE"
   FAIL_REGULAR_EXPRESSION "TAU_PROFILE_TIMER[^\n]*undefined_in_tu"
@@ -993,7 +997,7 @@ add_test(NAME check_pure_virtual_skips_bodyless
   COMMAND ${CMAKE_COMMAND} -E cat pure_virtual.inst.cpp)
 set_tests_properties(check_pure_virtual_skips_bodyless
   PROPERTIES
-  DEPENDS instrument_pure_virtual_exists
+  FIXTURES_REQUIRED instrument_pure_virtual
   LABELS "lang:CXX;phase:check"
   PASS_REGULAR_EXPRESSION "TAU_PROFILE_SET_NODE"
   FAIL_REGULAR_EXPRESSION
@@ -1011,6 +1015,7 @@ add_test(NAME instrument_inline_off
 set_tests_properties(instrument_inline_off
   PROPERTIES
   REQUIRED_FILES "${CMAKE_SOURCE_DIR}/tests/instrument_inline.cpp"
+  FIXTURES_SETUP instrument_inline_off
   LABELS "lang:CXX;phase:instrument"
   PASS_REGULAR_EXPRESSION "[Ii]nstrumentation:"
 )
@@ -1019,7 +1024,7 @@ add_test(NAME check_inline_off_skips_inline
   COMMAND ${CMAKE_COMMAND} -E cat instrument_inline_off.inst.cpp)
 set_tests_properties(check_inline_off_skips_inline
   PROPERTIES
-  DEPENDS instrument_inline_off
+  FIXTURES_REQUIRED instrument_inline_off
   LABELS "lang:CXX;phase:check"
   PASS_REGULAR_EXPRESSION "TAU_PROFILE_SET_NODE"
   FAIL_REGULAR_EXPRESSION
@@ -1035,6 +1040,7 @@ add_test(NAME instrument_inline_on
 set_tests_properties(instrument_inline_on
   PROPERTIES
   REQUIRED_FILES "${CMAKE_SOURCE_DIR}/tests/instrument_inline.cpp"
+  FIXTURES_SETUP instrument_inline_on
   LABELS "lang:CXX;phase:instrument"
   PASS_REGULAR_EXPRESSION "[Ii]nstrumentation:"
 )
@@ -1043,7 +1049,7 @@ add_test(NAME check_inline_on_instruments_method
   COMMAND ${CMAKE_COMMAND} -E cat instrument_inline_on.inst.cpp)
 set_tests_properties(check_inline_on_instruments_method
   PROPERTIES
-  DEPENDS instrument_inline_on
+  FIXTURES_REQUIRED instrument_inline_on
   LABELS "lang:CXX;phase:check"
   PASS_REGULAR_EXPRESSION "TAU_PROFILE_TIMER[^\n]*method_in_class_body"
 )
@@ -1052,7 +1058,7 @@ add_test(NAME check_inline_on_instruments_free_fn
   COMMAND ${CMAKE_COMMAND} -E cat instrument_inline_on.inst.cpp)
 set_tests_properties(check_inline_on_instruments_free_fn
   PROPERTIES
-  DEPENDS instrument_inline_on
+  FIXTURES_REQUIRED instrument_inline_on
   LABELS "lang:CXX;phase:check"
   PASS_REGULAR_EXPRESSION "TAU_PROFILE_TIMER[^\n]*free_fn_marked_inline"
 )
@@ -1522,6 +1528,7 @@ function(add_fabricate_test name src with_flag pass_regex)
     PROPERTIES
     REQUIRED_FILES "${CMAKE_SOURCE_DIR}/tests/${src}"
     ENVIRONMENT "SALT_FABRICATE_UNKNOWN_TYPES=0"
+    FIXTURES_SETUP instrument_fabricate_${name}
     LABELS "${_lang_label};phase:instrument;fabricate"
     PASS_REGULAR_EXPRESSION "${instrument_pass_pattern}"
   )
@@ -1530,7 +1537,7 @@ function(add_fabricate_test name src with_flag pass_regex)
   )
   set_tests_properties(check_fabricate_${name}
     PROPERTIES
-    DEPENDS instrument_fabricate_${name}
+    FIXTURES_REQUIRED instrument_fabricate_${name}
     ENVIRONMENT "SALT_FABRICATE_UNKNOWN_TYPES=0"
     LABELS "${_lang_label};phase:check;fabricate"
     PASS_REGULAR_EXPRESSION "${pass_regex}"
@@ -1567,7 +1574,7 @@ add_test(NAME check_fabricate_reuse_second
 )
 set_tests_properties(check_fabricate_reuse_second
   PROPERTIES
-  DEPENDS instrument_fabricate_reuse
+  FIXTURES_REQUIRED instrument_fabricate_reuse
   LABELS "lang:CXX;phase:check;fabricate"
   PASS_REGULAR_EXPRESSION "int second[(]testns::lemur<int>[)]"
 )
@@ -1585,7 +1592,7 @@ add_test(NAME check_fabricate_mixed_kinds_template
 )
 set_tests_properties(check_fabricate_mixed_kinds_template
   PROPERTIES
-  DEPENDS instrument_fabricate_mixed_kinds
+  FIXTURES_REQUIRED instrument_fabricate_mixed_kinds
   LABELS "lang:CXX;phase:check;fabricate"
   PASS_REGULAR_EXPRESSION "int usesTemplate[(]testns::lemur<int>[)]"
 )
@@ -1600,7 +1607,7 @@ add_test(NAME check_fabricate_member_def_ctor
 )
 set_tests_properties(check_fabricate_member_def_ctor
   PROPERTIES
-  DEPENDS instrument_fabricate_member_def
+  FIXTURES_REQUIRED instrument_fabricate_member_def
   LABELS "lang:CXX;phase:check;fabricate"
   PASS_REGULAR_EXPRESSION "int MyClass::MyClass[(]void[)]"
 )
@@ -1628,6 +1635,7 @@ set_tests_properties(instrument_fabricate_env
   PROPERTIES
   REQUIRED_FILES "${CMAKE_SOURCE_DIR}/tests/fabricate_case1.cpp"
   ENVIRONMENT "SALT_FABRICATE_UNKNOWN_TYPES=1"
+  FIXTURES_SETUP instrument_fabricate_env
   LABELS "lang:CXX;phase:instrument;fabricate"
   PASS_REGULAR_EXPRESSION
     "Fabricated [0-9]+ namespaces, [0-9]+ class templates"
@@ -1637,7 +1645,7 @@ add_test(NAME check_fabricate_env
 )
 set_tests_properties(check_fabricate_env
   PROPERTIES
-  DEPENDS instrument_fabricate_env
+  FIXTURES_REQUIRED instrument_fabricate_env
   LABELS "lang:CXX;phase:check;fabricate"
   PASS_REGULAR_EXPRESSION "int test[(]testns::lemur<int>[)]"
 )
@@ -1779,7 +1787,7 @@ if(HAVE_TAU)
 
   # Emit per-compiler TAU build/run/profile tests for one C/C++ test source.
   # Reads tauc/tauc_opts/compile_opts/compile_fail_patterns/_lang_label/
-  # depends_on/test_name/test_base_name/test_lang/test_path/
+  # test_name/test_base_name/test_lang/test_path/
   # _${test_base_name}_extra_sources from compile_instrumented's scope.
   function(_salt_tau_emit_compiler_tests comp)
     set(lower_comp ${comp})
@@ -1820,7 +1828,6 @@ if(HAVE_TAU)
         "PATH=path_list_prepend:${TAU_BIN_DIR}"
       FIXTURES_REQUIRED ${obj_fix}
       FIXTURES_SETUP compile_${lower_comp}_${test_name}
-      DEPENDS ${depends_on}
       LABELS "${_lang_label};${tc_label};phase:compile"
       FAIL_REGULAR_EXPRESSION "${compile_fail_patterns}"
     )
@@ -1848,8 +1855,6 @@ if(HAVE_TAU)
   function(compile_instrumented test_src)
     get_filename_component(test_base_name ${test_src} NAME_WE)
     set(test_name "${test_base_name}")
-    # Depends_on prevents concurrent runs from clobbering instrumented source.
-    set(depends_on instrument_${test_base_name})
     get_filename_component(test_lang ${test_src} LAST_EXT)
     string(REPLACE "." "" test_lang ${test_lang})
     set(extra_args ${ARGN})
@@ -1862,7 +1867,6 @@ if(HAVE_TAU)
     endif()
     if(n_extra_args EQUAL 1)
       set(test_name ${ARGV1})
-      set(depends_on instrument_${ARGV1})
     endif()
     _salt_tau_resolve_lang(
       ${test_base_name} ${test_lang} tauc test_path)
@@ -2129,6 +2133,7 @@ if(TEST_FORTRAN)
       PROPERTIES
       REQUIRED_FILES "${_required_files}"
       ENVIRONMENT "SALT_FORTRAN_VERBOSE=1"
+      FIXTURES_SETUP instrument_${test_source}
       LABELS "lang:Fortran;phase:instrument"
       PASS_REGULAR_EXPRESSION "SALT Instrumentor Plugin finished"
     )
@@ -2141,7 +2146,7 @@ if(TEST_FORTRAN)
   set_tests_properties(check-internal-func.f90
     PROPERTIES
     PASS_REGULAR_EXPRESSION "[\n\r]+[\t ]+&add "
-    DEPENDS instrument_internal-func.f90
+    FIXTURES_REQUIRED instrument_internal-func.f90
     LABELS "lang:Fortran;phase:check"
   )
 
@@ -2159,7 +2164,7 @@ if(TEST_FORTRAN)
     PROPERTIES
     PASS_REGULAR_EXPRESSION "implicit-main\\._implicit_main_"
     FAIL_REGULAR_EXPRESSION "\\[\\{[^}]*\\} \\{0,"
-    DEPENDS instrument_implicit-main.f90
+    FIXTURES_REQUIRED instrument_implicit-main.f90
     LABELS "lang:Fortran;phase:check"
   )
 
@@ -2176,7 +2181,7 @@ if(TEST_FORTRAN)
     set_tests_properties(check_alternate-return-value-${alt_value}
       PROPERTIES
       PASS_REGULAR_EXPRESSION "return ${alt_value}"
-      DEPENDS instrument_alternate-return.f90
+      FIXTURES_REQUIRED instrument_alternate-return.f90
       LABELS "lang:Fortran;phase:check"
     )
     _salt_in_test_output(instrument check_alternate-return-value-${alt_value})
@@ -2216,6 +2221,7 @@ if(TEST_FORTRAN)
       PROPERTIES
       REQUIRED_FILES "${_required_files}"
       ENVIRONMENT "SALT_FORTRAN_VERBOSE=1"
+      FIXTURES_SETUP instrument_${test_source}
       LABELS "lang:Fortran;phase:instrument"
       PASS_REGULAR_EXPRESSION "SALT Instrumentor Plugin finished"
     )
@@ -2226,7 +2232,7 @@ if(TEST_FORTRAN)
     set_tests_properties(check_no_tau_${test_source}
       PROPERTIES
       FAIL_REGULAR_EXPRESSION "tauProfileTimer;TAU_PROFILE"
-      DEPENDS instrument_${test_source}
+      FIXTURES_REQUIRED instrument_${test_source}
       LABELS "lang:Fortran;phase:check"
     )
     _salt_in_test_output(instrument
@@ -2250,6 +2256,7 @@ if(TEST_FORTRAN)
       PROPERTIES
       REQUIRED_FILES "${required_files}"
       ENVIRONMENT "SALT_FORTRAN_VERBOSE=1"
+      FIXTURES_SETUP instrument_${src}
       LABELS "lang:Fortran;phase:instrument"
       PASS_REGULAR_EXPRESSION "SALT Instrumentor Plugin finished"
       FAIL_REGULAR_EXPRESSION "ERROR:"
@@ -2267,7 +2274,7 @@ if(TEST_FORTRAN)
       set_tests_properties(check_omp_start_${_name}
         PROPERTIES
         PASS_REGULAR_EXPRESSION "${_start_above_directive}"
-        DEPENDS instrument_${src}
+        FIXTURES_REQUIRED instrument_${src}
         LABELS "lang:Fortran;phase:check"
       )
       _salt_in_test_output(instrument check_omp_start_${_name})
@@ -2302,13 +2309,15 @@ if(TEST_FORTRAN)
   set_tests_properties(
     rm_old_user_mod_dir mkdir_user_mod_dir make_user_iso_fortran_env_mod
     PROPERTIES
-    FIXTURES_SETUP user_iso_fortran_env_mod
     LABELS "lang:Fortran;phase:setup")
+  set_tests_properties(rm_old_user_mod_dir mkdir_user_mod_dir PROPERTIES
+    FIXTURES_SETUP user-mod_dir)
   set_tests_properties(mkdir_user_mod_dir PROPERTIES
     DEPENDS rm_old_user_mod_dir)
   set_tests_properties(make_user_iso_fortran_env_mod PROPERTIES
     WORKING_DIRECTORY ${_user_mod_dir}
-    DEPENDS mkdir_user_mod_dir
+    FIXTURES_SETUP user_iso_fortran_env_mod
+    FIXTURES_REQUIRED user-mod_dir
     REQUIRED_FILES "${_required_files}"
     ENVIRONMENT "SALT_FORTRAN_VERBOSE=1"
     PASS_REGULAR_EXPRESSION "SALT Instrumentor Plugin finished")
@@ -2381,7 +2390,6 @@ if(TEST_FORTRAN)
           ENVIRONMENT "TAU_MAKEFILE=${TAU_${dir}_MAKEFILE}"
           ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:${TAU_BIN_DIR}"
-          DEPENDS "instrument_${test_source}"
           FIXTURES_REQUIRED ${dir}_dir
           FIXTURES_SETUP compile_${upper_comp}_${test_source}
           LABELS "lang:Fortran;${tc_label};phase:compile"
