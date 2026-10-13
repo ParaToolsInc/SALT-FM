@@ -648,16 +648,15 @@ if(MLIR_FOUND AND Flang_FOUND)
     TYPE BIN) # TYPE BIN installs into CMAKE_INSTALL_BINDIR
 
   # Copy the flang intrinsic module files into the salt include directory in
-  # the build tree and change the file extension to SALT_MOD_SUFFIX
+  # the build tree and change the file extension to SALT_MOD_SUFFIX.
+  # configure_file copies the contents: Homebrew's modules are relative
+  # symlinks, which would dangle in the build tree.
   foreach(intrinsic_mod_file IN LISTS INTRINSIC_MOD_FILES)
     get_filename_component(INTRINSIC_MOD_BASE ${intrinsic_mod_file} NAME_WLE)
     set(SALT_INTRINSIC_MOD_FILE
       ${CMAKE_BINARY_DIR}/${SALT_INC_DIR}/${INTRINSIC_MOD_BASE}${SALT_MOD_SUFFIX})
     message(STATUS "Copying ${intrinsic_mod_file} to ${SALT_INTRINSIC_MOD_FILE}")
-    file(COPY ${intrinsic_mod_file} DESTINATION ${CMAKE_BINARY_DIR}/${SALT_INC_DIR})
-    file(RENAME
-      ${CMAKE_BINARY_DIR}/${SALT_INC_DIR}/${INTRINSIC_MOD_BASE}.mod
-      ${SALT_INTRINSIC_MOD_FILE})
+    configure_file(${intrinsic_mod_file} ${SALT_INTRINSIC_MOD_FILE} COPYONLY)
   endforeach()
 
   # Install the flang intrinsic module files into the salt include directory

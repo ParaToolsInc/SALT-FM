@@ -42,6 +42,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   build directory path contains a space, since TAU's compiler wrappers
   and the test checks cannot handle such paths and the tests would fail.
   Configure with `-DBUILD_TESTING=OFF` to build in such a path.
+- On macOS, the Flang plugin builds and runs with Homebrew `flang`,
+  which now ships a CMake package. SALT-FM copies the contents of
+  Homebrew's intrinsic module files, which are symbolic links; before,
+  it copied the links, which did not resolve in the build tree, and
+  `use, intrinsic` failed.
 
 ## [0.5.0] - 2026-10-09
 
