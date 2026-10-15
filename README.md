@@ -254,7 +254,9 @@ It matches the entries of the lists as TAU does, in C, C++, and Fortran:
 
 - A line that starts with `#` is a comment, even in a list. To start a
   routine pattern with the `#` wildcard, put the entry in quotes
-  (`"#_internal"`); routine lists remove the quotes.
+  (`"#_internal"`); routine lists remove the quotes. In file lists, as
+  in TAU, quotes are part of the pattern and SALT-FM warns about them;
+  use `?` to match a file name that starts with `#`.
 - In routine lists, `#` matches zero or more characters; in file lists,
   `*` does. In both, `?` matches one character, and every other
   character, such as `.`, `[`, or `$`, matches only itself. An entry

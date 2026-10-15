@@ -1,0 +1,5 @@
+# Quotes are part of a file pattern, as in TAU: the quoted entry does not
+# match sif_excl.*, so the source keeps its timers, and SALT-FM warns.
+BEGIN_FILE_EXCLUDE_LIST
+"sif_excl.*"
+END_FILE_EXCLUDE_LIST
