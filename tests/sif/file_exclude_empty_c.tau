@@ -1,0 +1,5 @@
+# SIF: exclude the empty source sif_empty.c. Its output must be an empty
+# copy, not a write error.
+BEGIN_FILE_EXCLUDE_LIST
+sif_empty.c
+END_FILE_EXCLUDE_LIST

@@ -220,6 +220,15 @@ and uses `flang` or `flang-new` from `PATH`. The driver must report the
 LLVM major version SALT-FM was built with, or `fparse-llvm` stops with
 an error.
 
+### Selective instrumentation
+
+`saltfm --tau_select_file=<file>` reads a TAU selective instrumentation
+file; TAU's compiler wrappers pass the file given with
+`-optTauSelectFile=<file>`.
+When its file lists exclude the source file, SALT-FM does not instrument
+it and writes the source to the output file after a `#line 1` line that
+names it, so TAU's compiler wrappers compile it without timers.
+
 ## Notes for package maintainers
 
 When SALT-FM is configured inside a git checkout, the build system installs

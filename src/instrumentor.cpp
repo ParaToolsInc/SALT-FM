@@ -20,6 +20,8 @@
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/Config/llvm-config.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Path.h"
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
@@ -59,6 +61,10 @@ const std::string file_get_contents(FILE *fp)
 
 const char *loc_typ_strs[NUM_LOC_TYPES] = {"begin func", "return", "multiline return", "exit"};
 
+static std::vector<inst_loc *> inst_locs;
+std::vector<std::string> files_to_go;
+std::vector<std::string> files_skipped;
+
 void makeFuncAndTimerNames(FunctionDecl *func, ASTContext *context, SourceManager &src_mgr, std::string &func_name,
                          std::string &timer_name);
 
@@ -74,7 +80,7 @@ static void exit_if_io_failed(bool failed, const char *what, const std::string &
 }
 
 // only works for inst_locs that are in the same file
-bool comp_inst_loc(inst_loc *first, inst_loc *second)
+static bool comp_inst_loc(inst_loc *first, inst_loc *second)
 {
     if (first->line != second->line)
     {
@@ -90,7 +96,7 @@ bool comp_inst_loc(inst_loc *first, inst_loc *second)
     }
 }
 
-bool eq_inst_loc(inst_loc *first, inst_loc *second)
+static bool eq_inst_loc(inst_loc *first, inst_loc *second)
 {
     if (first->line == second->line && first->col == second->col && first->kind == second->kind &&
         strcmp(first->func_name, second->func_name) == 0)
@@ -1007,40 +1013,8 @@ class FindFunctionConsumer : public clang::ASTConsumer
             {
                 continue;
             }
-            // if file include list exists: *only include those*
-            // except for things in the exclude list
-            if (!fileincludelist.empty())
-            {
-                if (check_file_against_list(fileincludelist, src_mgr.getFilename(srcloc).str()) &&
-                    !check_file_against_list(fileexcludelist, src_mgr.getFilename(srcloc).str()))
-                {
-                    // printf("adding1 %s\n", src_mgr.getFilename(srcloc).str().c_str());
-                    if (!src_mgr.getFilename(srcloc).str().empty() &&
-                        std::find(files_to_go.begin(), files_to_go.end(), src_mgr.getFilename(srcloc).str()) ==
-                            files_to_go.end())
-                    {
-                        files_to_go.push_back(src_mgr.getFilename(srcloc).str());
-                    }
-                    func_visitor.TraverseDecl(decl);
-                }
-            }
-            // if file include list does not exist, just check against exclude list
-            else
-            {
-                if (!check_file_against_list(fileexcludelist, src_mgr.getFilename(srcloc).str()))
-                {
-                    // decl->dump();
-                    // printf("adding2 %s\n", src_mgr.getFilename(srcloc).str().c_str());
-                    // printf("empty? %s\n", src_mgr.getFilename(srcloc).str().empty() ? "Yes" : "No");
-                    if (!src_mgr.getFilename(srcloc).str().empty() &&
-                        std::find(files_to_go.begin(), files_to_go.end(), src_mgr.getFilename(srcloc).str()) ==
-                            files_to_go.end())
-                    {
-                        files_to_go.push_back(src_mgr.getFilename(srcloc).str());
-                    }
-                    func_visitor.TraverseDecl(decl);
-                }
-            }
+            // findFiles() applies the file lists to the source files
+            func_visitor.TraverseDecl(decl);
         }
     }
 };
@@ -1224,6 +1198,31 @@ void instrumentor::instrument_file(std::ifstream &og_file, std::ofstream &inst_f
     }
 }
 
+// The output file for source `fname`: --tau_output if given, else the
+// basename of `fname` with ".inst" before its extension, in the working
+// directory.
+static std::string inst_file_name(const std::string &fname)
+{
+    if (!outputfile.empty())
+    {
+        return outputfile;
+    }
+    std::string newname = fname.substr(fname.find_last_of("/\\") + 1);
+    const auto location = newname.find_last_of(".");
+    newname.insert(location == std::string::npos ? newname.size() : location, ".inst");
+    return newname;
+}
+
+// `path` made absolute and without `.` or `..` components, so that a
+// source named on the command line compares equal to Clang's name for it
+static std::string normal_path(const std::string &path)
+{
+    llvm::SmallString<256> result(path);
+    llvm::sys::fs::make_absolute(result);
+    llvm::sys::path::remove_dots(result, /*remove_dot_dot=*/true);
+    return std::string(result);
+}
+
 void instrumentor::instrument()
 {
     // printf("size %zu\n", files_to_go.size());
@@ -1233,24 +1232,9 @@ void instrumentor::instrument()
 
     for (std::string fname : files_to_go)
     {
-        // if this isn't the file we passed in, continue
-        // basically, skip all headers.
-        std::string short_name;
-        auto location = fname.find_last_of("/\\");
-        if (location != std::string::npos)
-        {
-            short_name = fname.substr(location + 1);
-        }
-        else
-        {
-            short_name = fname;
-        }
-        if (file_set.count(short_name) == 0)
-        {
-            continue;
-        }
         DPRINT("Instrumenting %s\n", fname.c_str());
         std::vector<inst_loc *> inst_locations;
+        const std::string abs_fname = normal_path(fname);
 
         DPRINT0("filtering locations for file\n");
         // filter on fname
@@ -1262,7 +1246,7 @@ void instrumentor::instrument()
                                                     timer_name.find_first_of("}") - timer_name.find_first_of("{") - 1);
             // printf("loc file %s\n", loc_fname.c_str());
             // printf("cur file %s\n", fname.c_str());
-            if (loc_fname.find(fname) != std::string::npos || fname.find(loc_fname) != std::string::npos)
+            if (normal_path(loc_fname) == abs_fname)
             {
                 inst_locations.push_back(loc);
             }
@@ -1288,32 +1272,7 @@ void instrumentor::instrument()
 
         std::ifstream og_file;
         std::ofstream inst_file;
-        std::string newname = fname;
-        if (!outputfile.empty())
-        {
-            newname = outputfile;
-        }
-        else
-        {
-            auto location = fname.find_last_of("/\\");
-            if (location != std::string::npos)
-            {
-                newname = fname.substr(location + 1);
-            }
-            else
-            {
-                newname = fname;
-            }
-            location = newname.find_last_of(".");
-            if (location != std::string::npos)
-            {
-                newname.insert(newname.find_last_of("."), ".inst");
-            }
-            else
-            {
-                newname.append(".inst");
-            }
-        }
+        const std::string newname = inst_file_name(fname);
         DPRINT("new filename (inst): %s\n", newname.c_str());
 
         inst_file.open(newname);
@@ -1376,15 +1335,7 @@ void instrumentor::instrument()
     {
         std::ifstream og_file;
         std::ofstream inst_file;
-        std::string newname = fname;
-        if (!outputfile.empty())
-        {
-            newname = outputfile;
-        }
-        else
-        {
-            newname.insert(newname.find_last_of("."), ".inst");
-        }
+        const std::string newname = inst_file_name(fname);
         DPRINT("new filename (skip): %s\n", newname.c_str());
 
         inst_file.open(newname);
@@ -1392,9 +1343,16 @@ void instrumentor::instrument()
         og_file.open(fname);
         exit_if_io_failed(!og_file.is_open(), "open input file", fname);
 
-        inst_file << og_file.rdbuf();
-
+        // __FILE__ and debug information name the source, not the copy
+        inst_file << "#line 1 \"" << fname << "\"\n";
+        // Copying an empty rdbuf() sets failbit, so copy only a non-empty file
+        if (og_file.peek() != std::ifstream::traits_type::eof())
+        {
+            inst_file << og_file.rdbuf();
+        }
+        exit_if_io_failed(!inst_file, "write output file", newname);
         og_file.close();
         inst_file.close();
+        exit_if_io_failed(!inst_file, "write output file", newname);
     }
 }
