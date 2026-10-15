@@ -65,6 +65,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   longer stop the parse, and the `BEGIN_INSTRUMENT_SECTION` warning goes
   to stderr on its own line
   ([#71](https://github.com/ParaToolsInc/SALT-FM/issues/71)).
+- The C/C++ instrumentor and the Fortran plugin match selective
+  instrumentation entries with one wildcard matcher that follows TAU:
+  `#` (routines) or `*` (files) matches zero or more characters, `?`
+  matches one character, and every other character is literal. Before,
+  C and C++ built regular expressions, so `.`, `[`, and `$` in an entry
+  had their regular expression meanings, `?` was literal in routines and
+  optional in files, and results varied with the C++ library. Fortran
+  treated `?` as literal and matched file entries only against the
+  basename, so an entry with a `/` never matched; such an entry now
+  matches the whole source path
+  ([#71](https://github.com/ParaToolsInc/SALT-FM/issues/71)).
 
 ## [0.5.0] - 2026-10-09
 

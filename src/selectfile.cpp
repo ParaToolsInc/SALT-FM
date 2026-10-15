@@ -1,4 +1,3 @@
-#include "instrumentor.hpp"
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -809,4 +808,66 @@ bool processInstrumentationRequests(const char *fname)
   dump_list(fileexcludelist);
 
   return true;
+}
+
+bool wildcardMatch(const std::string &pattern, const std::string &name, char star)
+{
+  /* On a mismatch, retry from the last `star` with one more character
+     matched by it. */
+  size_t p = 0;
+  size_t n = 0;
+  size_t star_p = std::string::npos;
+  size_t star_n = 0;
+  while (n < name.size()) {
+    if (p < pattern.size() && pattern[p] == star) {
+      star_p = p++;
+      star_n = n;
+    } else if (p < pattern.size() && (pattern[p] == '?' || pattern[p] == name[n])) {
+      p++;
+      n++;
+    } else if (star_p != std::string::npos) {
+      p = star_p + 1;
+      n = ++star_n;
+    } else {
+      return false;
+    }
+  }
+  while (p < pattern.size() && pattern[p] == star) {
+    p++;
+  }
+  return p == pattern.size();
+}
+
+bool routineInList(const std::list<std::string> &list, const std::string &name)
+{
+  for (const std::string &entry : list) {
+    if (wildcardMatch(entry, name, '#')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool fileInList(const std::list<std::string> &list, const std::string &path)
+{
+  const std::string basename = path.substr(path.find_last_of('/') + 1);
+  for (const std::string &entry : list) {
+    const bool whole = entry.find('/') != std::string::npos;
+    if (wildcardMatch(entry, whole ? path : basename, '*')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool instrumentRoutine(const std::string &name)
+{
+  return !routineInList(excludelist, name) &&
+         (includelist.empty() || routineInList(includelist, name));
+}
+
+bool instrumentFile(const std::string &path)
+{
+  return !fileInList(fileexcludelist, path) &&
+         (fileincludelist.empty() || fileInList(fileincludelist, path));
 }

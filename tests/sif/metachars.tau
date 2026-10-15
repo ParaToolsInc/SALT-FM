@@ -1,0 +1,7 @@
+# Regular expression metacharacters are literal, so no entry matches
+# keep_routine or excluded_routine and both keep their timers.
+BEGIN_EXCLUDE_LIST
+"#keep.routine#"
+"#excluded_routine[(]#"
+"#excluded_routine#$"
+END_EXCLUDE_LIST

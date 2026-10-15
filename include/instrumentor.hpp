@@ -51,8 +51,6 @@ typedef struct inst_loc {
 
 #endif
 
-bool check_file_against_list(std::list<std::string> list, std::string fname);
-
 // Source files to instrument and source files the file lists exclude,
 // defined once in instrumentor.cpp and filled by frontend.cpp
 extern std::vector<std::string> files_to_go;

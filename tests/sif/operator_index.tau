@@ -1,0 +1,5 @@
+# The routine name of Vec::operator[] contains a '[', which must not end
+# the name that the entry matches.
+BEGIN_EXCLUDE_LIST
+"#operator[]#"
+END_EXCLUDE_LIST

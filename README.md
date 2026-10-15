@@ -227,6 +227,32 @@ file; TAU's compiler wrappers pass the file given with
 `-optTauSelectFile=<file>`.
 SALT-FM removes the whitespace at the two ends of each line, including
 the carriage return of a CRLF line ending, and has no line length limit.
+It matches the entries of the lists as TAU does, in C, C++, and Fortran:
+
+- A line that starts with `#` is a comment, even in a list. To start a
+  routine pattern with the `#` wildcard, put the entry in quotes
+  (`"#_internal"`); routine lists remove the quotes.
+- In routine lists, `#` matches zero or more characters; in file lists,
+  `*` does. In both, `?` matches one character, and every other
+  character, such as `.`, `[`, or `$`, matches only itself. An entry
+  matches the whole name, not a part of it.
+- C and C++ routine entries match the routine's signature as the timer
+  name shows it, for example `void compute(int)`. Fortran routine
+  entries match the bare subprogram name.
+- A file entry with no `/` matches the basename of the source file. An
+  entry with a `/` must match the whole path as given to SALT-FM, which
+  is the path as written on the compile line when TAU's compiler
+  wrappers run SALT-FM; SALT-FM does not make it absolute or remove a
+  leading `./`. In file entries, `*` also matches `/`:
+
+  | Pattern | `src/a.c` | `./src/a.c` | `/abs/src/a.c` |
+  |---|---|---|---|
+  | `src/a.c` | yes | no | no |
+  | `*/src/a.c` | no | yes | yes |
+  | `*src/a.c` | yes | yes | yes (also `mysrc/a.c`) |
+  | `a.c` (no `/`, basename) | yes | yes | yes |
+- An exclude list has priority over an include list.
+
 When its file lists exclude the source file, SALT-FM does not instrument
 it and writes the source to the output file after a `#line 1` line that
 names it, so TAU's compiler wrappers compile it without timers.
