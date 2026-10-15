@@ -1154,9 +1154,10 @@ void instrumentor::instrument()
         for (inst_loc *loc : inst_locs)
         {
             std::string timer_name = std::string(loc->full_timer_name);
-            // grab contents of first set of curly braces, which is filename
-            std::string loc_fname = timer_name.substr(timer_name.find_first_of("{") + 1,
-                                                    timer_name.find_first_of("}") - timer_name.find_first_of("{") - 1);
+            // The file name, between " [{" and the "} {" before the line
+            // numbers, which may itself hold braces
+            const size_t fname_start = timer_name.find(" [{") + 3;
+            std::string loc_fname = timer_name.substr(fname_start, timer_name.rfind("} {") - fname_start);
             // printf("loc file %s\n", loc_fname.c_str());
             // printf("cur file %s\n", fname.c_str());
             if (normal_path(loc_fname) == abs_fname)
