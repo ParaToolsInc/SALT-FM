@@ -225,6 +225,8 @@ an error.
 `saltfm --tau_select_file=<file>` reads a TAU selective instrumentation
 file; TAU's compiler wrappers pass the file given with
 `-optTauSelectFile=<file>`.
+SALT-FM removes the whitespace at the two ends of each line, including
+the carriage return of a CRLF line ending, and has no line length limit.
 When its file lists exclude the source file, SALT-FM does not instrument
 it and writes the source to the output file after a `#line 1` line that
 names it, so TAU's compiler wrappers compile it without timers.

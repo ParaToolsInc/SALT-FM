@@ -1197,6 +1197,7 @@ endfunction()
 function(add_sif_test test_name lang src sif)
   cmake_parse_arguments(PARSE_ARGV 4 ARG "" "" "WARNINGS")
   set(name sif_${test_name})
+  get_filename_component(sif_path ${sif} ABSOLUTE BASE_DIR ${CMAKE_SOURCE_DIR})
   get_filename_component(_src_ext ${src} EXT)
   set(out_file ${name}.inst${_src_ext})
   set(log_file ${name}.log)
@@ -1217,7 +1218,7 @@ function(add_sif_test test_name lang src sif)
   add_test(NAME instrument_${name}
     COMMAND sh -c "\"$0\" \"$@\" > ${log_file} 2>&1; rc=$?; cat ${log_file}; exit $rc"
             "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm"
-            --tau_select_file=${CMAKE_SOURCE_DIR}/${sif}
+            --tau_select_file=${sif_path}
             --tau_output=${out_file}
             ${CMAKE_SOURCE_DIR}/${src}
   )
@@ -1228,7 +1229,7 @@ function(add_sif_test test_name lang src sif)
   endif()
   set_tests_properties(instrument_${name}
     PROPERTIES
-    REQUIRED_FILES "${CMAKE_SOURCE_DIR}/${src};${CMAKE_SOURCE_DIR}/${sif}"
+    REQUIRED_FILES "${CMAKE_SOURCE_DIR}/${src};${sif_path}"
     ENVIRONMENT "SALT_FORTRAN_VERBOSE=1"
     FIXTURES_REQUIRED ${name}_output
     FIXTURES_SETUP ${name}_inst
@@ -1606,6 +1607,58 @@ if(TEST_FORTRAN)
     PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_fortran}.*${_sif_excluded_pattern_fortran}"
   )
 endif()
+
+# SIF tests shared by the C, C++ and Fortran instrumentors. Each SIF works
+# with any of the sif_excl sources.
+set(_sif_langs c cpp)
+set(_sif_src_c tests/sif_excl.c)
+set(_sif_src_cpp tests/sif_excl.cpp)
+if(TEST_FORTRAN)
+  list(APPEND _sif_langs fortran)
+  set(_sif_src_fortran tests/fortran/sif_excl.f90)
+endif()
+
+# Whitespace at the two ends of each SIF line, and the '\r' of a CRLF
+# line, is removed before the BEGIN_/END_ tokens are compared and before
+# an entry goes into a list. Each SIF excludes excluded_routine and keeps
+# the source through a file include list.
+foreach(case trailing_whitespace crlf)
+  foreach(lang IN LISTS _sif_langs)
+    add_sif_test(${case}_${lang} ${lang} ${_sif_src_${lang}} tests/sif/${case}.tau)
+    set_tests_properties(check_sif_${case}_${lang}
+      PROPERTIES
+      PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_${lang}}"
+      FAIL_REGULAR_EXPRESSION "${_sif_excluded_pattern_${lang}}"
+    )
+  endforeach()
+endforeach()
+
+# A line longer than the old 64 KiB line buffer must not end the parse
+# and drop the lists after it.
+string(REPEAT "x" 70000 _sif_long_comment)
+file(WRITE ${CMAKE_BINARY_DIR}/sif/long_line.tau
+  "# ${_sif_long_comment}\nBEGIN_EXCLUDE_LIST\n\"#excluded_routine#\"\nEND_EXCLUDE_LIST\n")
+add_sif_test(long_line_c c tests/sif_excl.c ${CMAKE_BINARY_DIR}/sif/long_line.tau)
+set_tests_properties(check_sif_long_line_c
+  PROPERTIES
+  PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_c}"
+  FAIL_REGULAR_EXPRESSION "${_sif_excluded_pattern_c}"
+)
+
+# The BEGIN_INSTRUMENT_SECTION warning goes to stderr, on its own line.
+add_test(NAME sif_instrument_section_warning
+  COMMAND sh -c "\"$0\" \"$@\" 2>&1 >/dev/null"
+          "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm"
+          --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/tau/10_instrument_section.tau
+          --tau_output=sif_instrument_section.inst.c
+          ${CMAKE_SOURCE_DIR}/tests/sif_excl.c
+)
+set_tests_properties(sif_instrument_section_warning
+  PROPERTIES
+  LABELS "lang:C;phase:instrument;sif"
+  PASS_REGULAR_EXPRESSION "WARNING: Instrument section is not supported yet[.]\n"
+)
+_salt_in_test_output(sif sif_instrument_section_warning)
 
 # Fabrication tests (--tau_fabricate_unknown_types):
 function(add_fabricate_test name src with_flag pass_regex)

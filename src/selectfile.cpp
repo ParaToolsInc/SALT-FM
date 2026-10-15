@@ -24,26 +24,13 @@ void dump_list(std::list<std::string> l) {
   }
 }
 
-char *trimwhitespace(char *str)
+/* Removes the whitespace at the two ends of `line`, including the '\r' of a
+   CRLF line. */
+static void trimwhitespace(std::string &line)
 {
-  char *end;
-
-  // Trim leading space
-  while (isspace(*str))
-    str++;
-
-  if (*str == 0)    // All spaces?
-    return str;
-
-  // Trim trailing space
-  end = str + strlen(str) - 1;
-  while (end > str && isspace(*end))
-    end--;
-
-  // Write new null terminator
-  *(end + 1) = 0;
-
-  return str;
+  const char *space = " \t\r\n\v\f";
+  line.erase(line.find_last_not_of(space) + 1);
+  line.erase(0, line.find_first_not_of(space));
 }
 
 void parseError(const char *message, char *line, int lineno, int column)
@@ -741,12 +728,45 @@ static std::string parseListEntry(const char *entry, const char *listname, int l
   return result;
 }
 
+/* Reads the next line of `input` into `line`, with no length limit, and
+   trims it. Returns false at the end of the file. */
+static bool readLine(std::istream &input, std::string &line, int &lineno)
+{
+  if (!std::getline(input, line)) {
+    return false;
+  }
+  lineno++;
+  trimwhitespace(line);
+  return true;
+}
+
+/* Reads the entries of a list up to its `end` token into `list`. A leading
+   '#' starts a comment; routine lists warn about comments that look like
+   patterns. */
+static void readList(std::istream &input, int &lineno, const char *end,
+                     std::list<std::string> &list, const char *listname, bool routines)
+{
+  std::string line;
+  while (readLine(input, line, lineno) && line != end) {
+    if (line.empty()) {
+      continue;
+    }
+    if (line[0] == '#') {
+      if (routines) {
+        warnIfUnquotedWildcard(line.c_str(), listname, lineno);
+      }
+      continue;
+    }
+    list.push_back(parseListEntry(line.c_str(), listname, lineno));
+    DPRINT("Adding %s to %s\n", list.back().c_str(), listname);
+  }
+}
+
 bool processInstrumentationRequests(const char *fname)
 {
 
   std::ifstream input(fname);
-  char line[INBUF_SIZE];
-  char* inbuf;
+  std::string line;
   int lineno = 0;
 
 
@@ -757,122 +777,23 @@ bool processInstrumentationRequests(const char *fname)
 
 
   DPRINT0("Inside processInstrumentationRequests\n");
-  while (input.getline(line, INBUF_SIZE) || input.gcount()) {
-    lineno++;
-    /* Skip whitespaces at the beginning of line */
-    inbuf = line;
-    while (isspace(*inbuf)) {
-      ++inbuf;
-    }
-    if ((inbuf[0] == '#') || (inbuf[0] == '\0')) {
-      continue;
-    }
-    if (strcmp(inbuf,BEGIN_EXCLUDE_TOKEN) == 0) {
-      while(input.getline(line,INBUF_SIZE) || input.gcount()) {
-        lineno++;
-        /* Skip whitespaces at the beginning of line */
-        inbuf = line;
-        while (isspace(*inbuf)) {
-          ++inbuf;
-        }
-
-      	if (strcmp(inbuf, END_EXCLUDE_TOKEN) == 0) {
-          break; /* Found the end of exclude list. */
-        }
-
-        if (inbuf[0] == '#') {
-          warnIfUnquotedWildcard(inbuf, "exclude list", lineno);
-          continue;
-        }
-        if (inbuf[0] == '\0') {
-          continue;
-        }
-        excludelist.push_back(parseListEntry(inbuf, "exclude list", lineno));
-        DPRINT("Passing %s as exclude string\n", excludelist.back().c_str());
+  while (readLine(input, line, lineno)) {
+    if (line == BEGIN_EXCLUDE_TOKEN) {
+      readList(input, lineno, END_EXCLUDE_TOKEN, excludelist, "exclude list", true);
+    } else if (line == BEGIN_INCLUDE_TOKEN) {
+      readList(input, lineno, END_INCLUDE_TOKEN, includelist, "include list", true);
+    } else if (line == BEGIN_FILE_INCLUDE_TOKEN) {
+      readList(input, lineno, END_FILE_INCLUDE_TOKEN, fileincludelist, "file include list", false);
+    } else if (line == BEGIN_FILE_EXCLUDE_TOKEN) {
+      readList(input, lineno, END_FILE_EXCLUDE_TOKEN, fileexcludelist, "file exclude list", false);
+    } else if (line == BEGIN_INSTRUMENT_SECTION) {
+      fprintf(stderr, "WARNING: Instrument section is not supported yet.\n");
+      while (readLine(input, line, lineno) && line != END_INSTRUMENT_SECTION) {
+        // parseInstrumentationCommand(line, lineno);
       }
     }
-
-    if (strcmp(inbuf, BEGIN_INCLUDE_TOKEN) == 0) {
-      while(input.getline(line,INBUF_SIZE) || input.gcount()) {
-        lineno++;
-        /* Skip whitespaces at the beginning of line */
-        inbuf = line;
-        while (isspace(*inbuf)) {
-          ++inbuf;
-        }
-      	if (strcmp(inbuf, END_INCLUDE_TOKEN) == 0) {
-          break; /* Found the end of exclude list. */
-        }
-        if (inbuf[0] == '#') {
-          warnIfUnquotedWildcard(inbuf, "include list", lineno);
-          continue;
-        }
-        if (inbuf[0] == '\0') {
-          continue;
-        }
-        includelist.push_back(parseListEntry(inbuf, "include list", lineno));
-        DPRINT("Passing %s as include string\n", includelist.back().c_str());
-      }
-    }
-
-    if (strcmp(inbuf,BEGIN_FILE_INCLUDE_TOKEN) == 0) {
-      while(input.getline(line,INBUF_SIZE) || input.gcount()) {
-        lineno++;
-        /* Skip whitespaces at the beginning of line */
-        inbuf = line;
-        while (isspace(*inbuf)) {
-          ++inbuf;
-        }
-      	if (strcmp(inbuf, END_FILE_INCLUDE_TOKEN) == 0) {
-          break; /* Found the end of file include list. */
-        }
-        if ((inbuf[0] == '#') || (inbuf[0] == '\0')) {
-          continue;
-        }
-        fileincludelist.push_back(parseListEntry(inbuf, "file include list", lineno));
-        DPRINT("Parsing inst. file: adding %s to file include list\n", fileincludelist.back().c_str());
-      }
-    }
-
-    if (strcmp(inbuf,BEGIN_FILE_EXCLUDE_TOKEN) == 0) {
-      while(input.getline(line,INBUF_SIZE) || input.gcount()) {
-        lineno++;
-        /* Skip whitespaces at the beginning of line */
-        inbuf = line;
-        while (isspace(*inbuf)) {
-          ++inbuf;
-        }
-      	if (strcmp(inbuf, END_FILE_EXCLUDE_TOKEN) == 0) {
-          break; /* Found the end of file exclude list. */
-        }
-        if ((inbuf[0] == '#') || (inbuf[0] == '\0')) {
-          continue;
-        }
-        fileexcludelist.push_back(parseListEntry(inbuf, "file exclude list", lineno));
-      }
-    }
-
-    if (strcmp(inbuf,BEGIN_INSTRUMENT_SECTION) == 0) {
-      printf("WARNING: Instrument section is not supported yet.");
-      while(input.getline(line,INBUF_SIZE) || input.gcount()) {
-        lineno++;
-        /* Skip whitespaces at the beginning of line */
-        inbuf = line;
-        while (isspace(*inbuf)) {
-          ++inbuf;
-        }
-
-    	if (strcmp(inbuf, END_INSTRUMENT_SECTION) == 0) {
-        break; /* Found the end of file exclude list. */
-      }
-      if ((inbuf[0] == '#') || (inbuf[0] == '\0')) {
-        continue;
-      }
-	    // parseInstrumentationCommand(inbuf, lineno);
-      }
-    }
-    /* next token */
-  } // while (input.getline(line, INBUF_SIZE) || input.gcount())
+    /* Comments, blank lines and other lines outside a list are ignored. */
+  }
   input.close();
 
   DPRINT0("includelist\n");
