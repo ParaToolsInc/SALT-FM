@@ -1,0 +1,9 @@
+# Fortran routine names ignore case: the include list keeps both
+# subprograms, and the exclude list removes excluded_routine.
+BEGIN_INCLUDE_LIST
+KEEP_ROUTINE
+Excluded_Routine
+END_INCLUDE_LIST
+BEGIN_EXCLUDE_LIST
+EXCLUDED_ROUTINE
+END_EXCLUDE_LIST

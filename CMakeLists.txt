@@ -1606,6 +1606,15 @@ if(TEST_FORTRAN)
     PROPERTIES
     PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_fortran}.*${_sif_excluded_pattern_fortran}"
   )
+
+  # Fortran routine names ignore case in the include and exclude lists.
+  add_sif_test(routine_case_fortran
+    fortran tests/fortran/sif_excl.f90 tests/sif/routine_case_f90.tau)
+  set_tests_properties(check_sif_routine_case_fortran
+    PROPERTIES
+    PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_fortran}"
+    FAIL_REGULAR_EXPRESSION "${_sif_excluded_pattern_fortran}"
+  )
 endif()
 
 # SIF tests shared by the C, C++ and Fortran instrumentors. Each SIF works

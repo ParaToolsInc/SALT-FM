@@ -238,7 +238,8 @@ It matches the entries of the lists as TAU does, in C, C++, and Fortran:
   matches the whole name, not a part of it.
 - C and C++ routine entries match the routine's signature as the timer
   name shows it, for example `void compute(int)`. Fortran routine
-  entries match the bare subprogram name.
+  entries match the bare subprogram name and ignore case, as Fortran
+  does; file entries and C and C++ routine entries are case-sensitive.
 - A file entry with no `/` matches the basename of the source file. An
   entry with a `/` must match the whole path as given to SALT-FM, which
   is the path as written on the compile line when TAU's compiler
