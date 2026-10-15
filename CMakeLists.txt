@@ -21,9 +21,12 @@ endif()
 # we ship against). Targeting 10.15 emits "selected platform is no longer
 # supported" warnings from <__configuration/availability.h>. The target
 # may be raised again post-find_package(LLVM) to match the LLVM dylib's
-# own LC_BUILD_VERSION minos.
+# own LC_BUILD_VERSION minos. A cache entry, not a normal variable, so
+# that raise takes effect in the first configure too: a normal variable
+# would hide the raised cache entry (policy CMP0126).
 if(APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
-  set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0")
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING
+    "Minimum macOS deployment target")
 endif()
 
 # Auto-detect CMAKE_OSX_SYSROOT via xcrun if not set. Without it, CMake

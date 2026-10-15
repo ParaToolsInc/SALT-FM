@@ -120,6 +120,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   naming the line. Before, it removed the quotes, as it still does in
   routine lists
   ([#71](https://github.com/ParaToolsInc/SALT-FM/issues/71)).
+- On macOS, the first configure of a new build directory applies the
+  deployment target raised to match the LLVM library. Before, only a
+  second configure did, so the first build linked for macOS 11.0 and ld
+  printed hundreds of "built for newer 'macOS' version" warnings.
 
 ## [0.5.0] - 2026-10-09
 
