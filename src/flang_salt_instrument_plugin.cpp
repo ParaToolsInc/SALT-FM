@@ -94,6 +94,13 @@ namespace salt::fortran {
                 }
             }
 
+            // The setup code of a main program whose timer the SIF removes,
+            // even when the file lists exclude its file
+            void addProgramSetupInstrumentation(const int start_line) {
+                instrumentationPoints_.emplace_back(std::make_unique<InstrumentationPoint>(
+                    InstrumentationPointType::PROGRAM_SETUP, start_line, InstrumentationLocation::BEFORE));
+            }
+
             void addProcedureBeginInstrumentation(const int start_line, const std::string &timer_name) {
                 if (shouldInstrument()) {
                     instrumentationPoints_.emplace_back(
@@ -552,6 +559,16 @@ namespace salt::fortran {
                     const std::string splitTimerName{ss2.str()};
 
                     if (isInMainProgram_) {
+                        warnIfMainNotIncluded(procName, /*ignoreCase=*/true);
+                    }
+                    if (isInMainProgram_ && (skipInstrumentFile_ || !shouldInstrumentSubprogram(procName))) {
+                        // Keep the setup code but not the timer; the flag also
+                        // drops the timer stop
+                        verboseStream() << "Skipping the timer of " << procName <<
+                                " due to selective instrumentation\n";
+                        skipInstrumentSubprogram_ = true;
+                        addProgramSetupInstrumentation(startLoc.line);
+                    } else if (isInMainProgram_) {
                         verboseStream() << "Program begin \"" << mainProgramName_ << "\" at " << startLoc.line <<
                                 ", " << startLoc.column << "\n";
                         addProgramBeginInstrumentation(startLoc.line, splitTimerName);
@@ -563,6 +580,10 @@ namespace salt::fortran {
                 } else {
                     verboseStream() << "End at line " << endLine << "\n";
                     addProcedureEndInstrumentation(endLine);
+                    if (isInMainProgram_) {
+                        // Its internal subprograms choose for themselves
+                        skipInstrumentSubprogram_ = false;
+                    }
                 }
             }
 
@@ -876,7 +897,20 @@ namespace salt::fortran {
                 std::exit(-3);
             }
 
-            // Access and process the "program_begin_insert" node
+            // The optional "program_setup_insert" node: setup code at the start
+            // of the main program, inserted with or without its timer
+            if (ryml::ConstNodeRef programSetupNode = fortranNode[SALT_FORTRAN_PROGRAM_SETUP_KEY];
+                !programSetupNode.invalid()) {
+                for (const ryml::ConstNodeRef child: programSetupNode.children()) {
+                    ss << child.val() << "\n";
+                }
+            }
+            const std::string programSetup{ss.str()};
+            map.emplace(InstrumentationPointType::PROGRAM_SETUP, programSetup);
+            ss.str(""s);
+
+            // Access and process the "program_insert" node: the main
+            // program's timer, after its setup code
             ryml::ConstNodeRef programBeginNode = fortranNode[SALT_FORTRAN_PROGRAM_BEGIN_KEY];
             if (programBeginNode.invalid()) {
                 llvm::errs() << "ERROR: '" << SALT_FORTRAN_PROGRAM_BEGIN_KEY << "' key not found under 'Fortran'.\n";
@@ -885,7 +919,7 @@ namespace salt::fortran {
             for (const ryml::ConstNodeRef child: programBeginNode.children()) {
                 ss << child.val() << "\n";
             }
-            map.emplace(InstrumentationPointType::PROGRAM_BEGIN, ss.str());
+            map.emplace(InstrumentationPointType::PROGRAM_BEGIN, programSetup + ss.str());
             ss.str(""s);
 
             // Access and process the "procedure_begin_insert" node

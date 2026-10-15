@@ -1,0 +1,7 @@
+# SIF: exclude the main program. Its timer goes, but TAU's setup code
+# stays. C and C++ entries match the signature, Fortran entries the
+# program name.
+BEGIN_EXCLUDE_LIST
+"#main(#"
+sif_excl
+END_EXCLUDE_LIST

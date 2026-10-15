@@ -167,28 +167,46 @@ std::string ReplacePhrase(std::string str, std::string phrase, std::string to_re
     return str;
 }
 
+// Appends the main code lines `lines` to `code`
+static void append_main_code(ryml::ConstNodeRef lines, inst_loc *loc, std::string &code)
+{
+    for (ryml::ConstNodeRef const& child : lines.children())
+    {
+        std::stringstream ss;
+        ss << child.val();
+        code += ReplacePhrase(ss.str(), "${full_timer_name}", loc->full_timer_name) + "\n";
+    }
+}
+
 void make_begin_func_code(inst_loc *loc, std::string &code, ryml::Tree yaml_tree, const bool use_cxx_api=false)
 {
     /* dump the location */
     /* dump_inst_loc(loc); */
+    if (strcmp(loc->func_name, "main") == 0)
+    {
+        // main gets its setup code even when the SIF removes its timer. A
+        // main without parameters gets main_setup_insert_noargs if given.
+        ryml::ConstNodeRef root = yaml_tree.crootref();
+        ryml::ConstNodeRef setup;
+        if (!loc->has_args)
+        {
+            setup = root.find_child("main_setup_insert_noargs");
+        }
+        if (setup.invalid())
+        {
+            setup = root.find_child("main_setup_insert");
+        }
+        if (!setup.invalid())
+        {
+            append_main_code(setup, loc, code);
+        }
+    }
     if (!loc->skip)
     {
         if (strcmp(loc->func_name, "main") == 0 )
         {
-            // Insert on main function
-            for (ryml::NodeRef const& child : yaml_tree[use_cxx_api ? "main_insert_scope" : "main_insert"].children())
-            {
-                std::stringstream ss;
-                ss << child.val();
-                std::string updated_str;
-                updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", loc->full_timer_name);
-                /* handle the case where main does NOT have arguments */
-                if (!loc->has_args)
-                {
-                    updated_str = ReplacePhrase(updated_str, "    TAU_INIT(&argc, &argv);", "/* TAU_INIT() skipped, no arguments */");
-                }
-                code += updated_str + "\n";
-            }
+            // Insert main's timer
+            append_main_code(yaml_tree[use_cxx_api ? "main_insert_scope" : "main_insert"], loc, code);
         }
         else
         {
@@ -983,7 +1001,12 @@ void instrumentor::select_routines()
 {
     for (inst_loc *loc : inst_locs)
     {
-        loc->skip = !instrumentRoutine(selectName(loc->full_timer_name));
+        const std::string name = selectName(loc->full_timer_name);
+        loc->skip = !instrumentRoutine(name);
+        if (loc->kind == BEGIN_FUNC && strcmp(loc->func_name, "main") == 0)
+        {
+            warnIfMainNotIncluded(name);
+        }
     }
 }
 
@@ -1129,8 +1152,14 @@ void instrumentor::instrument()
     //     printf("Instrumenting %s\n", fname.c_str());
     // }
 
-    for (std::string fname : files_to_go)
+    // The file lists exclude the files after files_to_go, but main keeps
+    // its setup code there
+    std::vector<std::string> files = files_to_go;
+    files.insert(files.end(), files_skipped.begin(), files_skipped.end());
+    for (size_t i = 0; i < files.size(); i++)
     {
+        const std::string &fname = files[i];
+        const bool skipped = i >= files_to_go.size();
         DPRINT("Instrumenting %s\n", fname.c_str());
         std::vector<inst_loc *> inst_locations;
         const std::string abs_fname = normal_path(fname);
@@ -1147,6 +1176,14 @@ void instrumentor::instrument()
             // printf("cur file %s\n", fname.c_str());
             if (normal_path(loc_fname) == abs_fname)
             {
+                if (skipped)
+                {
+                    if (loc->kind != BEGIN_FUNC || strcmp(loc->func_name, "main") != 0)
+                    {
+                        continue;
+                    }
+                    loc->skip = true;
+                }
                 inst_locations.push_back(loc);
             }
         }
@@ -1178,6 +1215,22 @@ void instrumentor::instrument()
         exit_if_io_failed(!inst_file.is_open(), "open output file", newname);
         og_file.open(fname);
         exit_if_io_failed(!og_file.is_open(), "open input file", fname);
+
+        if (skipped && inst_locations.empty())
+        {
+            // __FILE__ and debug information name the source, not the copy
+            inst_file << "#line 1 \"" << fname << "\"\n";
+            // Copying an empty rdbuf() sets failbit, so copy only a non-empty file
+            if (og_file.peek() != std::ifstream::traits_type::eof())
+            {
+                inst_file << og_file.rdbuf();
+            }
+            exit_if_io_failed(!inst_file, "write output file", newname);
+            og_file.close();
+            inst_file.close();
+            exit_if_io_failed(!inst_file, "write output file", newname);
+            continue;
+        }
 
         // check for cxxparse executable name. If so, force cxx api usage
         if (strstr(exec_name, "cxxparse") != nullptr)
@@ -1224,31 +1277,6 @@ void instrumentor::instrument()
 
         llvm::outs() << "Instrumentation: " << yaml_tree["instrumentation"].val() << "\n";
         instrument_file(og_file, inst_file, fname, inst_locations, use_cxx_api, yaml_tree);
-        exit_if_io_failed(!inst_file, "write output file", newname);
-        og_file.close();
-        inst_file.close();
-        exit_if_io_failed(!inst_file, "write output file", newname);
-    }
-
-    for (std::string fname : files_skipped)
-    {
-        std::ifstream og_file;
-        std::ofstream inst_file;
-        const std::string newname = inst_file_name(fname);
-        DPRINT("new filename (skip): %s\n", newname.c_str());
-
-        inst_file.open(newname);
-        exit_if_io_failed(!inst_file.is_open(), "open output file", newname);
-        og_file.open(fname);
-        exit_if_io_failed(!og_file.is_open(), "open input file", fname);
-
-        // __FILE__ and debug information name the source, not the copy
-        inst_file << "#line 1 \"" << fname << "\"\n";
-        // Copying an empty rdbuf() sets failbit, so copy only a non-empty file
-        if (og_file.peek() != std::ifstream::traits_type::eof())
-        {
-            inst_file << og_file.rdbuf();
-        }
         exit_if_io_failed(!inst_file, "write output file", newname);
         og_file.close();
         inst_file.close();

@@ -98,4 +98,9 @@ bool instrumentRoutine(const std::string &name, bool ignoreCase = false);
 /* True if the file lists select file `path`, as instrumentRoutine(). */
 bool instrumentFile(const std::string &path);
 
+/* Warns that main program `name` still gets its setup code when the
+   include list is not empty, does not match it, and the exclude list
+   does not match it either. Fortran names pass `ignoreCase`. */
+void warnIfMainNotIncluded(const std::string &name, bool ignoreCase = false);
+
 #endif

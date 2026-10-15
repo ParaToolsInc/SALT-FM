@@ -1193,10 +1193,15 @@ endfunction()
 # check_sif_<test_name>. The caller is responsible for setting
 # PASS_REGULAR_EXPRESSION / FAIL_REGULAR_EXPRESSION on the check test.
 # warn_sif_<test_name> checks the instrumentor's SIF list-entry warnings
-# against the optional WARNINGS (see _sif_set_warning_checks).
+# against the optional WARNINGS (see _sif_set_warning_checks). The optional
+# CONFIG names a configuration file relative to the source directory.
 function(add_sif_test test_name lang src sif)
-  cmake_parse_arguments(PARSE_ARGV 4 ARG "" "" "WARNINGS")
+  cmake_parse_arguments(PARSE_ARGV 4 ARG "" "CONFIG" "WARNINGS")
   set(name sif_${test_name})
+  set(config_arg "")
+  if(ARG_CONFIG)
+    set(config_arg --config_file=${CMAKE_SOURCE_DIR}/${ARG_CONFIG})
+  endif()
   get_filename_component(sif_path ${sif} ABSOLUTE BASE_DIR ${CMAKE_SOURCE_DIR})
   get_filename_component(_src_ext ${src} EXT)
   set(out_file ${name}.inst${_src_ext})
@@ -1218,6 +1223,7 @@ function(add_sif_test test_name lang src sif)
   add_test(NAME instrument_${name}
     COMMAND sh -c "\"$0\" \"$@\" > ${log_file} 2>&1; rc=$?; cat ${log_file}; exit $rc"
             "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm"
+            ${config_arg}
             --tau_select_file=${sif_path}
             --tau_output=${out_file}
             ${CMAKE_SOURCE_DIR}/${src}
@@ -1421,16 +1427,31 @@ set_tests_properties(check_sif_exclusion_empty_quote_cpp
   PASS_REGULAR_EXPRESSION "dosomething_inst[(]void[)] +\\[\\{.*dosomething_noinst[(]void[)] +\\[\\{"
 )
 
-add_sif_test_no_output(file_exclude_quote_trailing_junk_cpp
+# Checks that the output of SIF test `test_name`, whose file lists exclude
+# its source, has main's TAU setup code but no timer (#71).
+function(_sif_check_file_excluded test_name)
+  set_tests_properties(check_sif_${test_name}
+    PROPERTIES
+    PASS_REGULAR_EXPRESSION "TAU_PROFILE_SET_NODE"
+    FAIL_REGULAR_EXPRESSION "TAU_PROFILE_TIMER"
+  )
+endfunction()
+
+add_sif_test(file_exclude_quote_trailing_junk_cpp
   cpp tests/sif_excl.cpp tests/sif/file_exclude_quote_trailing_junk_cpp.tau
   WARNINGS "WARNING: ignoring text after closing quote in file exclude list entry")
+_sif_check_file_excluded(file_exclude_quote_trailing_junk_cpp)
 
 # File-level EXCLUDE_LIST: the C/C++ frontend does not instrument a source
-# file on the file exclude list and writes an unchanged copy instead.
-# Verified via absence of the "Instrumentation:" banner from cparse-llvm
-# and by comparing the copy with the source.
-add_sif_test_no_output(file_exclude_c   c   tests/sif_excl.c   tests/sif/file_exclude_c.tau)
-add_sif_test_no_output(file_exclude_cpp cpp tests/sif_excl.cpp tests/sif/file_exclude_cpp.tau)
+# file on the file exclude list. main keeps TAU's setup code, and a file
+# without main is copied.
+foreach(lang c cpp)
+  add_sif_test(file_exclude_${lang}
+    ${lang} tests/sif_excl.${lang} tests/sif/file_exclude_${lang}.tau)
+  _sif_check_file_excluded(file_exclude_${lang})
+endforeach()
+add_sif_test_no_output(file_exclude_nomain_c
+  c tests/sif_nomain.c tests/sif/file_exclude_nomain_c.tau)
 # An excluded empty source gets an empty copy, not a write error.
 add_sif_test_no_output(file_exclude_empty_c c tests/sif_empty.c tests/sif/file_exclude_empty_c.tau)
 
@@ -1438,7 +1459,7 @@ add_sif_test_no_output(file_exclude_empty_c c tests/sif_empty.c tests/sif/file_e
 # - match: source IS on the list, so instrumentation proceeds and
 #   keep_routine appears in the output.
 # - nomatch: list contains a real but unrelated file, so the source under
-#   test is not whitelisted and its output is an unchanged copy (C/C++).
+#   test is not whitelisted and its output has no timer.
 # Together these protect against both "list silently ignored" and
 # "match condition silently over-broad" parser regressions.
 add_sif_test(file_include_match_c
@@ -1451,10 +1472,11 @@ foreach(lang c cpp)
     PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_${lang}}"
   )
 endforeach()
-add_sif_test_no_output(file_include_nomatch_c
-  c   tests/sif_excl.c   tests/sif/file_include_nomatch_c.tau)
-add_sif_test_no_output(file_include_nomatch_cpp
-  cpp tests/sif_excl.cpp tests/sif/file_include_nomatch_cpp.tau)
+foreach(lang c cpp)
+  add_sif_test(file_include_nomatch_${lang}
+    ${lang} tests/sif_excl.${lang} tests/sif/file_include_nomatch_${lang}.tau)
+  _sif_check_file_excluded(file_include_nomatch_${lang})
+endforeach()
 
 if(TEST_FORTRAN)
   add_sif_test(exclusion_fortran
@@ -1478,10 +1500,7 @@ if(TEST_FORTRAN)
 
   add_sif_test(file_exclude_fortran
     fortran tests/fortran/sif_excl.f90 tests/sif/file_exclude_f90.tau)
-  set_tests_properties(check_sif_file_exclude_fortran
-    PROPERTIES
-    FAIL_REGULAR_EXPRESSION "TAU_PROFILE_TIMER"
-  )
+  _sif_check_file_excluded(file_exclude_fortran)
 
   add_sif_test(file_include_match_fortran
     fortran tests/fortran/sif_excl.f90 tests/sif/file_include_match_f90.tau)
@@ -1491,10 +1510,7 @@ if(TEST_FORTRAN)
   )
   add_sif_test(file_include_nomatch_fortran
     fortran tests/fortran/sif_excl.f90 tests/sif/file_include_nomatch_f90.tau)
-  set_tests_properties(check_sif_file_include_nomatch_fortran
-    PROPERTIES
-    FAIL_REGULAR_EXPRESSION "TAU_PROFILE_TIMER"
-  )
+  _sif_check_file_excluded(file_include_nomatch_fortran)
 
   # Regression guards for the Fortran matcher's full-string semantics.
   # The flang plugin previously used regex_search (substring match), which
@@ -1676,16 +1692,78 @@ set_tests_properties(check_sif_operator_index_cpp
 )
 
 # Routine-level INCLUDE_LIST for C and C++ (#46): only keep_routine is
-# instrumented, and main and excluded_routine get no timer.
+# instrumented, and main and excluded_routine get no timer. main keeps
+# TAU's setup code (TAU_INIT and TAU_PROFILE_SET_NODE(0)), though (#71).
 foreach(lang c cpp)
   add_sif_test(include_list_${lang} ${lang} ${_sif_src_${lang}} tests/sif/include_list.tau)
   set_tests_properties(check_sif_include_list_${lang}
     PROPERTIES
-    PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_${lang}}"
+    PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_${lang}}.*TAU_PROFILE_SET_NODE"
     FAIL_REGULAR_EXPRESSION
       "TAU_PROFILE_TIMER[^\n]*excluded_routine;TAU_PROFILE_TIMER[^\n]*int main"
   )
 endforeach()
+if(TEST_FORTRAN)
+  # '.[{]' stands for the '[{' after a timer name: CMake does not split a
+  # list at a ';' that follows an unbalanced '['. Flang may spell the
+  # program name in capitals.
+  set(_sif_main_timer_fortran "[Ss][Ii][Ff]_[Ee][Xx][Cc][Ll] .[{]")
+  add_sif_test(include_list_fortran fortran tests/fortran/sif_excl.f90 tests/sif/include_list.tau)
+  set_tests_properties(check_sif_include_list_fortran
+    PROPERTIES
+    PASS_REGULAR_EXPRESSION "TAU_PROFILE_SET_NODE.*${_sif_keep_pattern_fortran}"
+    FAIL_REGULAR_EXPRESSION "excluded_routine .[{];${_sif_main_timer_fortran}"
+  )
+endif()
+
+# A SIF that excludes the main program removes only its timer; main
+# keeps TAU's setup code (#71).
+set(_sif_main_timer_c "TAU_PROFILE_TIMER[^\n]*int main")
+set(_sif_main_timer_cpp "${_sif_main_timer_c}")
+foreach(lang IN LISTS _sif_langs)
+  add_sif_test(main_excluded_${lang} ${lang} ${_sif_src_${lang}} tests/sif/exclude_main.tau)
+  set_tests_properties(check_sif_main_excluded_${lang}
+    PROPERTIES
+    PASS_REGULAR_EXPRESSION "TAU_PROFILE_SET_NODE"
+    FAIL_REGULAR_EXPRESSION "${_sif_main_timer_${lang}}"
+  )
+endforeach()
+# The main of sif_excl has no parameters, so it gets
+# main_setup_insert_noargs, without TAU_INIT(&argc, &argv).
+foreach(lang c cpp)
+  set_property(TEST check_sif_main_excluded_${lang}
+    APPEND PROPERTY FAIL_REGULAR_EXPRESSION "TAU_INIT[(]&argc")
+endforeach()
+
+# The perfstubs and ITT configurations also keep their setup code.
+foreach(cfg perfstubs itt)
+  add_sif_test(main_excluded_${cfg}_c c tests/sif_excl.c tests/sif/exclude_main.tau
+    CONFIG config_files/${cfg}_config.yaml)
+  set_tests_properties(check_sif_main_excluded_${cfg}_c
+    PROPERTIES
+    PASS_REGULAR_EXPRESSION "PERFSTUBS_INITIALIZE"
+    FAIL_REGULAR_EXPRESSION "PERFSTUBS_INITIALIZE[(][)].\nPERFSTUBS_TIMER_START_FUNC")
+endforeach()
+
+# An include list that leaves out the main program gets a warning that
+# main still gets TAU's setup code (#71); an exclude list entry for main
+# silences it.
+set(_sif_main_warning
+  "WARNING: main program \"[^\"\n]*\" is not on the selective\n  instrumentation include list")
+foreach(lang IN LISTS _sif_langs)
+  set_tests_properties(warn_sif_include_list_${lang}
+    PROPERTIES PASS_REGULAR_EXPRESSION "${_sif_main_warning}")
+  add_sif_test(include_exclude_main_${lang} ${lang} ${_sif_src_${lang}}
+    tests/sif/include_exclude_main.tau)
+  set_tests_properties(check_sif_include_exclude_main_${lang}
+    PROPERTIES
+    PASS_REGULAR_EXPRESSION "TAU_PROFILE_SET_NODE"
+    FAIL_REGULAR_EXPRESSION "${_sif_main_timer_${lang}}"
+  )
+  set_property(TEST warn_sif_include_exclude_main_${lang}
+    APPEND PROPERTY FAIL_REGULAR_EXPRESSION "${_sif_main_warning}")
+endforeach()
+
 # An inline function on the include list gets a timer without
 # --tau_instrument_inline; a routine off the list gets none.
 add_sif_test(include_inline_cpp cpp tests/instrument_inline.cpp tests/sif/include_inline_cpp.tau)
@@ -2688,5 +2766,144 @@ if(TEST_FORTRAN)
           PROFILE_FIX ${PROF_FIX})
       endforeach()
     endforeach()
+  endif()
+endif()
+
+if(HAVE_TAU)
+  # A SIF that excludes the main program, or an include list that leaves it
+  # out, removes only main's timer: TAU's setup code stays, so the program
+  # writes profile.0.0.0 when run without tau_exec, which would set the node
+  # itself, and a threaded program has no timer errors (#71). Each test
+  # builds `src` with `sif` for each compiler of its language in a fresh
+  # <name>.d directory, runs it there, and checks that the profile matches
+  # `pass`, such as keep_routine, but not main's timer, which `main_timer`
+  # matches. The optional OUTPUT must match the program's output, and the
+  # other arguments are extra compile options.
+  function(_salt_add_tau_main_test name src sif pass main_timer)
+    cmake_parse_arguments(PARSE_ARGV 5 ARG "" "OUTPUT" "")
+    if(src MATCHES "[.]f90$")
+      set(tauc ${TAUF90})
+      set(compilers ${SALT_FORTRAN_COMPILERS_TO_TEST})
+      set(lang_dir fortran)
+    elseif(src MATCHES "[.]c$")
+      set(tauc ${TAUCC})
+      set(compilers ${SALT_COMPILERS_TO_TEST})
+      set(lang_dir c)
+    else()
+      set(tauc ${TAUCXX})
+      set(compilers ${SALT_COMPILERS_TO_TEST})
+      set(lang_dir cxx)
+    endif()
+    _salt_ext_to_label(${src} lang_label)
+    set(tauc_opts
+      -optVerbose -optNoRevert -optSaltInst
+      -optSaltParser=${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+      -optTauSelectFile=${CMAKE_SOURCE_DIR}/${sif})
+    if(APPLE)
+      list(APPEND tauc_opts -optShared)
+    endif()
+    foreach(comp IN LISTS compilers)
+      _salt_compiler_to_toolchain(${comp} tc_label)
+      _salt_compiler_to_dir(${comp} dir)
+      set(comp_opts "")
+      if(comp STREQUAL "gfortran")
+        set(comp_opts -cpp)
+      endif()
+      set(work_dir ${SALT_TAU_TEST_DIR}/${dir}/${lang_dir}/${name}.d)
+      set(prof_fix clean_${comp}_${name}_profiles)
+      _salt_tau_emit_profile_dir_fixture(
+        ${comp} ${name} ${name} ${dir}/${lang_dir}
+        "${lang_label}" "${tc_label}" ${prof_fix} ${dir}_dir)
+      add_test(NAME compile_${comp}_${name}
+        COMMAND ${tauc} ${tauc_opts} ${comp_opts} ${ARG_UNPARSED_ARGUMENTS}
+          -o ${name} ${CMAKE_SOURCE_DIR}/${src}
+        WORKING_DIRECTORY ${work_dir}
+      )
+      set_tests_properties(compile_${comp}_${name}
+        PROPERTIES
+        ENVIRONMENT TAU_MAKEFILE=${TAU_${dir}_MAKEFILE}
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${TAU_BIN_DIR}"
+        FIXTURES_REQUIRED ${prof_fix}
+        FIXTURES_SETUP compile_${comp}_${name}
+        LABELS "${lang_label};${tc_label};phase:compile"
+        FAIL_REGULAR_EXPRESSION
+          "[Dd]isabling instrumentation;[Nn]on-[Ii]nstrumented;[Ee]rror;Reverting to a Regular Make"
+      )
+      add_test(NAME run_${comp}_${name}
+        COMMAND ./${name}
+        WORKING_DIRECTORY ${work_dir}
+      )
+      set_tests_properties(run_${comp}_${name}
+        PROPERTIES
+        ENVIRONMENT "PROFILEDIR=${work_dir}"
+        FIXTURES_REQUIRED compile_${comp}_${name}
+        FIXTURES_SETUP run_${comp}_${name}
+        LABELS "${lang_label};${tc_label};phase:run"
+        FAIL_REGULAR_EXPRESSION "[Ss]egmentation;[Ff]ault;[Ee]rror"
+      )
+      if(ARG_OUTPUT)
+        set_tests_properties(run_${comp}_${name}
+          PROPERTIES PASS_REGULAR_EXPRESSION "${ARG_OUTPUT}")
+      endif()
+      if(APPLE)
+        # Without tau_exec, dyld must find TAU's dylibs by their bare install
+        # names, in lib and in the shared-<variant> dir of the Makefile
+        string(REPLACE "/Makefile.tau" "/shared" shared_dir "${TAU_${dir}_MAKEFILE}")
+        set(dyld_mods
+          "DYLD_LIBRARY_PATH=path_list_prepend:${TAU_ARCH_DIR}/lib"
+          "DYLD_LIBRARY_PATH=path_list_prepend:${shared_dir}")
+        set_tests_properties(run_${comp}_${name}
+          PROPERTIES ENVIRONMENT_MODIFICATION "${dyld_mods}")
+      endif()
+      add_test(NAME check_${comp}_${name}_profile
+        COMMAND ${CMAKE_COMMAND} -E cat profile.0.0.0
+        WORKING_DIRECTORY ${work_dir}
+      )
+      set_tests_properties(check_${comp}_${name}_profile
+        PROPERTIES
+        PASS_REGULAR_EXPRESSION "${pass}"
+        FAIL_REGULAR_EXPRESSION "${main_timer}"
+        FIXTURES_REQUIRED run_${comp}_${name}
+        LABELS "${lang_label};${tc_label};phase:check"
+      )
+    endforeach()
+  endfunction()
+
+  foreach(sif exclude_main include_list)
+    _salt_add_tau_main_test(sif_${sif}_c
+      tests/sif_excl.c tests/sif/${sif}.tau keep_routine "int main[(]")
+    _salt_add_tau_main_test(sif_${sif}_threads
+      tests/sif_main_threads.cpp tests/sif/${sif}.tau keep_routine "int main[(]" -pthread)
+    if(APPLE)
+      # On macOS, TAU numbers the main thread above 0 when worker threads
+      # start timers first, so TauProfiler_StoreData returns early (TAU
+      # src/Profile/Profiler.cpp:1720) and writes no profile
+      foreach(comp IN LISTS SALT_COMPILERS_TO_TEST)
+        set_tests_properties(check_${comp}_sif_${sif}_threads_profile
+          PROPERTIES DISABLED TRUE)
+      endforeach()
+    endif()
+    if(TEST_FORTRAN)
+      _salt_add_tau_main_test(sif_${sif}_fortran
+        tests/fortran/sif_excl.f90 tests/sif/${sif}.tau keep_routine
+        "${_sif_main_timer_fortran}")
+    endif()
+  endforeach()
+  # A source with main that the file lists exclude compiles without an
+  # error, from SALT-FM's copy, whose #line 1 keeps __FILE__ the name of
+  # the source. Its main has no timer but sets the node, so the program,
+  # with the timer of keep_routine in sif_nomain.c, writes profile.0.0.0.
+  foreach(ext c cpp)
+    _salt_add_tau_main_test(sif_file_exclude_main_${ext}
+      tests/sif_file_name.${ext} tests/sif/file_exclude_file_name.tau
+      keep_routine "int main[(]"
+      OUTPUT "file: [^\n]*/tests/sif_file_name[.]${ext}\n"
+      ${CMAKE_SOURCE_DIR}/tests/sif_nomain.c)
+  endforeach()
+  if(TEST_FORTRAN)
+    _salt_add_tau_main_test(sif_file_exclude_main_fortran
+      tests/fortran/sif_file_name.f90 tests/sif/file_exclude_file_name.tau
+      keep_routine "[Ss][Ii][Ff]_[Ff][Ii][Ll][Ee]_[Nn][Aa][Mm][Ee] .[{]"
+      ${CMAKE_SOURCE_DIR}/tests/fortran/sif_keep.f90)
   endif()
 endif()

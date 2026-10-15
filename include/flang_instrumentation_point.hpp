@@ -23,7 +23,8 @@ limitations under the License.
 
 namespace salt::fortran {
     enum class InstrumentationPointType {
-        PROGRAM_BEGIN, // Declare profiler, initialize TAU, set node, start timer
+        PROGRAM_BEGIN, // Setup code, then start the main program's timer
+        PROGRAM_SETUP, // Setup code, for a main program without a timer
         PROCEDURE_BEGIN, // Declare profiler, start timer
         PROCEDURE_END, // Stop timer on the line after
         RETURN_STMT, // Stop timer on the line before

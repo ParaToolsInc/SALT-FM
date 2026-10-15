@@ -5,23 +5,33 @@ instrumentation: TAU
 include:
   - <Profile/Profiler.h>
 
+# Setup code at the start of main, inserted even when the selective
+# instrumentation file removes main's timer
+main_setup_insert:
+  - "    TAU_INIT(&argc, &argv);"
+  - "#ifndef TAU_MPI"
+  - "#ifndef TAU_SHMEM"
+  - "    TAU_PROFILE_SET_NODE(0);"
+  - "#endif /* TAU_SHMEM */"
+  - "#endif /* TAU_MPI */"
+
+# main_setup_insert for a main without parameters (optional)
+main_setup_insert_noargs:
+  - "/* TAU_INIT() skipped, no arguments */"
+  - "#ifndef TAU_MPI"
+  - "#ifndef TAU_SHMEM"
+  - "    TAU_PROFILE_SET_NODE(0);"
+  - "#endif /* TAU_SHMEM */"
+  - "#endif /* TAU_MPI */"
+
+# main's timer, inserted after main_setup_insert when the selective
+# instrumentation file keeps it
 main_insert:
   - "    TAU_PROFILE_TIMER(tautimer, \"${full_timer_name}\", \" \", TAU_DEFAULT);"
-  - "    TAU_INIT(&argc, &argv);"
-  - "#ifndef TAU_MPI"
-  - "#ifndef TAU_SHMEM"
-  - "    TAU_PROFILE_SET_NODE(0);"
-  - "#endif /* TAU_SHMEM */"
-  - "#endif /* TAU_MPI */"
   - "    TAU_PROFILE_START(tautimer);"
 
+# main_insert for --tau_use_cxx_api
 main_insert_scope:
-  - "    TAU_INIT(&argc, &argv);"
-  - "#ifndef TAU_MPI"
-  - "#ifndef TAU_SHMEM"
-  - "    TAU_PROFILE_SET_NODE(0);"
-  - "#endif /* TAU_SHMEM */"
-  - "#endif /* TAU_MPI */"
   - "    TAU_PROFILE(\"${full_timer_name}\", \" \", TAU_DEFAULT);"
 
 function_begin_insert:
@@ -38,15 +48,22 @@ Fortran:
 # Config variables:
 #   ${full_timer_name}: "procedure_name [file_path {start}-{end}]"
   instrumentation: tauFortran
-  program_insert:
+  # Setup code at the start of the main program, inserted even when the
+  # selective instrumentation file removes its timer. It declares the
+  # timer too, since declarations must come before statements.
+  program_setup_insert:
     - "      integer, save :: tauProfileTimer(2) = [0, 0]"
     - "      call TAU_PROFILE_INIT()"
-    - "      call TAU_PROFILE_TIMER(tauProfileTimer, \"${full_timer_name}&"
-    - "     &\")"
-    - "      call TAU_PROFILE_START(tauProfileTimer)"
     - "#ifndef TAU_MPI"
     - "      call  TAU_PROFILE_SET_NODE(0)"
     - "#endif"
+
+  # The main program's timer, inserted after program_setup_insert when
+  # the selective instrumentation file keeps it
+  program_insert:
+    - "      call TAU_PROFILE_TIMER(tauProfileTimer, \"${full_timer_name}&"
+    - "     &\")"
+    - "      call TAU_PROFILE_START(tauProfileTimer)"
 
 
   procedure_begin_insert:

@@ -32,6 +32,8 @@ std::string salt::fortran::InstrumentationPoint::typeString() const {
     switch (instrumentationType()) {
         case InstrumentationPointType::PROGRAM_BEGIN:
             return "PROGRAM_BEGIN"s;
+        case InstrumentationPointType::PROGRAM_SETUP:
+            return "PROGRAM_SETUP"s;
         case InstrumentationPointType::PROCEDURE_BEGIN:
             return "PROCEDURE_BEGIN"s;
         case InstrumentationPointType::PROCEDURE_END:

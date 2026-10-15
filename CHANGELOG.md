@@ -86,6 +86,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   matches get timers, as in TAU and the Fortran plugin. Before, it only
   opted inline functions in to instrumentation
   ([#46](https://github.com/ParaToolsInc/SALT-FM/issues/46)).
+- When a selective instrumentation file excludes the main program, an
+  include list leaves it out, or the file lists exclude its file,
+  SALT-FM removes only main's timer and keeps its setup code, which for
+  TAU is `TAU_INIT` and `TAU_PROFILE_SET_NODE(0)`, or `TAU_PROFILE_INIT`
+  and `TAU_PROFILE_SET_NODE(0)` in Fortran, and for perfstubs and ITT
+  `PERFSTUBS_INITIALIZE()`. Before, C and C++ removed the setup code
+  too, so a program run without MPI or `tau_exec` wrote
+  `profile.-1.0.0` and a threaded program could fail with timer errors;
+  Fortran ignored the routine lists for the main program. SALT-FM warns
+  when an include list that is not empty leaves out the main program
+  and no exclude list entry names it
+  ([#71](https://github.com/ParaToolsInc/SALT-FM/issues/71)).
+- Configuration files give main's setup code apart from its timer: the
+  new optional `main_setup_insert` is written at the start of `main`
+  whether or not main is instrumented, and `main_insert` and
+  `main_insert_scope` now hold only main's timer, written after the
+  setup code. The new optional `main_setup_insert_noargs` replaces
+  `main_setup_insert` for a `main` without parameters; it takes the
+  place of SALT-FM's built-in replacement of `TAU_INIT(&argc, &argv);`
+  with a comment, so a custom file that writes that call needs it. For
+  Fortran, the new optional `program_setup_insert` likewise takes the
+  setup code and the declarations out of `program_insert`. A custom
+  configuration file whose `main_insert` or `program_insert` still
+  holds setup code keeps working for an instrumented main, but that
+  code is not written when the selective instrumentation lists leave
+  main out; move it to the new entries. In TAU's output, main's timer
+  now comes after `TAU_INIT` and `TAU_PROFILE_SET_NODE(0)`
+  ([#71](https://github.com/ParaToolsInc/SALT-FM/issues/71)).
 
 ## [0.5.0] - 2026-10-09
 

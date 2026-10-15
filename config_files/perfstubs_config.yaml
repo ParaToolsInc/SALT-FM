@@ -5,8 +5,14 @@ instrumentation: Perfstubs
 include:
   - "\"perfstubs_api/timer.h\""
 
-main_insert:
+# Setup code at the start of main, inserted even when the selective
+# instrumentation file removes main's timer
+main_setup_insert:
   - "PERFSTUBS_INITIALIZE();"
+
+# main's timer, inserted after main_setup_insert when the selective
+# instrumentation file keeps it
+main_insert:
   - "PERFSTUBS_TIMER_START_FUNC(_timer);"
 
 function_begin_insert:
@@ -14,4 +20,3 @@ function_begin_insert:
 
 function_end_insert:
   - "PERFSTUBS_TIMER_STOP_FUNC(_timer);"
-
