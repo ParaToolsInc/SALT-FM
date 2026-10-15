@@ -1,0 +1,5 @@
+# SIF: routine-level whitelist for C and C++. Only keep_routine is
+# instrumented; excluded_routine and main, not on the list, are not.
+BEGIN_INCLUDE_LIST
+"#keep_routine#"
+END_INCLUDE_LIST

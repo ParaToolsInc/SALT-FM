@@ -1467,9 +1467,7 @@ if(TEST_FORTRAN)
 
   # Routine-level INCLUDE_LIST (whitelist): only keep_routine should be
   # instrumented; excluded_routine, omitted from the include list, should not.
-  # NOTE: this whitelist semantics only applies to Fortran. The C/C++ frontend
-  # consults includelist exclusively to opt inline functions in to
-  # instrumentation, not as a global routine whitelist.
+  # The C/C++ twins are include_list_c and include_list_cpp.
   add_sif_test(inclusion_fortran
     fortran tests/fortran/sif_excl.f90 tests/sif/include_routine_f90.tau)
   set_tests_properties(check_sif_inclusion_fortran
@@ -1675,6 +1673,27 @@ set_tests_properties(check_sif_operator_index_cpp
   PROPERTIES
   PASS_REGULAR_EXPRESSION "int main[(]void[)] +\\[\\{"
   FAIL_REGULAR_EXPRESSION "operator\\[\\][(]int[)] +\\[\\{"
+)
+
+# Routine-level INCLUDE_LIST for C and C++ (#46): only keep_routine is
+# instrumented, and main and excluded_routine get no timer.
+foreach(lang c cpp)
+  add_sif_test(include_list_${lang} ${lang} ${_sif_src_${lang}} tests/sif/include_list.tau)
+  set_tests_properties(check_sif_include_list_${lang}
+    PROPERTIES
+    PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_${lang}}"
+    FAIL_REGULAR_EXPRESSION
+      "TAU_PROFILE_TIMER[^\n]*excluded_routine;TAU_PROFILE_TIMER[^\n]*int main"
+  )
+endforeach()
+# An inline function on the include list gets a timer without
+# --tau_instrument_inline; a routine off the list gets none.
+add_sif_test(include_inline_cpp cpp tests/instrument_inline.cpp tests/sif/include_inline_cpp.tau)
+set_tests_properties(check_sif_include_inline_cpp
+  PROPERTIES
+  PASS_REGULAR_EXPRESSION "TAU_PROFILE_TIMER[^\n]*free_fn_marked_inline"
+  FAIL_REGULAR_EXPRESSION
+    "TAU_PROFILE_TIMER[^\n]*method_in_class_body;TAU_PROFILE_TIMER[^\n]*int main"
 )
 
 # TAU's selective instrumentation reference cases (tests/sif/tau/):

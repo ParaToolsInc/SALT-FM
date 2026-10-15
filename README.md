@@ -252,7 +252,11 @@ It matches the entries of the lists as TAU does, in C, C++, and Fortran:
   | `*/src/a.c` | no | yes | yes |
   | `*src/a.c` | yes | yes | yes (also `mysrc/a.c`) |
   | `a.c` (no `/`, basename) | yes | yes | yes |
-- An exclude list has priority over an include list.
+- An exclude list has priority over an include list. If the include
+  list (`BEGIN_INCLUDE_LIST`) is not empty, SALT-FM instruments only the
+  routines it matches.
+- C and C++ inline functions get a timer only with
+  `--tau_instrument_inline` or when they match the include list.
 
 When its file lists exclude the source file, SALT-FM does not instrument
 it and writes the source to the output file after a `#line 1` line that

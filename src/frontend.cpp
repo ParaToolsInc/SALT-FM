@@ -232,7 +232,7 @@ int main(int argc, const char **argv)
 
     CodeInstrumentor.run_tool();
 
-    CodeInstrumentor.instr_request(excludelist, false); // Emit selective instrumentation requests
+    CodeInstrumentor.select_routines(); // Apply the routine lists
 
     findFiles(OptionsParser.getSourcePathList()); //Locate source files and mark for instrumentation/skipping
 
