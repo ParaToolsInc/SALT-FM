@@ -1391,14 +1391,14 @@ set_tests_properties(fixture_sif_exclusion_no_warning_cpp
   PASS_REGULAR_EXPRESSION "\n#\tcomment\n.*\n\"#noinst#\"   \n"
 )
 
-# Suspicious quoting in list entries must produce a stderr warning while
-# parsing stays lenient (TAU-compatible). The warn step asserts the
-# warning text; the check step asserts the lenient parse result.
+# Suspicious quoting in routine list entries must produce a stderr warning
+# while parsing stays lenient. The warn step asserts the warning text; the
+# check step asserts the lenient parse result.
 # - unclosed quote: pattern = rest of line, still excludes noinst
 # - text after closing quote: dropped, pattern still excludes noinst
 # - lone quote: empty pattern, matches nothing, both routines keep timers;
 #   one warning only (empty pattern, not also a missing closing quote)
-# - FILE lists share the quote handling and warnings
+# File lists do not remove quotes; see file_exclude_quoted below.
 add_sif_test(exclusion_unclosed_quote_cpp
   cpp tests/sif_excl_wildcard_prefix.cpp tests/sif/exclude_unclosed_quote_cpp.tau
   WARNINGS "WARNING: missing closing quote in exclude list entry")
@@ -1436,11 +1436,6 @@ function(_sif_check_file_excluded test_name)
     FAIL_REGULAR_EXPRESSION "TAU_PROFILE_TIMER"
   )
 endfunction()
-
-add_sif_test(file_exclude_quote_trailing_junk_cpp
-  cpp tests/sif_excl.cpp tests/sif/file_exclude_quote_trailing_junk_cpp.tau
-  WARNINGS "WARNING: ignoring text after closing quote in file exclude list entry")
-_sif_check_file_excluded(file_exclude_quote_trailing_junk_cpp)
 
 # File-level EXCLUDE_LIST: the C/C++ frontend does not instrument a source
 # file on the file exclude list. main keeps TAU's setup code, and a file
@@ -1762,6 +1757,24 @@ foreach(lang IN LISTS _sif_langs)
   )
   set_property(TEST warn_sif_include_exclude_main_${lang}
     APPEND PROPERTY FAIL_REGULAR_EXPRESSION "${_sif_main_warning}")
+endforeach()
+
+# Quotes are part of a file pattern, as in TAU, so a quoted file entry does
+# not match the source, and SALT-FM warns about it. Routine lists still
+# remove quotes.
+string(CONCAT _sif_quoted_file_warning
+  "WARNING: file %s list entry at selective instrumentation file line 4:\n"
+  "  the quotes in \"sif_excl[.][*]\" are part of the pattern")
+foreach(lang IN LISTS _sif_langs)
+  string(REPLACE "%s" "exclude" _warning "${_sif_quoted_file_warning}")
+  add_sif_test(file_exclude_quoted_${lang} ${lang} ${_sif_src_${lang}}
+    tests/sif/file_exclude_quoted.tau WARNINGS "${_warning}")
+  set_tests_properties(check_sif_file_exclude_quoted_${lang}
+    PROPERTIES PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_${lang}}")
+  string(REPLACE "%s" "include" _warning "${_sif_quoted_file_warning}")
+  add_sif_test(file_include_quoted_${lang} ${lang} ${_sif_src_${lang}}
+    tests/sif/file_include_quoted.tau WARNINGS "${_warning}")
+  _sif_check_file_excluded(file_include_quoted_${lang})
 endforeach()
 
 # An inline function on the include list gets a timer without

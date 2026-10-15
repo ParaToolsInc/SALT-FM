@@ -114,6 +114,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   main out; move it to the new entries. In TAU's output, main's timer
   now comes after `TAU_INIT` and `TAU_PROFILE_SET_NODE(0)`
   ([#71](https://github.com/ParaToolsInc/SALT-FM/issues/71)).
+- Quotes in a selective instrumentation file list entry are part of the
+  pattern, as in TAU, so `"*.c"` matches only a file name that has the
+  quotes. SALT-FM warns about each file entry that starts with `"`,
+  naming the line. Before, it removed the quotes, as it still does in
+  routine lists
+  ([#71](https://github.com/ParaToolsInc/SALT-FM/issues/71)).
 
 ## [0.5.0] - 2026-10-09
 

@@ -742,7 +742,8 @@ static bool readLine(std::istream &input, std::string &line, int &lineno)
 
 /* Reads the entries of a list up to its `end` token into `list`. A leading
    '#' starts a comment; routine lists warn about comments that look like
-   patterns. */
+   patterns. Routine lists remove quotes; file lists keep them, as TAU
+   does, and warn. */
 static void readList(std::istream &input, int &lineno, const char *end,
                      std::list<std::string> &list, const char *listname, bool routines)
 {
@@ -757,7 +758,18 @@ static void readList(std::istream &input, int &lineno, const char *end,
       }
       continue;
     }
-    list.push_back(parseListEntry(line.c_str(), listname, lineno));
+    if (routines) {
+      list.push_back(parseListEntry(line.c_str(), listname, lineno));
+    } else {
+      if (line[0] == '"') {
+        fprintf(stderr,
+          "WARNING: %s entry at selective instrumentation file line %d:\n"
+          "  the quotes in %s are part of the pattern; remove them to match\n"
+          "  file names without quotes\n",
+          listname, lineno, line.c_str());
+      }
+      list.push_back(line);
+    }
     DPRINT("Adding %s to %s\n", list.back().c_str(), listname);
   }
 }
