@@ -1318,9 +1318,11 @@ endfunction()
 # Pattern helpers: regex fragments that match a TAU_PROFILE_TIMER timer string
 # referencing a named routine. The C/C++ matcher emits the routine signature
 # inline; the Fortran matcher emits a continuation line with the bare name.
+# The Fortran patterns spell the '[' of '[{' as '.', since CMake does not
+# split a list at a ';' that follows an unbalanced '['.
 if(TEST_FORTRAN)
-  set(_sif_keep_pattern_fortran    "keep_routine \\[\\{")
-  set(_sif_excluded_pattern_fortran "excluded_routine \\[\\{")
+  set(_sif_keep_pattern_fortran    "keep_routine .[{]")
+  set(_sif_excluded_pattern_fortran "excluded_routine .[{]")
 endif()
 set(_sif_keep_pattern_c     "keep_routine[(]void[)] +\\[\\{")
 set(_sif_keep_pattern_cpp   "${_sif_keep_pattern_c}")
