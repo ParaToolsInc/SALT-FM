@@ -66,7 +66,8 @@ public:
 
     void set_exec_name(const char* name);
 
-    void run_tool();
+    // Parses the sources; returns ClangTool::run's status, non-zero on errors or skipped files.
+    int run_tool();
 
     // Skips the timers of the routines that the routine lists do not select
     void select_routines();

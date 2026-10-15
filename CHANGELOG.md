@@ -39,6 +39,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Before, C and C++ instrumentation reported success and left the old
   output in place, and Fortran crashed when it could not open the file
   and failed without naming the file when a write failed.
+- When Clang reports errors in a C or C++ source, `saltfm` now exits
+  with a non-zero status, writes no instrumented output, and removes
+  a regular file already at the `--tau_output` path, so TAU's compiler
+  wrapper cannot compile a stale one. Before, it exited with status 0
+  and wrote the output that Clang's error recovery gave. With
+  `--tau_fabricate_unknown_types` (or `SALT_FABRICATE_UNKNOWN_TYPES`),
+  which relies on that error recovery, `saltfm` keeps the old behavior
+  ([#85](https://github.com/ParaToolsInc/SALT-FM/issues/85)).
 - When testing is on, configuring stops with an error if the source or
   build directory path contains a space, since TAU's compiler wrappers
   and the test checks cannot handle such paths and the tests would fail.

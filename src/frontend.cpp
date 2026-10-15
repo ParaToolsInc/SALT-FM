@@ -17,6 +17,7 @@
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/FileSystem.h"
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -230,7 +231,21 @@ int main(int argc, const char **argv)
         processInstrumentationRequests(selectfile.c_str());
     }
 
-    CodeInstrumentor.run_tool();
+    const bool clang_errors = CodeInstrumentor.run_tool() != 0;
+    // Fabrication works through Clang's error recovery, so its errors are expected.
+    if (clang_errors && !fabricate_unknown_types)
+    {
+        // TAU's compiler wrapper compiles any file left at this path, even a stale one.
+        if (llvm::sys::fs::is_regular_file(outputfile))
+        {
+            if (std::error_code err = llvm::sys::fs::remove(outputfile))
+            {
+                llvm::errs() << "ERROR: Could not remove output file " << outputfile << ": " << err.message()
+                             << "\n";
+            }
+        }
+        return EXIT_FAILURE;
+    }
 
     CodeInstrumentor.select_routines(); // Apply the routine lists
 
