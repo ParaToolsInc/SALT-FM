@@ -1,0 +1,9 @@
+# A file pattern with a '/' matches the whole source path, so the file
+# include list keeps the test source, and the exclude list removes
+# excluded_routine.
+BEGIN_EXCLUDE_LIST
+"#excluded_routine#"
+END_EXCLUDE_LIST
+BEGIN_FILE_INCLUDE_LIST
+*/sif_excl.*
+END_FILE_INCLUDE_LIST

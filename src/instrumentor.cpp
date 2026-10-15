@@ -29,7 +29,6 @@
 #include <fstream>
 #include <iostream>
 #include <optional>
-#include <regex>
 #include <string>
 #include <vector>
 #include <sys/stat.h>
@@ -339,65 +338,19 @@ void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, rym
     }
 }
 
-// https://stackoverflow.com/questions/2896600/how-to-replace-all-occurrences-of-a-character-in-string
-std::string ReplaceAll(std::string str, const std::string &from, const std::string &to)
+// The name that SIF routine entries match: the timer name before its
+// source location, e.g. "void f(int)" for "void f(int)  [{f.c} ...]".
+static std::string selectName(const std::string &timer_name)
 {
-    size_t start_pos = 0;
-    while ((start_pos = str.find(from, start_pos)) != std::string::npos)
-    {
-        str.replace(start_pos, from.length(), to);
-        start_pos += to.length(); // Handles case where 'to' is a substring of 'from'
-    }
-    // printf("new string: %s\n", str.c_str());
-    return str;
-}
-
-// https://stackoverflow.com/questions/1798112/removing-leading-and-trailing-spaces-from-a-string
-// trim from left
-inline std::string &ltrim(std::string &s, const char *t = " \t\n\r\f\v")
-{
-    s.erase(0, s.find_first_not_of(t));
-    return s;
-}
-
-// trim from right
-inline std::string &rtrim(std::string &s, const char *t = " \t\n\r\f\v")
-{
-    s.erase(s.find_last_not_of(t) + 1);
-    return s;
-}
-
-// trim from left & right
-inline std::string &trim(std::string &s, const char *t = " \t\n\r\f\v")
-{
-    return ltrim(rtrim(s, t), t);
-}
-
-// first arg is from list (might have wildcard), second string is ours
-bool matchName(std::string &regex, std::string &match)
-{
-    /* Use '#' as the wildcard kleene star operator character */
-    regex = ReplaceAll(regex, std::string("*"), std::string("\\*"));
-    regex = ReplaceAll(regex, std::string("#"), std::string(".*"));
-
-    return std::regex_match(trim(match), std::regex(trim(regex), std::regex_constants::grep));
+    std::string name = timer_name.substr(0, timer_name.find(" [{"));
+    name.erase(name.find_last_not_of(' ') + 1);
+    return name;
 }
 
 // returns true if loc matches something in list
 bool check_loc_against_list(std::list<std::string> list, inst_loc *loc)
 {
-    // printf("checking loc against list\n");
-    std::string timer_name = std::string(loc->full_timer_name).substr(0, std::string(loc->full_timer_name).find("["));
-    for (std::string item : list)
-    {
-        if (matchName(item, timer_name))
-        {
-            DPRINT("found match for: %s\n", loc->full_timer_name);
-            DPRINT("%s\n", item.c_str());
-            return true;
-        }
-    }
-    return false;
+    return routineInList(list, selectName(loc->full_timer_name));
 }
 
 // returns true if function matches something in list
@@ -406,54 +359,9 @@ bool check_func_against_list(std::list<std::string> list, FunctionDecl *func, AS
 {
     std::string func_name;
     std::string timer_name;
-    // printf("checking function against list\n");
     makeFuncAndTimerNames(func, context, src_mgr, func_name, timer_name);
-    timer_name = timer_name.substr(0, timer_name.find("["));
-    // printf("timer_name %s\n", timer_name.c_str());
-    for (std::string item : list)
-    {
-        // printf("item %s\n", item.c_str());
-        if (matchName(item, timer_name))
-        {
-            DPRINT("found match for: %s\n", timer_name.c_str());
-            DPRINT("%s\n", item.c_str());
-            return true;
-        }
-    }
-    return false;
+    return routineInList(list, selectName(timer_name));
 }
-
-bool matchFileName(std::string &regex, std::string &match)
-{
-    // TODO: if no "/", just match on filename (slice match)
-    regex = ReplaceAll(regex, std::string("*"), std::string(".*"));
-    if (regex.find("/") == std::string::npos)
-    {
-        // if no path is specified, match any path OR the original filename
-        regex = ReplaceAll(std::string("(.*/x|x)"), std::string("x"), regex);
-    }
-    // printf("string    %s\n", match.c_str());
-    // printf("regex     %s\n", regex.c_str());
-    // printf("match?    %s\n", std::regex_match(trim(match), std::regex(trim(regex), std::regex_constants::egrep)) ?
-    // "Yes": "No");
-
-    return std::regex_match(trim(match), std::regex(trim(regex), std::regex_constants::egrep));
-}
-
-
-bool check_file_against_list(std::list<std::string> list, std::string fname)
-{
-    for (std::string item : list)
-    {
-        if (matchFileName(item, fname))
-        {
-            DPRINT("found match for: %s\n", fname.c_str());
-            return true;
-        }
-    }
-    return false;
-}
-
 
 // Strip the elaborations the semantic type printer introduces
 static std::string cleanSemanticTypeName(std::string name)

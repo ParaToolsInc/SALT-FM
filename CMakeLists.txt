@@ -1544,8 +1544,8 @@ if(TEST_FORTRAN)
 
   # FILE_INCLUDE_LIST with an actual `*` glob. The basename "sif_excl.f90"
   # matches "sif_*.f90", so the file is whitelisted and keep_routine is
-  # instrumented. Exercises the glob-to-regex expansion path on file
-  # matching, separate from the literal-basename file_include_match test.
+  # instrumented. Exercises the `*` wildcard in file matching, separate
+  # from the literal-basename file_include_match test.
   add_sif_test(file_include_glob_fortran
     fortran tests/fortran/sif_excl.f90 tests/sif/file_include_glob_f90.tau)
   set_tests_properties(check_sif_file_include_glob_fortran
@@ -1631,6 +1631,85 @@ foreach(case trailing_whitespace crlf)
       FAIL_REGULAR_EXPRESSION "${_sif_excluded_pattern_${lang}}"
     )
   endforeach()
+endforeach()
+
+# One wildcard matcher for routines and files, in C, C++ and Fortran:
+# - question_mark: '?' matches one character in a routine and a file
+#   pattern.
+# - file_path: a file pattern with a '/' matches the whole path.
+# - metachars: regular expression metacharacters ('.', '[', '$') are
+#   literal, so both routines keep their timers. Fortran escaped them
+#   before the shared matcher, so it is only tested for C and C++.
+foreach(case question_mark file_path)
+  foreach(lang IN LISTS _sif_langs)
+    add_sif_test(${case}_${lang} ${lang} ${_sif_src_${lang}} tests/sif/${case}.tau)
+    set_tests_properties(check_sif_${case}_${lang}
+      PROPERTIES
+      PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_${lang}}"
+      FAIL_REGULAR_EXPRESSION "${_sif_excluded_pattern_${lang}}"
+    )
+  endforeach()
+endforeach()
+foreach(lang c cpp)
+  add_sif_test(metachars_${lang} ${lang} ${_sif_src_${lang}} tests/sif/metachars.tau)
+  set_tests_properties(check_sif_metachars_${lang}
+    PROPERTIES
+    PASS_REGULAR_EXPRESSION
+      "${_sif_keep_pattern_${lang}}.*${_sif_excluded_pattern_${lang}}"
+  )
+endforeach()
+
+# The name a C++ routine entry matches ends before the timer's " [{"
+# source location, not at the first '[', which operator[] has.
+add_sif_test(operator_index_cpp cpp tests/sif_operator.cpp tests/sif/operator_index.tau)
+set_tests_properties(check_sif_operator_index_cpp
+  PROPERTIES
+  PASS_REGULAR_EXPRESSION "int main[(]void[)] +\\[\\{"
+  FAIL_REGULAR_EXPRESSION "operator\\[\\][(]int[)] +\\[\\{"
+)
+
+# TAU's selective instrumentation reference cases (tests/sif/tau/):
+# sif_check reads each case's SIF with SALT-FM's parser and checks the
+# routine and file names of its .expect file with SALT-FM's matcher.
+add_executable(sif_check tests/sif_check.cpp src/selectfile.cpp)
+target_include_directories(sif_check PRIVATE
+  ${CMAKE_SOURCE_DIR}/include ${LLVM_INCLUDE_DIRS})
+target_compile_definitions(sif_check PRIVATE ${LLVM_DEFINITIONS_LIST})
+foreach(case
+    01_comments 02_exclude_wildcard 03_include 04_exclude_beats_include
+    05_quoted 06_metachars 07_files 08_file_exclude_only 09_stray_lines
+    10_instrument_section 11_empty 12_mixed 14_whitespace
+    15_slash_in_function)
+  add_test(NAME sif_tau_${case}
+    COMMAND sif_check ${CMAKE_SOURCE_DIR}/tests/sif/tau/${case}.tau
+            ${CMAKE_SOURCE_DIR}/tests/sif/tau/${case}.expect)
+  set_tests_properties(sif_tau_${case} PROPERTIES LABELS "phase:check;sif")
+endforeach()
+
+# The README's file pattern table: each pattern alone on a file include
+# list, against paths as given on the compile line. Each row is the
+# pattern and whether it matches src/a.c, ./src/a.c, /abs/src/a.c and
+# mysrc/a.c.
+set(_sif_path_paths src/a.c ./src/a.c /abs/src/a.c mysrc/a.c)
+set(_sif_path_rows
+  "src/a.c:yes:no:no:no"
+  "*/src/a.c:no:yes:yes:no"
+  "*src/a.c:yes:yes:yes:yes"
+  "a.c:yes:yes:yes:yes")
+set(_row 0)
+foreach(row IN LISTS _sif_path_rows)
+  string(REPLACE ":" ";" row "${row}")
+  list(POP_FRONT row pattern)
+  set(_expect "")
+  foreach(path want IN ZIP_LISTS _sif_path_paths row)
+    string(APPEND _expect "file: ${path} => ${want}\n")
+  endforeach()
+  math(EXPR _row "${_row} + 1")
+  set(_case ${CMAKE_BINARY_DIR}/sif/path_table_${_row})
+  file(WRITE ${_case}.tau "BEGIN_FILE_INCLUDE_LIST\n${pattern}\nEND_FILE_INCLUDE_LIST\n")
+  file(WRITE ${_case}.expect "${_expect}")
+  add_test(NAME sif_path_table_${_row} COMMAND sif_check ${_case}.tau ${_case}.expect)
+  set_tests_properties(sif_path_table_${_row} PROPERTIES LABELS "phase:check;sif")
 endforeach()
 
 # A line longer than the old 64 KiB line buffer must not end the parse

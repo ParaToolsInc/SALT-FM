@@ -1,0 +1,9 @@
+# '?' matches one character in routine and file patterns: the exclude
+# list removes excluded_routine and the file include list keeps the test
+# source.
+BEGIN_EXCLUDE_LIST
+"#?xcluded_routine#"
+END_EXCLUDE_LIST
+BEGIN_FILE_INCLUDE_LIST
+sif_?xcl.*
+END_FILE_INCLUDE_LIST

@@ -173,33 +173,16 @@ void findFiles(const std::vector<std::string>& files)
 {
     for (std::string fil : files)
     {
-        if (!fileincludelist.empty())
+        if (instrumentFile(fil))
         {
-            if (check_file_against_list(fileincludelist, fil) && !check_file_against_list(fileexcludelist, fil))
+            if (!fil.empty() && std::find(files_to_go.begin(), files_to_go.end(), fil) == files_to_go.end())
             {
-                if (!fil.empty() && std::find(files_to_go.begin(), files_to_go.end(), fil) == files_to_go.end())
-                {
-                    files_to_go.push_back(fil);
-                }
-            }
-            else
-            {
-                files_skipped.push_back(fil);
+                files_to_go.push_back(fil);
             }
         }
         else
         {
-            if (!check_file_against_list(fileexcludelist, fil))
-            {
-                if (!fil.empty() && std::find(files_to_go.begin(), files_to_go.end(), fil) == files_to_go.end())
-                {
-                    files_to_go.push_back(fil);
-                }
-            }
-            else
-            {
-                files_skipped.push_back(fil);
-            }
+            files_skipped.push_back(fil);
         }
     }
 

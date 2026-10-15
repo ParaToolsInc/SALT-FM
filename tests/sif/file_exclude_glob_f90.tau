@@ -1,6 +1,6 @@
 # FILE_EXCLUDE_LIST with a real `*` glob. The basename "sif_excl.f90"
 # matches the pattern, so the file is excluded and no TAU timers are
-# emitted. Guards against regressions in glob-to-regex expansion or
+# emitted. Guards against regressions in `*` wildcard matching or
 # anchoring on the file exclude path.
 BEGIN_FILE_EXCLUDE_LIST
 sif_*.f90

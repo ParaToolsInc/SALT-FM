@@ -1,5 +1,5 @@
 # SIF: exclude excluded_routine from C instrumentation.
-# C/C++ matcher uses regex_match against the full timer signature
+# The C/C++ matcher matches the whole timer signature
 # (e.g., "void excluded_routine()") so a "#wildcard#" pattern is needed.
 # The leading "#" of the pattern is a line-comment marker, so the entry
 # must be quoted to be parsed as a wildcard rather than a comment.

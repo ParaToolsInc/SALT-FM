@@ -26,7 +26,6 @@ limitations under the License.
 #include <variant>
 #include <optional>
 #include <tuple>
-#include <regex>
 #include <algorithm>
 #include <filesystem>
 
@@ -139,53 +138,8 @@ namespace salt::fortran {
                 return ss.str();
             }
 
-            [[nodiscard]] static std::string convertWildcardToRegexForm(const std::string &wildString) {
-                // Escape all regex special characters
-                static const std::regex metacharacters(R"([\.\^\$\+\(\)\[\]\{\}\|\?\*])");
-                const std::string escapedString{std::regex_replace(wildString, metacharacters, R"(\$&)")};
-                // Convert lines in TAU select file format (where "#" means zero or more characters)
-                // to regex version (where ".*" means zero or more characters).
-                // "#" is used for wildcard in routine names in TAU selective instrumentation files
-                // because "*" can be used in C/C++ function identifiers as part of pointer types.
-                static const std::regex hashRegex{R"(#)"};
-                return std::regex_replace(escapedString, hashRegex, ".*");
-            }
-
             [[nodiscard]] static bool shouldInstrumentSubprogram(const std::string &subprogramName) {
-                // Check if this subprogram should be instrumented.
-                // It should if:
-                //   - No include or exclude list is specified
-                //   - An exclude list is present and the subprogram is not in it
-                //   - An include list is present and the subprogram is in it (and not on the exclude list)
-
-                if (includelist.empty() && excludelist.empty()) {
-                    return true;
-                }
-
-                for (const auto &excludeEntry: excludelist) {
-                    if (const std::regex excludeRegex{convertWildcardToRegexForm(excludeEntry)}; std::regex_match(
-                        subprogramName, excludeRegex)) {
-                        return false;
-                    }
-                }
-
-                bool subprogramInIncludeList{false};
-                for (const auto &includeEntry: includelist) {
-                    if (const std::regex includeRegex{convertWildcardToRegexForm(includeEntry)}; std::regex_match(
-                        subprogramName, includeRegex)) {
-                        subprogramInIncludeList = true;
-                        break;
-                    }
-                }
-
-                if (!includelist.empty()) {
-                    if (subprogramInIncludeList) {
-                        return true;
-                    }
-                    return false;
-                }
-
-                return true;
+                return instrumentRoutine(subprogramName);
             }
 
             // Default empty visit functions for otherwise unhandled types.
@@ -965,57 +919,8 @@ namespace salt::fortran {
             return map;
         }
 
-        [[nodiscard]] static std::string convertGlobToRegexForm(const std::string &globString) {
-            // Convert lines in shell glob format (where "*" means zero or more characters)
-            // to regex version (where ".*" means zero or more characters).
-            // This is used for files in TAU selective instrumentation files.
-            // Order matters: escape regex metacharacters first so any "."
-            // characters in the input become "\\.", then substitute the
-            // surviving literal "*" with ".*". Doing the "*" -> ".*" rewrite
-            // first would let the inserted "." get escaped to "\\.", turning
-            // the wildcard into a quantifier on a literal dot.
-            static const std::regex metacharacters(R"([\.\^\$\+\(\)\[\]\{\}\|\?])");
-            const std::string escapedString{std::regex_replace(globString, metacharacters, R"(\$&)")};
-            static const std::regex starRegex{R"(\*)"};
-            return std::regex_replace(escapedString, starRegex, ".*");
-        }
-
         [[nodiscard]] static bool shouldInstrumentFile(const std::filesystem::path &filePath) {
-            // Check if this file should be instrumented.
-            // It should if:
-            //   - No file include or file exclude list is specified
-            //   - An exclude list is present and the file is not in it
-            //   - An include list is present and the file is in it
-
-            if (fileincludelist.empty() && fileexcludelist.empty()) {
-                return true;
-            }
-
-            const auto filePart{filePath.filename()};
-            for (const auto &excludeEntry: fileexcludelist) {
-                if (const std::regex excludeRegex{convertGlobToRegexForm(excludeEntry)}; std::regex_match(
-                    filePart.string(), excludeRegex)) {
-                    return false;
-                }
-            }
-
-            bool fileInIncludeList{false};
-            for (const auto &includeEntry: fileincludelist) {
-                if (const std::regex includeRegex{convertGlobToRegexForm(includeEntry)}; std::regex_match(
-                    filePart.string(), includeRegex)) {
-                    fileInIncludeList = true;
-                    break;
-                }
-            }
-
-            if (!fileincludelist.empty()) {
-                if (fileInIncludeList) {
-                    return true;
-                }
-                return false;
-            }
-
-            return true;
+            return ::instrumentFile(filePath.string());
         }
 
         static void dumpSelectiveRequests() {
