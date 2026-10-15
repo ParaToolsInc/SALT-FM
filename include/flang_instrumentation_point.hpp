@@ -89,10 +89,14 @@ namespace salt::fortran {
         const InstrumentationLocation location_;
     };
 
+    // PROGRAM_BEGIN, or PROGRAM_SETUP for a main program without a timer,
+    // whose setup code may name the timer too
     class ProgramBeginInstrumentationPoint final : public InstrumentationPoint {
     public:
-        ProgramBeginInstrumentationPoint(const int line, std::string timerName) : InstrumentationPoint(
-                InstrumentationPointType::PROGRAM_BEGIN, line, InstrumentationLocation::BEFORE),
+        ProgramBeginInstrumentationPoint(const int line, std::string timerName,
+                                         const InstrumentationPointType type =
+                                                 InstrumentationPointType::PROGRAM_BEGIN) : InstrumentationPoint(
+                type, line, InstrumentationLocation::BEFORE),
             timerName_(std::move(timerName)) {
         }
 

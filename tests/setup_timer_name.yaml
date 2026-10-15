@@ -1,0 +1,35 @@
+# A configuration file whose setup code names main's timer, which it gets
+# whether or not the selective instrumentation file keeps that timer.
+instrumentation: TAU
+include:
+  - <Profile/Profiler.h>
+main_setup_insert:
+  - "    SETUP_TIMER_NAME(\"${full_timer_name}\");"
+main_setup_insert_noargs:
+  - "    SETUP_TIMER_NAME(\"${full_timer_name}\");"
+main_insert:
+  - "    TAU_PROFILE_TIMER(tautimer, \"${full_timer_name}\", \" \", TAU_DEFAULT);"
+  - "    TAU_PROFILE_START(tautimer);"
+function_begin_insert:
+  - "    TAU_PROFILE_TIMER(tautimer, \"${full_timer_name}\", \" \", TAU_USER);"
+  - "    TAU_PROFILE_START(tautimer);"
+function_end_insert:
+  - "TAU_PROFILE_STOP(tautimer);"
+
+Fortran:
+  instrumentation: tauFortran
+  program_setup_insert:
+    - "      integer, save :: tauProfileTimer(2) = [0, 0]"
+    - "      call SETUP_TIMER_NAME(\"${full_timer_name}&"
+    - "     &\")"
+  program_insert:
+    - "      call TAU_PROFILE_TIMER(tauProfileTimer, \"${full_timer_name}&"
+    - "     &\")"
+    - "      call TAU_PROFILE_START(tauProfileTimer)"
+  procedure_begin_insert:
+    - "      integer, save :: tauProfileTimer(2) = [0, 0]"
+    - "      call TAU_PROFILE_TIMER(tauProfileTimer, \"${full_timer_name}&"
+    - "     &\")"
+    - "      call TAU_PROFILE_START(tauProfileTimer)"
+  procedure_end_insert:
+    - "      call TAU_PROFILE_STOP(tauProfileTimer)"

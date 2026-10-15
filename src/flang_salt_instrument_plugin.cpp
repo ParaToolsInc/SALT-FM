@@ -96,9 +96,9 @@ namespace salt::fortran {
 
             // The setup code of a main program whose timer the SIF removes,
             // even when the file lists exclude its file
-            void addProgramSetupInstrumentation(const int start_line) {
-                instrumentationPoints_.emplace_back(std::make_unique<InstrumentationPoint>(
-                    InstrumentationPointType::PROGRAM_SETUP, start_line, InstrumentationLocation::BEFORE));
+            void addProgramSetupInstrumentation(const int start_line, const std::string &timer_name) {
+                instrumentationPoints_.emplace_back(std::make_unique<ProgramBeginInstrumentationPoint>(
+                    start_line, timer_name, InstrumentationPointType::PROGRAM_SETUP));
             }
 
             void addProcedureBeginInstrumentation(const int start_line, const std::string &timer_name) {
@@ -567,7 +567,7 @@ namespace salt::fortran {
                         verboseStream() << "Skipping the timer of " << procName <<
                                 " due to selective instrumentation\n";
                         skipInstrumentSubprogram_ = true;
-                        addProgramSetupInstrumentation(startLoc.line);
+                        addProgramSetupInstrumentation(startLoc.line, splitTimerName);
                     } else if (isInMainProgram_) {
                         verboseStream() << "Program begin \"" << mainProgramName_ << "\" at " << startLoc.line <<
                                 ", " << startLoc.column << "\n";
