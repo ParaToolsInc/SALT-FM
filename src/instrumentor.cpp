@@ -977,9 +977,9 @@ void instrumentor::set_exec_name(const char* name)
     exec_name = strdup(name);
 }
 
-void instrumentor::run_tool()
+int instrumentor::run_tool()
 {
-    Tool->run(tooling::newFrontendActionFactory<FindFunctionAction>().get());
+    return Tool->run(tooling::newFrontendActionFactory<FindFunctionAction>().get());
 }
 
 void instrumentor::select_routines()

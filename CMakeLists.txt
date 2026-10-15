@@ -1176,6 +1176,55 @@ if(EXISTS /dev/full)
   _salt_add_output_error_test(full_c /dev/full "lang:C"
     --tau_output=/dev/full ${CMAKE_SOURCE_DIR}/tests/hello.c)
 endif()
+# When Clang reports errors, saltfm must exit with a status from 1 to
+# 127 and leave no file at the --tau_output path. The setup removes
+# the `new` and fabricated outputs, writes a stale `old` one that
+# saltfm must remove, and makes `dir` an empty directory that saltfm
+# must keep.
+add_test(NAME make_clang_error_outputs
+  COMMAND sh -c "rm -rf clang_error_new.inst.c fabricate_on.inst.cpp &&
+    rm -rf clang_error_dir.inst.c && mkdir clang_error_dir.inst.c &&
+    echo stale > clang_error_old.inst.c")
+set_tests_properties(make_clang_error_outputs PROPERTIES
+  FIXTURES_SETUP clang_error_outputs
+  LABELS "phase:setup")
+_salt_in_test_output(output_error make_clang_error_outputs)
+# Adds test `name`: saltfm run in test-output/output_error on
+# tests/`src` with --tau_output=`out`, the ARGS, and fabrication off
+# unless ARGS turn it on, must exit with a status from 1 to 127 (0 with
+# EXIT_ZERO) and pass `[ <CHECK> ]` (default: no `out`).
+function(_salt_add_clang_error_test name out labels src)
+  cmake_parse_arguments(PARSE_ARGV 4 ARG "EXIT_ZERO" "CHECK" "ARGS")
+  set(check "! -e ${out}")
+  if(DEFINED ARG_CHECK)
+    set(check "${ARG_CHECK}")
+  endif()
+  set(rc_ok "[ $rc -ge 1 ] && [ $rc -le 127 ]")
+  set(rc_want "from 1 to 127")
+  if(ARG_EXIT_ZERO)
+    set(rc_ok "[ $rc -eq 0 ]")
+    set(rc_want "of 0")
+  endif()
+  add_test(NAME ${name}
+    COMMAND sh -c "\"$0\" \"$@\"; rc=$?
+      ${rc_ok} ||
+        { echo \"Expected an exit status ${rc_want}, got $rc\"; exit 1; }
+      [ ${check} ] || { echo \"Expected [ ${check} ]\"; exit 1; }"
+      ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm ${ARG_ARGS}
+      --tau_output=${out} ${CMAKE_SOURCE_DIR}/tests/${src})
+  set_tests_properties(${name} PROPERTIES
+    REQUIRED_FILES "${CMAKE_SOURCE_DIR}/tests/${src}"
+    ENVIRONMENT "SALT_FABRICATE_UNKNOWN_TYPES=0"
+    FIXTURES_REQUIRED clang_error_outputs
+    LABELS "${labels};phase:instrument")
+  _salt_in_test_output(output_error ${name})
+endfunction()
+foreach(out IN ITEMS new old)
+  _salt_add_clang_error_test(clang_error_${out}_output
+    clang_error_${out}.inst.c "lang:C" clang_error.c)
+endforeach()
+_salt_add_clang_error_test(clang_error_dir_output clang_error_dir.inst.c
+  "lang:C" clang_error.c CHECK "-d clang_error_dir.inst.c")
 
 # Selective Instrumentation File (SIF) tests.
 #
@@ -2076,8 +2125,14 @@ add_fabricate_test(control_off fabricate_control.cpp OFF
 add_fabricate_test(c_control fabricate_control.c ON
   "int add[(]int, int[)]" ""
   "Fabricated 0 namespaces, 0 class templates")
-add_fabricate_test(canary fabricate_case1.cpp OFF
-  "int test" "TAU_PROFILE_TIMER[^\n]*int test[(]")
+# Canary: without the flag, fabricate_case1.cpp does not compile and
+# saltfm fails, so the fabricate tests above prove the flag matters.
+_salt_add_clang_error_test(fabricate_canary canary.fab.inst.cpp
+  "lang:CXX;fabricate" fabricate_case1.cpp)
+# With the flag, the same Clang errors are expected: exit 0 and output.
+_salt_add_clang_error_test(fabricate_on_exit_zero fabricate_on.inst.cpp
+  "lang:CXX;fabricate" fabricate_case1.cpp EXIT_ZERO
+  CHECK "-s fabricate_on.inst.cpp" ARGS --tau_fabricate_unknown_types)
 
 add_test(NAME instrument_fabricate_env
   COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
