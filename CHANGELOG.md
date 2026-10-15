@@ -57,6 +57,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `saltfm`, as the Fortran instrumentor does, and the `#line` lines of
   the output name that path; before, both used Clang's absolute path
   ([#71](https://github.com/ParaToolsInc/SALT-FM/issues/71)).
+- The selective instrumentation file parser removes the whitespace at
+  the two ends of each line, as TAU does. Before, it removed only the
+  leading whitespace, so a `BEGIN_` or `END_` line with trailing spaces,
+  tabs, or a CRLF line ending was not recognized, and an entry kept its
+  trailing whitespace and did not match. Lines longer than 64 KiB no
+  longer stop the parse, and the `BEGIN_INSTRUMENT_SECTION` warning goes
+  to stderr on its own line
+  ([#71](https://github.com/ParaToolsInc/SALT-FM/issues/71)).
 
 ## [0.5.0] - 2026-10-09
 

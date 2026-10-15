@@ -1,0 +1,10 @@
+# The CRLF line endings of this file are deliberate (see .gitattributes
+# and .editorconfig). The '\r' of each line is trimmed, so the exclude
+# list removes excluded_routine and the file include list keeps the test
+# source.
+BEGIN_EXCLUDE_LIST
+"#excluded_routine#"
+END_EXCLUDE_LIST
+BEGIN_FILE_INCLUDE_LIST
+sif_excl.*
+END_FILE_INCLUDE_LIST

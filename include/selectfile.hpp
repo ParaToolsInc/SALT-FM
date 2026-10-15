@@ -14,8 +14,6 @@
 #define BEGIN_INSTRUMENT_SECTION "BEGIN_INSTRUMENT_SECTION"
 #define END_INSTRUMENT_SECTION	 "END_INSTRUMENT_SECTION"
 
-#define INBUF_SIZE 65536
-
 #define WSPACE(line) while ( line[0] == ' ' || line[0] == '\t')  \
     { \
       if (line[0] == '\0') parseError("EOL found", line, lineno, line - original);  \

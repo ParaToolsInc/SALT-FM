@@ -1,3 +1,7 @@
-# Test SIF whose trailing spaces are deliberate
-[tests/sif/exclude_no_warning_cpp.tau]
+# Test SIFs whose trailing spaces are deliberate
+[{tests/sif/exclude_no_warning_cpp.tau,tests/sif/trailing_whitespace.tau,tests/sif/tau/14_whitespace.tau}]
 trim_trailing_whitespace = false
+
+# Test SIF whose CRLF line endings are deliberate
+[tests/sif/crlf.tau]
+end_of_line = crlf
