@@ -1748,6 +1748,25 @@ foreach(lang c cpp)
     APPEND PROPERTY FAIL_REGULAR_EXPRESSION "TAU_INIT[(]&argc")
 endforeach()
 
+# Setup code fills in main's timer name, as for a kept main, when a
+# routine or file list removes main's timer.
+set(_sif_setup_name_c "SETUP_TIMER_NAME[(]\"int main[(]")
+set(_sif_setup_name_cpp "${_sif_setup_name_c}")
+set(_sif_setup_name_fortran "SETUP_TIMER_NAME[(]\"&\n     &${_sif_main_timer_fortran}")
+set(_sif_file_exclude_c file_exclude_c)
+set(_sif_file_exclude_cpp file_exclude_cpp)
+set(_sif_file_exclude_fortran file_exclude_f90)
+foreach(lang IN LISTS _sif_langs)
+  foreach(sif exclude_main include_list ${_sif_file_exclude_${lang}})
+    add_sif_test(setup_name_${sif}_${lang} ${lang} ${_sif_src_${lang}} tests/sif/${sif}.tau
+      CONFIG tests/setup_timer_name.yaml)
+    set_tests_properties(check_sif_setup_name_${sif}_${lang}
+      PROPERTIES
+      PASS_REGULAR_EXPRESSION "${_sif_setup_name_${lang}}"
+      FAIL_REGULAR_EXPRESSION "[$][{]full_timer_name")
+  endforeach()
+endforeach()
+
 # The perfstubs and ITT configurations also keep their setup code.
 foreach(cfg perfstubs itt)
   add_sif_test(main_excluded_${cfg}_c c tests/sif_excl.c tests/sif/exclude_main.tau
