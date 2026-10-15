@@ -4,7 +4,6 @@
 #include <ryml_all.hpp>
 #include "clang/Tooling/Tooling.h"
 #include <vector>
-#include <set>
 
 /* defines */
 #ifdef TAU_WINDOWS
@@ -52,21 +51,18 @@ typedef struct inst_loc {
 
 #endif
 
-// Utility functions required in the frontend too
-bool comp_inst_loc(inst_loc *first, inst_loc *second); // only works for inst_locs that are in the same file
-bool eq_inst_loc(inst_loc *first, inst_loc *second);
 bool check_file_against_list(std::list<std::string> list, std::string fname);
 
-static std::vector<inst_loc*> inst_locs;
-static std::vector<std::string> files_to_go;
-static std::vector<std::string> files_skipped;
+// Source files to instrument and source files the file lists exclude,
+// defined once in instrumentor.cpp and filled by frontend.cpp
+extern std::vector<std::string> files_to_go;
+extern std::vector<std::string> files_skipped;
 
 class instrumentor {
 public:
 
     clang::tooling::ClangTool* Tool = nullptr;
     char* exec_name;
-    std::set<std::string> file_set;
 
     instrumentor();
 

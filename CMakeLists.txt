@@ -1075,6 +1075,36 @@ set_tests_properties(check_inline_on_instruments_free_fn
   LABELS "lang:CXX;phase:check"
   PASS_REGULAR_EXPRESSION "TAU_PROFILE_TIMER[^\n]*free_fn_marked_inline"
 )
+# A source named relative to the working directory, with or without a
+# leading `./`, gets its timers, and a header whose path contains the
+# source's name adds none of its own.
+foreach(kind dot bare)
+  set(_src rel_path.c)
+  if(kind STREQUAL "dot")
+    set(_src ./rel_path.c)
+  endif()
+  set(_out ${SALT_TEST_OUTPUT_DIR}/instrument/rel_path_${kind}.inst.c)
+  add_test(NAME instrument_rel_path_${kind}
+    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+            --tau_output=${_out} ${_src}
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests)
+  set_tests_properties(instrument_rel_path_${kind}
+    PROPERTIES
+    FIXTURES_REQUIRED instrument_dir
+    FIXTURES_SETUP rel_path_${kind}
+    LABELS "lang:C;phase:instrument"
+    PASS_REGULAR_EXPRESSION "[Ii]nstrumentation:"
+  )
+  add_test(NAME check_rel_path_${kind} COMMAND ${CMAKE_COMMAND} -E cat ${_out})
+  set_tests_properties(check_rel_path_${kind}
+    PROPERTIES
+    FIXTURES_REQUIRED "instrument_dir;rel_path_${kind}"
+    LABELS "lang:C;phase:check"
+    PASS_REGULAR_EXPRESSION "keep_routine[(]void[)] +\\[\\{"
+    FAIL_REGULAR_EXPRESSION "header_routine[(]void[)] +\\[\\{"
+  )
+endforeach()
+
 _salt_in_test_output(instrument
   check_forward_decl_skips_bodyless check_pure_virtual_skips_bodyless
   instrument_inline_off check_inline_off_skips_inline
@@ -1225,18 +1255,29 @@ function(add_sif_test test_name lang src sif)
     rm_old_${name}_output instrument_${name} check_${name} warn_${name})
 endfunction()
 
-# SIF test where the instrumentor is expected NOT to emit instrumented code
+# SIF test where the instrumentor is expected NOT to instrument the source
 # (e.g. the source is on a FILE_EXCLUDE_LIST or fails the FILE_INCLUDE_LIST
 # whitelist). Verified by the absence of cparse-llvm's "Instrumentation:"
-# banner. Pass --tau_output to a per-test unique path so parallel ctest runs
-# cannot race on a shared default location. The same step checks the SIF
-# list-entry warnings against the optional WARNINGS, as in add_sif_test.
+# banner, and check_sif_<test_name>_copy checks that the output is the
+# source after a `#line 1` line, so that TAU's compiler wrapper compiles
+# the source as written. Pass --tau_output to a per-test unique path so parallel
+# ctest runs cannot race on a shared default location. The instrument step
+# checks the SIF list-entry warnings against the optional WARNINGS, as in
+# add_sif_test.
 function(add_sif_test_no_output test_name lang src sif)
   cmake_parse_arguments(PARSE_ARGV 4 ARG "" "" "WARNINGS")
   set(name sif_${test_name})
   get_filename_component(_src_ext ${src} EXT)
   set(out_file ${name}.inst${_src_ext})
   _salt_lang_to_label(${lang} _lang_label)
+  add_test(NAME rm_old_${name}_output
+    COMMAND ${CMAKE_COMMAND} -E rm -f "${out_file}"
+  )
+  set_tests_properties(rm_old_${name}_output
+    PROPERTIES
+    FIXTURES_SETUP ${name}_output
+    LABELS "${_lang_label};phase:setup;sif"
+  )
   add_test(NAME instrument_${name}
     COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
             --tau_select_file=${CMAKE_SOURCE_DIR}/${sif}
@@ -1246,10 +1287,22 @@ function(add_sif_test_no_output test_name lang src sif)
   set_tests_properties(instrument_${name}
     PROPERTIES
     REQUIRED_FILES "${CMAKE_SOURCE_DIR}/${src};${CMAKE_SOURCE_DIR}/${sif}"
+    FIXTURES_REQUIRED ${name}_output
+    FIXTURES_SETUP ${name}_inst
     LABELS "${_lang_label};phase:instrument;sif"
   )
   _sif_set_warning_checks(instrument_${name} "${ARG_WARNINGS}" "Instrumentation:")
-  _salt_in_test_output(sif instrument_${name})
+  add_test(NAME check_${name}_copy
+    COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR}/${src} -DOUT=${out_file}
+            -P ${CMAKE_SOURCE_DIR}/tests/check_copy.cmake
+  )
+  set_tests_properties(check_${name}_copy
+    PROPERTIES
+    FIXTURES_REQUIRED "${name}_output;${name}_inst"
+    LABELS "${_lang_label};phase:check;sif"
+  )
+  _salt_in_test_output(sif
+    rm_old_${name}_output instrument_${name} check_${name}_copy)
 endfunction()
 
 # Pattern helpers: regex fragments that match a TAU_PROFILE_TIMER timer string
@@ -1371,17 +1424,20 @@ add_sif_test_no_output(file_exclude_quote_trailing_junk_cpp
   cpp tests/sif_excl.cpp tests/sif/file_exclude_quote_trailing_junk_cpp.tau
   WARNINGS "WARNING: ignoring text after closing quote in file exclude list entry")
 
-# File-level EXCLUDE_LIST: the C/C++ frontend short-circuits and emits no
-# .inst output at all when the source file is on the file exclude list.
-# Verified via absence of the "Instrumentation:" banner from cparse-llvm.
+# File-level EXCLUDE_LIST: the C/C++ frontend does not instrument a source
+# file on the file exclude list and writes an unchanged copy instead.
+# Verified via absence of the "Instrumentation:" banner from cparse-llvm
+# and by comparing the copy with the source.
 add_sif_test_no_output(file_exclude_c   c   tests/sif_excl.c   tests/sif/file_exclude_c.tau)
 add_sif_test_no_output(file_exclude_cpp cpp tests/sif_excl.cpp tests/sif/file_exclude_cpp.tau)
+# An excluded empty source gets an empty copy, not a write error.
+add_sif_test_no_output(file_exclude_empty_c c tests/sif_empty.c tests/sif/file_exclude_empty_c.tau)
 
 # FILE_INCLUDE_LIST: cover both branches of the whitelist gate.
 # - match: source IS on the list, so instrumentation proceeds and
 #   keep_routine appears in the output.
 # - nomatch: list contains a real but unrelated file, so the source under
-#   test is not whitelisted and no .inst output is emitted (C/C++).
+#   test is not whitelisted and its output is an unchanged copy (C/C++).
 # Together these protect against both "list silently ignored" and
 # "match condition silently over-broad" parser regressions.
 add_sif_test(file_include_match_c

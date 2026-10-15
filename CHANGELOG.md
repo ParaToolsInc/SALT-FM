@@ -48,6 +48,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Homebrew's intrinsic module files, which are symbolic links; before,
   it copied the links, which did not resolve in the build tree, and
   `use, intrinsic` failed.
+- When the file lists of a selective instrumentation file exclude a C or
+  C++ source file, `saltfm` writes the source to the output file after a
+  `#line 1 "<source>"` line, as the Fortran instrumentor does, so TAU's
+  compiler wrappers compile it without timers. Before, it wrote no
+  output file, so the wrappers compiled the original source instead.
+  C and C++ file list entries now match the source path as given to
+  `saltfm`, as the Fortran instrumentor does, and the `#line` lines of
+  the output name that path; before, both used Clang's absolute path
+  ([#71](https://github.com/ParaToolsInc/SALT-FM/issues/71)).
 
 ## [0.5.0] - 2026-10-09
 

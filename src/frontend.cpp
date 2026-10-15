@@ -169,23 +169,8 @@ char **addHeadersToCommand(int *argc, const char **argv)
     return new_argv;
 }
 
-void findFiles(const std::vector<std::string>& files, instrumentor& CI)
+void findFiles(const std::vector<std::string>& files)
 {
-    for (auto fname : files)
-    {
-        std::string temp1;
-        auto location = fname.find_last_of("/");
-        if (location != std::string::npos)
-        {
-            temp1 = fname.substr(location + 1);
-        }
-        else
-        {
-            temp1 = fname;
-        }
-        CI.file_set.insert(temp1);
-    }
-
     for (std::string fil : files)
     {
         if (!fileincludelist.empty())
@@ -223,58 +208,6 @@ void findFiles(const std::vector<std::string>& files, instrumentor& CI)
         fprintf(stderr, "ERROR: no file to instrument, exiting.");
         exit(0);
     }
-    // unique requires things to be sorted, even though this doesn't really make sense at this point
-    std::sort(inst_locs.begin(), inst_locs.end(), comp_inst_loc);
-
-    // sometimes pre-declarations cause duplicates, yeet them
-    auto new_end = std::unique(inst_locs.begin(), inst_locs.end(), eq_inst_loc);
-    inst_locs.erase(new_end, inst_locs.end());
-
-    // sort on filename excluding path
-    std::sort(files_to_go.begin(), files_to_go.end(), [&](std::string s1, std::string s2) {
-        std::string temp1, temp2;
-        // handle s1
-        if (s1.find("/") != std::string::npos)
-        {
-            temp1 = s1.substr(s1.find_last_of("/"));
-        }
-        else
-        {
-            temp1 = s1;
-        }
-
-        // handle s2
-        if (s2.find("/") != std::string::npos)
-        {
-            temp2 = s2.substr(s2.find_last_of("/"));
-        }
-        else
-        {
-            temp2 = s2;
-        }
-
-        return temp1 < temp2;
-    });
-
-    auto new_end2 = std::unique(files_to_go.begin(), files_to_go.end(), [&](std::string s1, std::string s2) {
-        std::string temp1, temp2;
-        temp1 = s1;
-        temp2 = s2;
-
-        if (temp1.substr(0, 2) == "./")
-        {
-            temp1.erase(0, 2);
-        }
-
-        if (temp2.substr(0, 2) == "./")
-        {
-            temp2.erase(0, 2);
-        }
-
-        return (temp1.find(temp2) != std::string::npos || temp2.find(temp1) != std::string::npos);
-    });
-
-    files_to_go.erase(new_end2, files_to_go.end());
 }
 
 int main(int argc, const char **argv)
@@ -318,7 +251,7 @@ int main(int argc, const char **argv)
 
     CodeInstrumentor.instr_request(excludelist, false); // Emit selective instrumentation requests
 
-    findFiles(OptionsParser.getSourcePathList(), CodeInstrumentor); //Locate source files and mark for instrumentation/skipping
+    findFiles(OptionsParser.getSourcePathList()); //Locate source files and mark for instrumentation/skipping
 
     CodeInstrumentor.instrument();
 
