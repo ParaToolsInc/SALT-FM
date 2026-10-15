@@ -1107,6 +1107,28 @@ foreach(kind dot bare)
     FAIL_REGULAR_EXPRESSION "header_routine[(]void[)] +\\[\\{"
   )
 endforeach()
+# A source whose path has braces, as the timer names around it do, gets
+# its timers and main's setup code.
+set(_src ${CMAKE_BINARY_DIR}/brace{d}.c)
+configure_file(tests/sif_excl.c ${_src} COPYONLY)
+set(_out ${SALT_TEST_OUTPUT_DIR}/instrument/brace_path.inst.c)
+add_test(NAME instrument_brace_path
+  COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --tau_output=${_out} ${_src})
+set_tests_properties(instrument_brace_path
+  PROPERTIES
+  FIXTURES_REQUIRED instrument_dir
+  FIXTURES_SETUP brace_path
+  LABELS "lang:C;phase:instrument"
+  PASS_REGULAR_EXPRESSION "[Ii]nstrumentation:"
+)
+add_test(NAME check_brace_path COMMAND ${CMAKE_COMMAND} -E cat ${_out})
+set_tests_properties(check_brace_path
+  PROPERTIES
+  FIXTURES_REQUIRED "instrument_dir;brace_path"
+  LABELS "lang:C;phase:check"
+  PASS_REGULAR_EXPRESSION
+    "TAU_PROFILE_TIMER[^\n]*keep_routine[^\n]*/brace[{]d[}][.]c[}] [{]3,.*TAU_PROFILE_SET_NODE"
+)
 
 _salt_in_test_output(instrument
   check_forward_decl_skips_bodyless check_pure_virtual_skips_bodyless
