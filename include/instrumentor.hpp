@@ -68,8 +68,8 @@ public:
 
     void run_tool();
 
-    // Handles a list of instrumentation locations to be included (include=true) or excluded (include=false)
-    void instr_request(std::list<std::string> list, bool include);
+    // Skips the timers of the routines that the routine lists do not select
+    void select_routines();
 
     void instrument_file(std::ifstream &og_file, std::ofstream &inst_file, std::string filename,
                      std::vector<inst_loc *> inst_locations, bool use_cxx_api, ryml::Tree yaml_tree);

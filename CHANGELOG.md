@@ -81,6 +81,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   routine entries stay case-sensitive. TAU matches Fortran names with
   case, so this differs from TAU
   ([#71](https://github.com/ParaToolsInc/SALT-FM/issues/71)).
+- The C/C++ instrumentor honors a selective instrumentation include list
+  (`BEGIN_INCLUDE_LIST`): when it is not empty, only the routines it
+  matches get timers, as in TAU and the Fortran plugin. Before, it only
+  opted inline functions in to instrumentation
+  ([#46](https://github.com/ParaToolsInc/SALT-FM/issues/46)).
 
 ## [0.5.0] - 2026-10-09
 

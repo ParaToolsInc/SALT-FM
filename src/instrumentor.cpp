@@ -347,12 +347,6 @@ static std::string selectName(const std::string &timer_name)
     return name;
 }
 
-// returns true if loc matches something in list
-bool check_loc_against_list(std::list<std::string> list, inst_loc *loc)
-{
-    return routineInList(list, selectName(loc->full_timer_name));
-}
-
 // returns true if function matches something in list
 bool check_func_against_list(std::list<std::string> list, FunctionDecl *func, ASTContext *context,
                              SourceManager &src_mgr)
@@ -985,14 +979,11 @@ void instrumentor::run_tool()
     Tool->run(tooling::newFrontendActionFactory<FindFunctionAction>().get());
 }
 
-void instrumentor::instr_request(std::list<std::string> list, bool include)
+void instrumentor::select_routines()
 {
     for (inst_loc *loc : inst_locs)
     {
-        if (check_loc_against_list(list, loc))
-        {
-            loc->skip = !include;
-        }
+        loc->skip = !instrumentRoutine(selectName(loc->full_timer_name));
     }
 }
 

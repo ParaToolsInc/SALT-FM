@@ -1,0 +1,6 @@
+# SIF: the include list also opts the inline free_fn_marked_inline in to
+# instrumentation without --tau_instrument_inline. The inline method and
+# main are not on the list, so they get no timer.
+BEGIN_INCLUDE_LIST
+"#free_fn_marked_inline#"
+END_INCLUDE_LIST
