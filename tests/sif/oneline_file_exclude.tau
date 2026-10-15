@@ -1,0 +1,5 @@
+# SIF: exclude sif_oneline.c, whose routines keep their one-line returns
+# as written; main gets only its setup code.
+BEGIN_FILE_EXCLUDE_LIST
+sif_oneline.c
+END_FILE_EXCLUDE_LIST

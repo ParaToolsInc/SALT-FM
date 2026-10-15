@@ -1197,9 +1197,10 @@ endfunction()
 # PASS_REGULAR_EXPRESSION / FAIL_REGULAR_EXPRESSION on the check test.
 # warn_sif_<test_name> checks the instrumentor's SIF list-entry warnings
 # against the optional WARNINGS (see _sif_set_warning_checks). The optional
-# CONFIG names a configuration file relative to the source directory.
+# CONFIG names a configuration file relative to the source directory, and
+# the optional ARGS are extra instrumentor options.
 function(add_sif_test test_name lang src sif)
-  cmake_parse_arguments(PARSE_ARGV 4 ARG "" "CONFIG" "WARNINGS")
+  cmake_parse_arguments(PARSE_ARGV 4 ARG "" "CONFIG" "WARNINGS;ARGS")
   set(name sif_${test_name})
   set(config_arg "")
   if(ARG_CONFIG)
@@ -1227,6 +1228,7 @@ function(add_sif_test test_name lang src sif)
     COMMAND sh -c "\"$0\" \"$@\" > ${log_file} 2>&1; rc=$?; cat ${log_file}; exit $rc"
             "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm"
             ${config_arg}
+            ${ARG_ARGS}
             --tau_select_file=${sif_path}
             --tau_output=${out_file}
             ${CMAKE_SOURCE_DIR}/${src}
@@ -1744,6 +1746,39 @@ foreach(cfg perfstubs itt)
     PASS_REGULAR_EXPRESSION "PERFSTUBS_INITIALIZE"
     FAIL_REGULAR_EXPRESSION "PERFSTUBS_INITIALIZE[(][)].\nPERFSTUBS_TIMER_START_FUNC")
 endforeach()
+
+# Routines that the lists leave out keep returns that share their line with
+# other code as written: no repeated code before the return, and no timer
+# stop in main. '.' stands for each ';' of the source, which would split
+# the pattern lists.
+string(CONCAT _sif_oneline_pass
+  "\nint dropped[(]void[)] [{] return 11. [}]\n"
+  ".*\n    if [(]n == 22[)] return 22.\n"
+  ".* return dropped[(][)] [+] cond_dropped[(]0[)] [+] kept[(][)] - 44. [}]\n")
+foreach(sif include exclude file_exclude)
+  add_sif_test(oneline_${sif} c tests/sif_oneline.c tests/sif/oneline_${sif}.tau)
+  set_tests_properties(check_sif_oneline_${sif}
+    PROPERTIES
+    PASS_REGULAR_EXPRESSION "${_sif_oneline_pass}"
+    FAIL_REGULAR_EXPRESSION
+      "int dropped.*int dropped;n == 22.*n == 22;int main.*int main;inst_ret_val = dropped"
+  )
+endforeach()
+# The same with the C++ API, which TAU's compiler wrapper uses for C++,
+# and where a one-line routine the lists leave out lost the rest of its
+# line.
+add_sif_test(oneline_exclude_cpp cpp tests/sif_oneline.cpp tests/sif/oneline_exclude_cpp.tau
+  ARGS --tau_use_cxx_api)
+string(CONCAT _sif_oneline_pass
+  "\nint dropped[(][)] [{] return 11. [}]\n"
+  "\nvoid vdrop[(]int n[)] [{] if [(]n[)] return. g = 1. [}]\n"
+  ".*TAU_PROFILE[(]\"int kept[(]"
+  ".* vdrop[(]0[)]. return dropped[(][)] [+] kept[(][)] - 44 [+] g. [}]\n")
+set_tests_properties(check_sif_oneline_exclude_cpp
+  PROPERTIES
+  PASS_REGULAR_EXPRESSION "${_sif_oneline_pass}"
+  FAIL_REGULAR_EXPRESSION "int dropped.*int dropped;vdrop[(]int.*vdrop[(]int;int main.*int main"
+)
 
 # An include list that leaves out the main program gets a warning that
 # main still gets TAU's setup code (#71); an exclude list entry for main

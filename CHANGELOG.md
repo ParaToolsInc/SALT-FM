@@ -124,6 +124,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deployment target raised to match the LLVM library. Before, only a
   second configure did, so the first build linked for macOS 11.0 and ld
   printed hundreds of "built for newer 'macOS' version" warnings.
+- When a selective instrumentation file leaves out a C or C++ routine,
+  including main, its `return` lines stay as written. Before, a `return`
+  that shared its line with other code, as in `int f(void) { return 1; }`
+  or `if (n) return 1;`, was written as the code before it followed by
+  the whole line again, which nested a function definition or repeated
+  the condition, and with `--tau_use_cxx_api` the rest of a one-line
+  routine was dropped
+  ([#71](https://github.com/ParaToolsInc/SALT-FM/issues/71)).
 
 ## [0.5.0] - 2026-10-09
 

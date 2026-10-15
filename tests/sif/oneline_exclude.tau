@@ -1,0 +1,6 @@
+# SIF: exclude dropped, cond_dropped, and main, which keep their one-line
+# returns as written.
+BEGIN_EXCLUDE_LIST
+"#dropped(#"
+"#main(#"
+END_EXCLUDE_LIST

@@ -1,0 +1,5 @@
+# SIF: only kept gets a timer; dropped, cond_dropped, and main, not on
+# the include list, keep their one-line returns as written.
+BEGIN_INCLUDE_LIST
+"#kept#"
+END_INCLUDE_LIST

@@ -238,21 +238,14 @@ void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, rym
         else
         {
             // if it is void, put in stop just in case
-            if (!loc->skip)
+            // Insert on function begin insert
+            for (ryml::NodeRef const& child : yaml_tree["function_end_insert"].children())
             {
-                // Insert on function begin insert
-                for (ryml::NodeRef const& child : yaml_tree["function_end_insert"].children())
-                {
-                    std::stringstream ss;
-                    ss << child.val();
-                    std::string updated_str;
-                    updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", loc->full_timer_name);
-                    code += "\t" + updated_str + "\n";
-                }
-            }
-            else
-            {
-                code = "";
+                std::stringstream ss;
+                ss << child.val();
+                std::string updated_str;
+                updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", loc->full_timer_name);
+                code += "\t" + updated_str + "\n";
             }
             return;
         }
@@ -260,13 +253,33 @@ void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, rym
     // types are harder, need to pull the arg to return before the stop in case it does things
     else
     {
-        if (!loc->skip)
+        std::string temp = line;
+        temp.erase(std::remove_if(temp.begin(), temp.end(), isspace), temp.end());
+        if (temp.find("return;") != std::string::npos)
         {
-            std::string temp = line;
-            temp.erase(std::remove_if(temp.begin(), temp.end(), isspace), temp.end());
-            if (temp.find("return;") != std::string::npos)
+            // also throw in brackets in case SOMEONE didn't put brackets around their if
+            // Insert on function begin insert
+            for (ryml::NodeRef const& child : yaml_tree["function_end_insert"].children())
             {
-                // also throw in brackets in case SOMEONE didn't put brackets around their if
+                std::stringstream ss;
+                ss << child.val();
+                std::string updated_str;
+                updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", loc->full_timer_name);
+                code += "\t{" + updated_str + " ";
+            }
+            code += "return;}\n";
+            return;
+        }
+        else
+        {
+            // special case void*
+            if (std::string(loc->return_type).find("void") != std::string::npos && !loc->is_return_ptr)
+            {
+                code += "\t{ ";
+                int first_pos = line.find("return") + 6;
+                int last_pos = line.find(";", first_pos);
+                code += line.substr(first_pos, last_pos - first_pos + 1);
+
                 // Insert on function begin insert
                 for (ryml::NodeRef const& child : yaml_tree["function_end_insert"].children())
                 {
@@ -274,84 +287,56 @@ void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, rym
                     ss << child.val();
                     std::string updated_str;
                     updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", loc->full_timer_name);
-                    code += "\t{" + updated_str + " ";
+                    code += " " + updated_str + " ";
                 }
-                code += "return;}\n";
-                return;
+                code += "return; }\n";
             }
+            // special case if we need to throw in a std::move because of copy assign shenanigans
+            else if (loc->needs_move)
+            {
+                code += "\t{ ";
+                code += loc->return_type;
+                code += " inst_ret_val = std::move(";
+                int first_pos = line.find("return") + 6;
+                int last_pos = line.find(";", first_pos);
+                // no +1, don't want semicolon
+                code += line.substr(first_pos, last_pos - first_pos);
+                code += "); ";
+
+                 // Insert on function begin insert
+                for (ryml::NodeRef const& child : yaml_tree["function_end_insert"].children())
+                {
+                    std::stringstream ss;
+                    ss << child.val();
+                    std::string updated_str;
+                    updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", loc->full_timer_name);
+                    code += " " + updated_str + " ";
+                }
+                code += "return inst_ret_val; }\n";
+            }
+            // general case for typed returns
             else
             {
-                // special case void*
-                if (std::string(loc->return_type).find("void") != std::string::npos && !loc->is_return_ptr)
-                {
-                    code += "\t{ ";
-                    int first_pos = line.find("return") + 6;
-                    int last_pos = line.find(";", first_pos);
-                    code += line.substr(first_pos, last_pos - first_pos + 1);
+                code += "\t{ ";
+                code += loc->return_type;
+                code += " inst_ret_val = ";
+                int first_pos = line.find("return") + 6;
+                int last_pos = line.find(";", first_pos);
+                // +1 to catch the semicolon too
+                code += line.substr(first_pos, last_pos - first_pos + 1);
 
-                    // Insert on function begin insert
-                    for (ryml::NodeRef const& child : yaml_tree["function_end_insert"].children())
-                    {
-                        std::stringstream ss;
-                        ss << child.val();
-                        std::string updated_str;
-                        updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", loc->full_timer_name);
-                        code += " " + updated_str + " ";
-                    }
-                    code += "return; }\n";
-                }
-                // special case if we need to throw in a std::move because of copy assign shenanigans
-                else if (loc->needs_move)
+                 // Insert on function begin insert
+                for (ryml::NodeRef const& child : yaml_tree["function_end_insert"].children())
                 {
-                    code += "\t{ ";
-                    code += loc->return_type;
-                    code += " inst_ret_val = std::move(";
-                    int first_pos = line.find("return") + 6;
-                    int last_pos = line.find(";", first_pos);
-                    // no +1, don't want semicolon
-                    code += line.substr(first_pos, last_pos - first_pos);
-                    code += "); ";
-
-                     // Insert on function begin insert
-                    for (ryml::NodeRef const& child : yaml_tree["function_end_insert"].children())
-                    {
-                        std::stringstream ss;
-                        ss << child.val();
-                        std::string updated_str;
-                        updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", loc->full_timer_name);
-                        code += " " + updated_str + " ";
-                    }
-                    code += "return inst_ret_val; }\n";
+                    std::stringstream ss;
+                    ss << child.val();
+                    std::string updated_str;
+                    updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", loc->full_timer_name);
+                    code += " " + updated_str + " ";
                 }
-                // general case for typed returns
-                else
-                {
-                    code += "\t{ ";
-                    code += loc->return_type;
-                    code += " inst_ret_val = ";
-                    int first_pos = line.find("return") + 6;
-                    int last_pos = line.find(";", first_pos);
-                    // +1 to catch the semicolon too
-                    code += line.substr(first_pos, last_pos - first_pos + 1);
-
-                     // Insert on function begin insert
-                    for (ryml::NodeRef const& child : yaml_tree["function_end_insert"].children())
-                    {
-                        std::stringstream ss;
-                        ss << child.val();
-                        std::string updated_str;
-                        updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", loc->full_timer_name);
-                        code += " " + updated_str + " ";
-                    }
-                    code += "return inst_ret_val; }\n";
-                }
-                return;
+                code += "return inst_ret_val; }\n";
             }
-        }
-        else
-        {
-            code = line;
-            code += "\n";
+            return;
         }
     }
 }
@@ -1176,13 +1161,12 @@ void instrumentor::instrument()
             // printf("cur file %s\n", fname.c_str());
             if (normal_path(loc_fname) == abs_fname)
             {
-                if (skipped)
+                loc->skip = loc->skip || skipped;
+                // A routine the lists leave out keeps its lines as written,
+                // except that main gets its setup code
+                if (loc->skip && (loc->kind != BEGIN_FUNC || strcmp(loc->func_name, "main") != 0))
                 {
-                    if (loc->kind != BEGIN_FUNC || strcmp(loc->func_name, "main") != 0)
-                    {
-                        continue;
-                    }
-                    loc->skip = true;
+                    continue;
                 }
                 inst_locations.push_back(loc);
             }

@@ -1,0 +1,7 @@
+# SIF: exclude dropped, vdrop, and main, which keep their one-line
+# routines as written with the C++ API.
+BEGIN_EXCLUDE_LIST
+"#dropped(#"
+"#vdrop(#"
+"#main(#"
+END_EXCLUDE_LIST
