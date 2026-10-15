@@ -76,6 +76,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   basename, so an entry with a `/` never matched; such an entry now
   matches the whole source path
   ([#71](https://github.com/ParaToolsInc/SALT-FM/issues/71)).
+- Fortran routine names in selective instrumentation lists ignore case,
+  so `COMPUTE` selects subroutine `compute`. File entries and C and C++
+  routine entries stay case-sensitive. TAU matches Fortran names with
+  case, so this differs from TAU
+  ([#71](https://github.com/ParaToolsInc/SALT-FM/issues/71)).
 
 ## [0.5.0] - 2026-10-09
 

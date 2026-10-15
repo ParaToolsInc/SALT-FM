@@ -75,11 +75,15 @@ bool processInstrumentationRequests(const char *fname);
 
 /* True if `name` matches the TAU wildcard `pattern`: `star` matches zero
    or more characters, '?' matches one character, and every other
-   character matches only itself. */
-bool wildcardMatch(const std::string &pattern, const std::string &name, char star);
+   character matches only itself. With `ignoreCase`, letters match
+   either case. */
+bool wildcardMatch(const std::string &pattern, const std::string &name, char star,
+                   bool ignoreCase = false);
 
-/* True if routine `name` matches an entry of `list`; '#' is the wildcard. */
-bool routineInList(const std::list<std::string> &list, const std::string &name);
+/* True if routine `name` matches an entry of `list`; '#' is the wildcard.
+   Fortran names pass `ignoreCase`. */
+bool routineInList(const std::list<std::string> &list, const std::string &name,
+                   bool ignoreCase = false);
 
 /* True if file `path` matches an entry of `list`; '*' is the wildcard. An
    entry with no '/' matches the basename of `path`, and an entry with a
@@ -88,8 +92,8 @@ bool fileInList(const std::list<std::string> &list, const std::string &path);
 
 /* True if the routine lists select routine `name`: it matches no exclude
    list entry and, if the include list is not empty, an include list
-   entry. */
-bool instrumentRoutine(const std::string &name);
+   entry. Fortran names pass `ignoreCase`. */
+bool instrumentRoutine(const std::string &name, bool ignoreCase = false);
 
 /* True if the file lists select file `path`, as instrumentRoutine(). */
 bool instrumentFile(const std::string &path);

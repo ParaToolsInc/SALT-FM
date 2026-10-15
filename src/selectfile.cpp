@@ -1,3 +1,4 @@
+#include <cctype>
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -810,8 +811,13 @@ bool processInstrumentationRequests(const char *fname)
   return true;
 }
 
-bool wildcardMatch(const std::string &pattern, const std::string &name, char star)
+bool wildcardMatch(const std::string &pattern, const std::string &name, char star,
+                   bool ignoreCase)
 {
+  const auto same = [ignoreCase](char a, char b) {
+    return a == b || (ignoreCase && tolower(static_cast<unsigned char>(a)) ==
+                                        tolower(static_cast<unsigned char>(b)));
+  };
   /* On a mismatch, retry from the last `star` with one more character
      matched by it. */
   size_t p = 0;
@@ -822,7 +828,7 @@ bool wildcardMatch(const std::string &pattern, const std::string &name, char sta
     if (p < pattern.size() && pattern[p] == star) {
       star_p = p++;
       star_n = n;
-    } else if (p < pattern.size() && (pattern[p] == '?' || pattern[p] == name[n])) {
+    } else if (p < pattern.size() && (pattern[p] == '?' || same(pattern[p], name[n]))) {
       p++;
       n++;
     } else if (star_p != std::string::npos) {
@@ -838,10 +844,11 @@ bool wildcardMatch(const std::string &pattern, const std::string &name, char sta
   return p == pattern.size();
 }
 
-bool routineInList(const std::list<std::string> &list, const std::string &name)
+bool routineInList(const std::list<std::string> &list, const std::string &name,
+                   bool ignoreCase)
 {
   for (const std::string &entry : list) {
-    if (wildcardMatch(entry, name, '#')) {
+    if (wildcardMatch(entry, name, '#', ignoreCase)) {
       return true;
     }
   }
@@ -860,10 +867,10 @@ bool fileInList(const std::list<std::string> &list, const std::string &path)
   return false;
 }
 
-bool instrumentRoutine(const std::string &name)
+bool instrumentRoutine(const std::string &name, bool ignoreCase)
 {
-  return !routineInList(excludelist, name) &&
-         (includelist.empty() || routineInList(includelist, name));
+  return !routineInList(excludelist, name, ignoreCase) &&
+         (includelist.empty() || routineInList(includelist, name, ignoreCase));
 }
 
 bool instrumentFile(const std::string &path)

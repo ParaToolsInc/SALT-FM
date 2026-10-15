@@ -139,7 +139,8 @@ namespace salt::fortran {
             }
 
             [[nodiscard]] static bool shouldInstrumentSubprogram(const std::string &subprogramName) {
-                return instrumentRoutine(subprogramName);
+                // Fortran names ignore case
+                return instrumentRoutine(subprogramName, /*ignoreCase=*/true);
             }
 
             // Default empty visit functions for otherwise unhandled types.
