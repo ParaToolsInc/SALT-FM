@@ -1,0 +1,10 @@
+# SIF: an include list that leaves out the main program, which the
+# exclude list also names. main gets TAU's setup code but no timer, and
+# SALT-FM gives no warning, since the exclude list asks for that.
+BEGIN_INCLUDE_LIST
+"#keep_routine#"
+END_INCLUDE_LIST
+BEGIN_EXCLUDE_LIST
+"#main(#"
+sif_excl
+END_EXCLUDE_LIST

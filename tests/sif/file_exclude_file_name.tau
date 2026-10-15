@@ -1,0 +1,5 @@
+# SIF: exclude the main program sources sif_file_name.c,
+# sif_file_name.cpp, and fortran/sif_file_name.f90.
+BEGIN_FILE_EXCLUDE_LIST
+sif_file_name.*
+END_FILE_EXCLUDE_LIST

@@ -29,6 +29,8 @@ limitations under the License.
 // Configuration file YAML keys
 #define SALT_FORTRAN_KEY "Fortran"
 #define SALT_FORTRAN_PROGRAM_BEGIN_KEY "program_insert"
+// Optional
+#define SALT_FORTRAN_PROGRAM_SETUP_KEY "program_setup_insert"
 #define SALT_FORTRAN_PROCEDURE_BEGIN_KEY "procedure_begin_insert"
 #define SALT_FORTRAN_PROCEDURE_END_KEY "procedure_end_insert"
 

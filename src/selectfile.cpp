@@ -878,3 +878,15 @@ bool instrumentFile(const std::string &path)
   return !fileInList(fileexcludelist, path) &&
          (fileincludelist.empty() || fileInList(fileincludelist, path));
 }
+
+void warnIfMainNotIncluded(const std::string &name, bool ignoreCase)
+{
+  if (!includelist.empty() && !routineInList(includelist, name, ignoreCase) &&
+      !routineInList(excludelist, name, ignoreCase)) {
+    fprintf(stderr,
+      "WARNING: main program \"%s\" is not on the selective\n"
+      "  instrumentation include list; SALT-FM still inserts its setup code\n"
+      "  there, without a timer\n",
+      name.c_str());
+  }
+}

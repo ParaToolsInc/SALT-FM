@@ -1,0 +1,5 @@
+# SIF: exclude sif_nomain.c, which has no main, so its output is the
+# source after a #line 1 line.
+BEGIN_FILE_EXCLUDE_LIST
+sif_nomain.c
+END_FILE_EXCLUDE_LIST

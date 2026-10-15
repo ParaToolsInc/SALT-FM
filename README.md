@@ -220,6 +220,29 @@ and uses `flang` or `flang-new` from `PATH`. The driver must report the
 LLVM major version SALT-FM was built with, or `fparse-llvm` stops with
 an error.
 
+### Configuration files
+
+The YAML configuration file (`--config_file`; `config_files/` has one
+for TAU, perfstubs, ITT, NVTX, and ROCTX) holds all the code that
+SALT-FM inserts. `${full_timer_name}` in an entry stands for the timer
+name.
+
+- `include`: lines written at the top of an instrumented C or C++ file.
+- `main_setup_insert` (optional): setup code at the start of `main`,
+  written even when the selective instrumentation lists leave out
+  main's timer. `main_setup_insert_noargs` (optional) replaces it for a
+  `main` without parameters.
+- `main_insert`, or `main_insert_scope` with `--tau_use_cxx_api`: main's
+  timer, written after the setup code when main is instrumented.
+- `function_begin_insert` (or `function_begin_insert_scope`) and
+  `function_end_insert`: the timer of every other function.
+- Under `Fortran:`, `program_setup_insert` (optional) and
+  `program_insert` do the same for the main program, and
+  `procedure_begin_insert` and `procedure_end_insert` for other
+  procedures. Since Fortran declarations come before statements, put
+  the declarations that the main program's timer needs in
+  `program_setup_insert`, as `tau_config.yaml` does.
+
 ### Selective instrumentation
 
 `saltfm --tau_select_file=<file>` reads a TAU selective instrumentation
@@ -257,10 +280,20 @@ It matches the entries of the lists as TAU does, in C, C++, and Fortran:
   routines it matches.
 - C and C++ inline functions get a timer only with
   `--tau_instrument_inline` or when they match the include list.
+- When the lists leave out the main program, or the file lists exclude
+  its file, SALT-FM removes only its timer and still writes its setup
+  code (`main_setup_insert` or `Fortran: program_setup_insert`), which
+  for TAU is `TAU_INIT` and `TAU_PROFILE_SET_NODE(0)`, or
+  `TAU_PROFILE_INIT` and `TAU_PROFILE_SET_NODE(0)` in Fortran. Without
+  it, a program run without MPI or `tau_exec` writes `profile.-1.0.0`,
+  and a threaded one can fail with timer errors. When an include list
+  that is not empty leaves out the main program, and no exclude list
+  entry names it, SALT-FM warns that main still gets the setup code.
 
 When its file lists exclude the source file, SALT-FM does not instrument
 it and writes the source to the output file after a `#line 1` line that
-names it, so TAU's compiler wrappers compile it without timers.
+names it, with only the setup code in a main program, so TAU's compiler
+wrappers compile it without timers.
 
 ## Notes for package maintainers
 
