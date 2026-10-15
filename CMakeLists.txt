@@ -1488,6 +1488,17 @@ if(TEST_FORTRAN)
     PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_fortran}"
     FAIL_REGULAR_EXPRESSION "${_sif_excluded_pattern_fortran}"
   )
+  # A configuration file without the optional program_setup_insert still
+  # instruments the main program from its program_insert.
+  add_sif_test(no_program_setup_fortran
+    fortran tests/fortran/sif_excl.f90 tests/sif/exclude_f90.tau
+    CONFIG tests/fortran/no_program_setup.yaml)
+  set_tests_properties(check_sif_no_program_setup_fortran
+    PROPERTIES
+    PASS_REGULAR_EXPRESSION
+      "TAU_PROFILE_INIT.*[Ss][Ii][Ff]_[Ee][Xx][Cc][Ll] .[{].*${_sif_keep_pattern_fortran}"
+    FAIL_REGULAR_EXPRESSION "${_sif_excluded_pattern_fortran}"
+  )
 
   # Routine-level INCLUDE_LIST (whitelist): only keep_routine should be
   # instrumented; excluded_routine, omitted from the include list, should not.

@@ -898,8 +898,9 @@ namespace salt::fortran {
             }
 
             // The optional "program_setup_insert" node: setup code at the start
-            // of the main program, inserted with or without its timer
-            if (ryml::ConstNodeRef programSetupNode = fortranNode[SALT_FORTRAN_PROGRAM_SETUP_KEY];
+            // of the main program, inserted with or without its timer.
+            // find_child, unlike [], does not assert that the key exists.
+            if (ryml::ConstNodeRef programSetupNode = fortranNode.find_child(SALT_FORTRAN_PROGRAM_SETUP_KEY);
                 !programSetupNode.invalid()) {
                 for (const ryml::ConstNodeRef child: programSetupNode.children()) {
                     ss << child.val() << "\n";
