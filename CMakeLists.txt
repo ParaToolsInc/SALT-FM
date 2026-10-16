@@ -1176,6 +1176,119 @@ if(EXISTS /dev/full)
   _salt_add_output_error_test(full_c /dev/full "lang:C"
     --tau_output=/dev/full ${CMAKE_SOURCE_DIR}/tests/hello.c)
 endif()
+# When Clang or Flang reports errors, saltfm must exit with a status
+# from 1 to 127 and leave no file at the --tau_output path. The setup
+# removes the `new` and fabricated outputs, writes stale `old` and
+# `early_exit` ones that saltfm must remove, makes the `dir` ones empty
+# directories that saltfm must keep, copies the bad and good sources and
+# a config and a selective instrumentation file to `self` ones that
+# saltfm must refuse and keep when they are also the output, and makes
+# read-only `ro` outputs that saltfm must keep and fail to open.
+set(_tests ${CMAKE_SOURCE_DIR}/tests)
+add_test(NAME make_clang_error_outputs
+  COMMAND sh -c "rm -rf clang_error_new.inst.c fabricate_on.inst.cpp &&
+    rm -rf clang_error_dir.inst.c fortran_error_dir.inst.F90 &&
+    mkdir clang_error_dir.inst.c fortran_error_dir.inst.F90 &&
+    echo stale > clang_error_old.inst.c &&
+    echo stale > fortran_error_old.inst.F90 &&
+    echo stale > fortran_early_exit.inst.F90 &&
+    echo stale > fortran_early_exit_space.inst.F90 &&
+    rm -f clang_error_ro.inst.c fortran_error_ro.inst.F90 &&
+    echo stale > clang_error_ro.inst.c &&
+    echo stale > fortran_error_ro.inst.F90 &&
+    chmod a-w clang_error_ro.inst.c fortran_error_ro.inst.F90 &&
+    cp ${_tests}/clang_error.c clang_error_self.c &&
+    cp ${_tests}/fortran/compile_error.f90 fortran_error_self.f90 &&
+    cp ${_tests}/fortran/compile_error.f90 fortran_error_self.f95 &&
+    cp ${_tests}/hello.c clang_hello_self.c &&
+    cp ${_tests}/setup_timer_name.yaml clang_config_self.yaml &&
+    cp ${_tests}/sif/exclude_c.tau clang_sif_self.tau &&
+    cp ${_tests}/setup_timer_name.yaml fortran_config_self.yaml &&
+    cp ${_tests}/setup_timer_name.yaml fortran_config_tail_self.yaml &&
+    cp ${_tests}/sif/exclude_f90.tau fortran_sif_self.tau &&
+    cp ${_tests}/fortran/hello.f90 fortran_hello_self.f90")
+set_tests_properties(make_clang_error_outputs PROPERTIES
+  FIXTURES_SETUP clang_error_outputs
+  LABELS "phase:setup")
+_salt_in_test_output(output_error make_clang_error_outputs)
+# Adds test `name`: saltfm run in test-output/output_error on `src`
+# (relative to tests/) with --tau_output=`out`, the ARGS, and
+# fabrication off unless ARGS turn it on, must exit with a status from
+# 1 to 127 (0 with EXIT_ZERO) and pass `[ <CHECK> ]` (default: no `out`).
+# NOT_ROOT skips the test as root, who can write read-only files.
+# SPACE passes `--tau_output <out>` as two arguments. TAIL arguments
+# follow `src`.
+# COPY_OF `fixture` (relative to tests/) instead expects the error that
+# `out`, a copy of the fixture that is also `src` or another input, is
+# an input file, and `out` unchanged.
+function(_salt_add_clang_error_test name out labels src)
+  cmake_parse_arguments(PARSE_ARGV 4 ARG "EXIT_ZERO;NOT_ROOT;SPACE"
+    "CHECK;COPY_OF" "ARGS;TAIL")
+  set(out_args --tau_output=${out})
+  if(ARG_SPACE)
+    set(out_args --tau_output ${out})
+  endif()
+  cmake_path(ABSOLUTE_PATH src BASE_DIRECTORY ${CMAKE_SOURCE_DIR}/tests)
+  set(check "[ ! -e ${out} ]")
+  if(DEFINED ARG_CHECK)
+    set(check "[ ${ARG_CHECK} ]")
+  endif()
+  set(error_check "")
+  if(DEFINED ARG_COPY_OF)
+    set(check "cmp ${out} ${CMAKE_SOURCE_DIR}/tests/${ARG_COPY_OF}")
+    set(error "ERROR: Output file ${out} is an input file")
+    set(error_check "grep -qF \"${error}\" ${name}.log ||
+      { echo \"Expected ${error}\"; exit 1; }")
+  endif()
+  set(rc_ok "[ $rc -ge 1 ] && [ $rc -le 127 ]")
+  set(rc_want "from 1 to 127")
+  if(ARG_EXIT_ZERO)
+    set(rc_ok "[ $rc -eq 0 ]")
+    set(rc_want "of 0")
+  endif()
+  set(skip "")
+  if(ARG_NOT_ROOT)
+    set(skip "[ \"$(id -u)\" -ne 0 ] || exit 77;")
+  endif()
+  add_test(NAME ${name}
+    COMMAND sh -c "${skip} \"$0\" \"$@\" > ${name}.log 2>&1; rc=$?
+      cat ${name}.log
+      ${rc_ok} ||
+        { echo \"Expected an exit status ${rc_want}, got $rc\"; exit 1; }
+      ${check} || { echo \"Expected ${check}\"; exit 1; }
+      ${error_check}"
+      ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm ${ARG_ARGS}
+      ${out_args} ${src} ${ARG_TAIL})
+  set_tests_properties(${name} PROPERTIES
+    REQUIRED_FILES "${src}"
+    ENVIRONMENT "SALT_FABRICATE_UNKNOWN_TYPES=0"
+    FIXTURES_REQUIRED clang_error_outputs
+    SKIP_RETURN_CODE 77
+    LABELS "${labels};phase:instrument")
+  _salt_in_test_output(output_error ${name})
+endfunction()
+foreach(out IN ITEMS new old)
+  _salt_add_clang_error_test(clang_error_${out}_output
+    clang_error_${out}.inst.c "lang:C" clang_error.c)
+endforeach()
+_salt_add_clang_error_test(clang_error_dir_output clang_error_dir.inst.c
+  "lang:C" clang_error.c CHECK "-d clang_error_dir.inst.c")
+_salt_add_clang_error_test(clang_error_self_output clang_error_self.c
+  "lang:C" ${SALT_TEST_OUTPUT_DIR}/output_error/clang_error_self.c
+  COPY_OF clang_error.c)
+_salt_add_clang_error_test(clang_hello_self_output clang_hello_self.c
+  "lang:C" ${SALT_TEST_OUTPUT_DIR}/output_error/clang_hello_self.c
+  COPY_OF hello.c)
+_salt_add_clang_error_test(clang_config_self_output clang_config_self.yaml
+  "lang:C" hello.c COPY_OF setup_timer_name.yaml
+  ARGS --config_file=clang_config_self.yaml)
+_salt_add_clang_error_test(clang_sif_self_output clang_sif_self.tau
+  "lang:C" hello.c COPY_OF sif/exclude_c.tau
+  ARGS --tau_select_file=clang_sif_self.tau)
+# A read-only output is kept, so opening it fails even for a good source.
+_salt_add_clang_error_test(clang_error_ro_output clang_error_ro.inst.c
+  "lang:C" hello.c NOT_ROOT
+  CHECK "-f clang_error_ro.inst.c -a ! -w clang_error_ro.inst.c")
 
 # Selective Instrumentation File (SIF) tests.
 #
@@ -2076,8 +2189,14 @@ add_fabricate_test(control_off fabricate_control.cpp OFF
 add_fabricate_test(c_control fabricate_control.c ON
   "int add[(]int, int[)]" ""
   "Fabricated 0 namespaces, 0 class templates")
-add_fabricate_test(canary fabricate_case1.cpp OFF
-  "int test" "TAU_PROFILE_TIMER[^\n]*int test[(]")
+# Canary: without the flag, fabricate_case1.cpp does not compile and
+# saltfm fails, so the fabricate tests above prove the flag matters.
+_salt_add_clang_error_test(fabricate_canary canary.fab.inst.cpp
+  "lang:CXX;fabricate" fabricate_case1.cpp)
+# With the flag, the same Clang errors are expected: exit 0 and output.
+_salt_add_clang_error_test(fabricate_on_exit_zero fabricate_on.inst.cpp
+  "lang:CXX;fabricate" fabricate_case1.cpp EXIT_ZERO
+  CHECK "-s fabricate_on.inst.cpp" ARGS --tau_fabricate_unknown_types)
 
 add_test(NAME instrument_fabricate_env
   COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
@@ -2801,6 +2920,43 @@ if(TEST_FORTRAN)
     _salt_add_output_error_test(full_fortran /dev/full "lang:Fortran"
       --tau_output=/dev/full ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
   endif()
+  _salt_add_clang_error_test(fortran_error_old_output
+    fortran_error_old.inst.F90 "lang:Fortran" fortran/compile_error.f90)
+  _salt_add_clang_error_test(fortran_error_dir_output
+    fortran_error_dir.inst.F90 "lang:Fortran" fortran/compile_error.f90
+    CHECK "-d fortran_error_dir.inst.F90")
+  _salt_add_clang_error_test(fortran_error_self_output fortran_error_self.f90
+    "lang:Fortran" ${SALT_TEST_OUTPUT_DIR}/output_error/fortran_error_self.f90
+    COPY_OF fortran/compile_error.f90)
+  _salt_add_clang_error_test(fortran_hello_self_output fortran_hello_self.f90
+    "lang:Fortran" ${SALT_TEST_OUTPUT_DIR}/output_error/fortran_hello_self.f90
+    COPY_OF fortran/hello.f90)
+  _salt_add_clang_error_test(fortran_config_self_output
+    fortran_config_self.yaml "lang:Fortran" fortran/hello.f90
+    COPY_OF setup_timer_name.yaml ARGS --config_file=fortran_config_self.yaml)
+  # A trailing `--tau_output` without a value must not skip the check.
+  _salt_add_clang_error_test(fortran_config_tail_self_output
+    fortran_config_tail_self.yaml "lang:Fortran" fortran/hello.f90
+    COPY_OF setup_timer_name.yaml
+    ARGS --config_file=fortran_config_tail_self.yaml TAIL --tau_output)
+  _salt_add_clang_error_test(fortran_sif_self_output fortran_sif_self.tau
+    "lang:Fortran" fortran/hello.f90 COPY_OF sif/exclude_f90.tau
+    ARGS --tau_select_file=fortran_sif_self.tau)
+  # The wrapper does not recognize a `.f95` source, but must refuse it too.
+  _salt_add_clang_error_test(fortran_error_self_f95_output
+    fortran_error_self.f95 "lang:Fortran"
+    ${SALT_TEST_OUTPUT_DIR}/output_error/fortran_error_self.f95
+    COPY_OF fortran/compile_error.f90 ARGS --lang=fortran)
+  _salt_add_clang_error_test(fortran_error_ro_output
+    fortran_error_ro.inst.F90 "lang:Fortran" fortran/hello.f90 NOT_ROOT
+    CHECK "-f fortran_error_ro.inst.F90 -a ! -w fortran_error_ro.inst.F90")
+  # The wrapper's own early exits must not leave a stale output either.
+  _salt_add_clang_error_test(fortran_early_exit_output
+    fortran_early_exit.inst.F90 "lang:Fortran" fortran/hello.f90
+    ARGS --flang_exe=/nonexistent/flang)
+  _salt_add_clang_error_test(fortran_early_exit_space_output
+    fortran_early_exit_space.inst.F90 "lang:Fortran" fortran/hello.f90
+    SPACE ARGS --flang_exe=/nonexistent/flang)
 
   set(SALT_FORTRAN_COMPILERS_TO_TEST gfortran flang-new)
 

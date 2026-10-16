@@ -17,6 +17,7 @@
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/FileSystem.h"
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -221,6 +222,28 @@ int main(int argc, const char **argv)
     }
 
     tooling::CommonOptionsParser &OptionsParser = ExpectedParser.get();
+    std::vector<std::string> inputs = OptionsParser.getSourcePathList();
+    inputs.push_back(configfile);
+    inputs.push_back(selectfile);
+    // Opening the output would empty an input it names, so refuse it before anything is written.
+    if (std::any_of(inputs.begin(), inputs.end(),
+                    [](const std::string &input) { return llvm::sys::fs::equivalent(input, outputfile); }))
+    {
+        llvm::errs() << "ERROR: Output file " << outputfile << " is an input file\n";
+        return EXIT_FAILURE;
+    }
+    // TAU's compiler wrapper compiles any file left at this path, even a stale one, so
+    // remove it before anything can fail; keep a read-only file, which then fails to
+    // open.
+    if (llvm::sys::fs::is_regular_file(outputfile) &&
+        !llvm::sys::fs::access(outputfile, llvm::sys::fs::AccessMode::Write))
+    {
+        if (std::error_code err = llvm::sys::fs::remove(outputfile))
+        {
+            llvm::errs() << "ERROR: Could not remove output file " << outputfile << ": " << err.message() << "\n";
+            return EXIT_FAILURE;
+        }
+    }
     instrumentor CodeInstrumentor;
     CodeInstrumentor.Tool = new tooling::ClangTool(OptionsParser.getCompilations(), OptionsParser.getSourcePathList());
     CodeInstrumentor.set_exec_name(argv[0]);
@@ -230,7 +253,12 @@ int main(int argc, const char **argv)
         processInstrumentationRequests(selectfile.c_str());
     }
 
-    CodeInstrumentor.run_tool();
+    const bool clang_errors = CodeInstrumentor.run_tool() != 0;
+    // Fabrication works through Clang's error recovery, so its errors are expected.
+    if (clang_errors && !fabricate_unknown_types)
+    {
+        return EXIT_FAILURE;
+    }
 
     CodeInstrumentor.select_routines(); // Apply the routine lists
 

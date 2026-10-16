@@ -160,6 +160,8 @@ done
 # If not found, set the output file name to the first argument with a .inst extension
 #echo "Passed command line arguments: $*"
 
+# The loop below shifts the arguments away
+given_args=("$@")
 args=()
 expecting_arg_to_forward=false
 expecting_output_file=false
@@ -265,6 +267,27 @@ for arg in "$@"; do
         shift || true
     fi
 done
+
+# Opening the output would empty an input it names, such as an argument or the
+# config or selective instrumentation file, so refuse it before anything is
+# written; the files come first, so a trailing `--tau_output` cannot skip them
+prev=""
+for arg in "${FORTRAN_CONFIG_FILE}" "${select_file:-}" "${given_args[@]}"; do
+    # The value of `--tau_output <file>` is the output itself
+    if [[ ${prev} != --tau_output && ${output_file:-} -ef ${arg} ]]; then
+        echo "ERROR: Output file ${output_file} is an input file" >&2
+        exit 1
+    fi
+    prev="${arg}"
+done
+# TAU's compiler wrapper compiles any file left at this path, even a stale one,
+# so remove it before anything can fail; keep a read-only file, which then
+# fails to open
+if ! $show && ! $version && [[ -f ${output_file:-} && -w ${output_file} ]] &&
+    ! rm_err="$(rm -f -- "${output_file}" 2>&1)"; then
+    echo "ERROR: Could not remove output file ${output_file}: ${rm_err##*: }" >&2
+    exit 1
+fi
 
 if $expecting_flang_exe || [[ -n ${flang_exe+set} && -z ${flang_exe} ]]; then
     echo "ERROR: --flang_exe needs a path" >&2
