@@ -270,9 +270,9 @@ done
 
 # Opening the output would empty an input it names, such as an argument or the
 # config or selective instrumentation file, so refuse it before anything is
-# written
+# written; the files come first, so a trailing `--tau_output` cannot skip them
 prev=""
-for arg in "${given_args[@]}" "${FORTRAN_CONFIG_FILE}" "${select_file:-}"; do
+for arg in "${FORTRAN_CONFIG_FILE}" "${select_file:-}" "${given_args[@]}"; do
     # The value of `--tau_output <file>` is the output itself
     if [[ ${prev} != --tau_output && ${output_file:-} -ef ${arg} ]]; then
         echo "ERROR: Output file ${output_file} is an input file" >&2

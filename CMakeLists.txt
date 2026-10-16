@@ -1204,6 +1204,7 @@ add_test(NAME make_clang_error_outputs
     cp ${_tests}/setup_timer_name.yaml clang_config_self.yaml &&
     cp ${_tests}/sif/exclude_c.tau clang_sif_self.tau &&
     cp ${_tests}/setup_timer_name.yaml fortran_config_self.yaml &&
+    cp ${_tests}/setup_timer_name.yaml fortran_config_tail_self.yaml &&
     cp ${_tests}/sif/exclude_f90.tau fortran_sif_self.tau &&
     cp ${_tests}/fortran/hello.f90 fortran_hello_self.f90")
 set_tests_properties(make_clang_error_outputs PROPERTIES
@@ -1215,13 +1216,14 @@ _salt_in_test_output(output_error make_clang_error_outputs)
 # fabrication off unless ARGS turn it on, must exit with a status from
 # 1 to 127 (0 with EXIT_ZERO) and pass `[ <CHECK> ]` (default: no `out`).
 # NOT_ROOT skips the test as root, who can write read-only files.
-# SPACE passes `--tau_output <out>` as two arguments.
+# SPACE passes `--tau_output <out>` as two arguments. TAIL arguments
+# follow `src`.
 # COPY_OF `fixture` (relative to tests/) instead expects the error that
 # `out`, a copy of the fixture that is also `src` or another input, is
 # an input file, and `out` unchanged.
 function(_salt_add_clang_error_test name out labels src)
   cmake_parse_arguments(PARSE_ARGV 4 ARG "EXIT_ZERO;NOT_ROOT;SPACE"
-    "CHECK;COPY_OF" "ARGS")
+    "CHECK;COPY_OF" "ARGS;TAIL")
   set(out_args --tau_output=${out})
   if(ARG_SPACE)
     set(out_args --tau_output ${out})
@@ -1256,7 +1258,7 @@ function(_salt_add_clang_error_test name out labels src)
       ${check} || { echo \"Expected ${check}\"; exit 1; }
       ${error_check}"
       ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm ${ARG_ARGS}
-      ${out_args} ${src})
+      ${out_args} ${src} ${ARG_TAIL})
   set_tests_properties(${name} PROPERTIES
     REQUIRED_FILES "${src}"
     ENVIRONMENT "SALT_FABRICATE_UNKNOWN_TYPES=0"
@@ -2932,6 +2934,11 @@ if(TEST_FORTRAN)
   _salt_add_clang_error_test(fortran_config_self_output
     fortran_config_self.yaml "lang:Fortran" fortran/hello.f90
     COPY_OF setup_timer_name.yaml ARGS --config_file=fortran_config_self.yaml)
+  # A trailing `--tau_output` without a value must not skip the check.
+  _salt_add_clang_error_test(fortran_config_tail_self_output
+    fortran_config_tail_self.yaml "lang:Fortran" fortran/hello.f90
+    COPY_OF setup_timer_name.yaml
+    ARGS --config_file=fortran_config_tail_self.yaml TAIL --tau_output)
   _salt_add_clang_error_test(fortran_sif_self_output fortran_sif_self.tau
     "lang:Fortran" fortran/hello.f90 COPY_OF sif/exclude_f90.tau
     ARGS --tau_select_file=fortran_sif_self.tau)
