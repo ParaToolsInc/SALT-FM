@@ -47,9 +47,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `saltfm` keeps the old behavior. For C, C++, and Fortran, `saltfm`
   now removes a regular file already at the `--tau_output` path before
   instrumentation starts, so a failed run never leaves a stale one for
-  TAU's compiler wrapper to compile. It keeps the file when it is the
-  input source or read-only, and stops with an error when it cannot
-  remove it
+  TAU's compiler wrapper to compile. It keeps a read-only file, and
+  stops with an error when it cannot remove the file. When the
+  `--tau_output` path is an input source, the configuration file, or
+  the selective instrumentation file, `saltfm` now stops with an error
+  before it writes anything, for C, C++, and Fortran; before, it
+  overwrote or removed that file
   ([#85](https://github.com/ParaToolsInc/SALT-FM/issues/85)).
 - When testing is on, configuring stops with an error if the source or
   build directory path contains a space, since TAU's compiler wrappers
