@@ -222,6 +222,21 @@ int main(int argc, const char **argv)
     }
 
     tooling::CommonOptionsParser &OptionsParser = ExpectedParser.get();
+    const std::vector<std::string> &sources = OptionsParser.getSourcePathList();
+    // TAU's compiler wrapper compiles any file left at this path, even a stale one, so
+    // remove it before anything can fail; keep a read-only file, which then fails to
+    // open, and never remove a source.
+    if (llvm::sys::fs::is_regular_file(outputfile) &&
+        !llvm::sys::fs::access(outputfile, llvm::sys::fs::AccessMode::Write) &&
+        std::none_of(sources.begin(), sources.end(),
+                     [](const std::string &src) { return llvm::sys::fs::equivalent(src, outputfile); }))
+    {
+        if (std::error_code err = llvm::sys::fs::remove(outputfile))
+        {
+            llvm::errs() << "ERROR: Could not remove output file " << outputfile << ": " << err.message() << "\n";
+            return EXIT_FAILURE;
+        }
+    }
     instrumentor CodeInstrumentor;
     CodeInstrumentor.Tool = new tooling::ClangTool(OptionsParser.getCompilations(), OptionsParser.getSourcePathList());
     CodeInstrumentor.set_exec_name(argv[0]);
@@ -235,15 +250,6 @@ int main(int argc, const char **argv)
     // Fabrication works through Clang's error recovery, so its errors are expected.
     if (clang_errors && !fabricate_unknown_types)
     {
-        // TAU's compiler wrapper compiles any file left at this path, even a stale one.
-        if (llvm::sys::fs::is_regular_file(outputfile))
-        {
-            if (std::error_code err = llvm::sys::fs::remove(outputfile))
-            {
-                llvm::errs() << "ERROR: Could not remove output file " << outputfile << ": " << err.message()
-                             << "\n";
-            }
-        }
         return EXIT_FAILURE;
     }
 

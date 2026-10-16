@@ -160,6 +160,8 @@ done
 # If not found, set the output file name to the first argument with a .inst extension
 #echo "Passed command line arguments: $*"
 
+# The loop below shifts the arguments away
+given_args=("$@")
 args=()
 expecting_arg_to_forward=false
 expecting_output_file=false
@@ -265,6 +267,26 @@ for arg in "$@"; do
         shift || true
     fi
 done
+
+# TAU's compiler wrapper compiles any file left at this path, even a stale one,
+# so remove it before anything can fail; keep a read-only file, which then
+# fails to open, and never remove an argument, such as the input source
+remove_output=false
+if ! $show && ! $version && [[ -f ${output_file:-} && -w ${output_file} ]]; then
+    remove_output=true
+    prev=""
+    for arg in "${given_args[@]}"; do
+        # The value of `--tau_output <file>` is the output itself
+        if [[ ${prev} != --tau_output && ${output_file} -ef ${arg} ]]; then
+            remove_output=false
+        fi
+        prev="${arg}"
+    done
+fi
+if $remove_output && ! rm_err="$(rm -f -- "${output_file}" 2>&1)"; then
+    echo "ERROR: Could not remove output file ${output_file}: ${rm_err##*: }" >&2
+    exit 1
+fi
 
 if $expecting_flang_exe || [[ -n ${flang_exe+set} && -z ${flang_exe} ]]; then
     echo "ERROR: --flang_exe needs a path" >&2
