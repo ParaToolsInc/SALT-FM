@@ -1196,10 +1196,11 @@ void instrumentor::instrument()
         const std::string newname = inst_file_name(fname);
         DPRINT("new filename (inst): %s\n", newname.c_str());
 
-        inst_file.open(newname);
-        exit_if_io_failed(!inst_file.is_open(), "open output file", newname);
+        // Open the input first, so a missing one leaves no output file
         og_file.open(fname);
         exit_if_io_failed(!og_file.is_open(), "open input file", fname);
+        inst_file.open(newname);
+        exit_if_io_failed(!inst_file.is_open(), "open output file", newname);
 
         if (skipped && inst_locations.empty())
         {

@@ -220,6 +220,32 @@ and uses `flang` or `flang-new` from `PATH`. The driver must report the
 LLVM major version SALT-FM was built with, or `fparse-llvm` stops with
 an error.
 
+### C and C++ sources with errors
+
+When Clang reports errors in a C or C++ source, `saltfm` exits with a
+non-zero status and writes no output file. Clang recovers from many
+errors, such as a missing header or an unknown type name, and these
+options make `saltfm` instrument what its error recovery gives, for
+example to instrument sources outside their build, without the
+project's include paths:
+
+- `--tau_allow_parse_errors`, or `SALT_ALLOW_PARSE_ERRORS` set to any
+  value but empty, `0`, `false`, `no`, or `off` (in any case), makes
+  `saltfm` print `WARNING: Clang reported errors; writing the output
+  of its error recovery`, write the output file, and exit with status
+  0. Timers can then be wrong or missing: Clang uses `int` for an
+  unknown type, so the timer of `void scale(RealD factor, ComplexD *z)`
+  is named `void scale(int, int *)`, and a function such as
+  `void f(std::vector<RealD> &v)` gets no timer.
+- `--tau_fabricate_unknown_types`, or `SALT_FABRICATE_UNKNOWN_TYPES`,
+  fabricates declarations for unknown qualified names such as
+  `std::vector`, so more functions get timers, and the timer names use
+  the types as the source spells them. It also allows the errors, as
+  `--tau_allow_parse_errors` does.
+
+These options are for C and C++ only: when Flang reports an error, it
+gives no parse tree to instrument, and `saltfm` fails.
+
 ### Configuration files
 
 The YAML configuration file (`--config_file`; `config_files/` has one

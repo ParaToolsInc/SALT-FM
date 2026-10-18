@@ -1178,7 +1178,8 @@ if(EXISTS /dev/full)
 endif()
 # When Clang or Flang reports errors, saltfm must exit with a status
 # from 1 to 127 and leave no file at the --tau_output path. The setup
-# removes the `new` and fabricated outputs, writes stale `old` and
+# removes the `new`, fabricated, and missing header outputs, copies
+# missing_header.c to the working directory, writes stale `old` and
 # `early_exit` ones that saltfm must remove, makes the `dir` ones empty
 # directories that saltfm must keep, copies the bad and good sources and
 # a config and a selective instrumentation file to `self` ones that
@@ -1187,6 +1188,11 @@ endif()
 set(_tests ${CMAKE_SOURCE_DIR}/tests)
 add_test(NAME make_clang_error_outputs
   COMMAND sh -c "rm -rf clang_error_new.inst.c fabricate_on.inst.cpp &&
+    rm -f missing_header_fails.inst.c missing_header.inst.c &&
+    rm -f allow_parse_errors_missing_input.inst.c &&
+    rm -f allow_parse_errors_c.inst.c allow_parse_errors_env.inst.c &&
+    rm -f allow_parse_errors_cxx.inst.cpp &&
+    cp ${_tests}/missing_header.c missing_header.c &&
     rm -rf clang_error_dir.inst.c fortran_error_dir.inst.F90 &&
     mkdir clang_error_dir.inst.c fortran_error_dir.inst.F90 &&
     echo stale > clang_error_old.inst.c &&
@@ -1213,33 +1219,45 @@ set_tests_properties(make_clang_error_outputs PROPERTIES
 _salt_in_test_output(output_error make_clang_error_outputs)
 # Adds test `name`: saltfm run in test-output/output_error on `src`
 # (relative to tests/) with --tau_output=`out`, the ARGS, and
-# fabrication off unless ARGS turn it on, must exit with a status from
-# 1 to 127 (0 with EXIT_ZERO) and pass `[ <CHECK> ]` (default: no `out`).
+# fabrication and parse error tolerance off unless ARGS turn them on,
+# must exit with a status from 1 to 127 (0 with EXIT_ZERO) and pass
+# `[ <CHECK> ]` (default: no `out`).
 # NOT_ROOT skips the test as root, who can write read-only files.
-# SPACE passes `--tau_output <out>` as two arguments. TAIL arguments
-# follow `src`.
+# SPACE passes `--tau_output <out>` as two arguments, and DEFAULT_OUTPUT
+# passes no --tau_output, so `out` is saltfm's default output. TAIL
+# arguments follow `src`. Each LOG text must be in saltfm's output, and
+# each OUT text in `out`.
 # COPY_OF `fixture` (relative to tests/) instead expects the error that
 # `out`, a copy of the fixture that is also `src` or another input, is
 # an input file, and `out` unchanged.
 function(_salt_add_clang_error_test name out labels src)
-  cmake_parse_arguments(PARSE_ARGV 4 ARG "EXIT_ZERO;NOT_ROOT;SPACE"
-    "CHECK;COPY_OF" "ARGS;TAIL")
+  cmake_parse_arguments(PARSE_ARGV 4 ARG "EXIT_ZERO;NOT_ROOT;SPACE;DEFAULT_OUTPUT"
+    "CHECK;COPY_OF" "ARGS;TAIL;LOG;OUT")
   set(out_args --tau_output=${out})
   if(ARG_SPACE)
     set(out_args --tau_output ${out})
+  elseif(ARG_DEFAULT_OUTPUT)
+    set(out_args "")
   endif()
   cmake_path(ABSOLUTE_PATH src BASE_DIRECTORY ${CMAKE_SOURCE_DIR}/tests)
   set(check "[ ! -e ${out} ]")
   if(DEFINED ARG_CHECK)
     set(check "[ ${ARG_CHECK} ]")
   endif()
-  set(error_check "")
   if(DEFINED ARG_COPY_OF)
     set(check "cmp ${out} ${CMAKE_SOURCE_DIR}/tests/${ARG_COPY_OF}")
-    set(error "ERROR: Output file ${out} is an input file")
-    set(error_check "grep -qF \"${error}\" ${name}.log ||
-      { echo \"Expected ${error}\"; exit 1; }")
+    list(APPEND ARG_LOG "ERROR: Output file ${out} is an input file")
   endif()
+  set(text_checks "")
+  set(log_file ${name}.log)
+  set(out_file ${out})
+  foreach(kind IN ITEMS log out)
+    string(TOUPPER ${kind} keyword)
+    foreach(text IN LISTS ARG_${keyword})
+      string(APPEND text_checks "grep -qF -- \"${text}\" ${${kind}_file} ||
+        { echo \"Expected ${text} in ${${kind}_file}\"; exit 1; }\n")
+    endforeach()
+  endforeach()
   set(rc_ok "[ $rc -ge 1 ] && [ $rc -le 127 ]")
   set(rc_want "from 1 to 127")
   if(ARG_EXIT_ZERO)
@@ -1256,12 +1274,12 @@ function(_salt_add_clang_error_test name out labels src)
       ${rc_ok} ||
         { echo \"Expected an exit status ${rc_want}, got $rc\"; exit 1; }
       ${check} || { echo \"Expected ${check}\"; exit 1; }
-      ${error_check}"
+      ${text_checks}"
       ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm ${ARG_ARGS}
       ${out_args} ${src} ${ARG_TAIL})
   set_tests_properties(${name} PROPERTIES
     REQUIRED_FILES "${src}"
-    ENVIRONMENT "SALT_FABRICATE_UNKNOWN_TYPES=0"
+    ENVIRONMENT "SALT_FABRICATE_UNKNOWN_TYPES=0;SALT_ALLOW_PARSE_ERRORS=0"
     FIXTURES_REQUIRED clang_error_outputs
     SKIP_RETURN_CODE 77
     LABELS "${labels};phase:instrument")
@@ -1289,6 +1307,44 @@ _salt_add_clang_error_test(clang_sif_self_output clang_sif_self.tau
 _salt_add_clang_error_test(clang_error_ro_output clang_error_ro.inst.c
   "lang:C" hello.c NOT_ROOT
   CHECK "-f clang_error_ro.inst.c -a ! -w clang_error_ro.inst.c")
+# Run, as when instrumenting outside the build, with no -I for the
+# missing header: without --tau_allow_parse_errors, saltfm fails; with
+# it, it warns and instruments what Clang's error recovery gives.
+_salt_add_clang_error_test(missing_header_fails missing_header_fails.inst.c
+  "lang:C" missing_header.c LOG "'grid_c.h' file not found")
+set(_allow_warning
+  "WARNING: Clang reported errors; writing the output of its error recovery")
+# Without fabrication, error recovery gives `int` for the unknown types.
+set(_c_timers "void scale(int, int *)" "int count(int)")
+_salt_add_clang_error_test(allow_parse_errors_c allow_parse_errors_c.inst.c
+  "lang:C" missing_header.c EXIT_ZERO CHECK "-s allow_parse_errors_c.inst.c"
+  ARGS --tau_allow_parse_errors LOG "${_allow_warning}" OUT ${_c_timers})
+_salt_add_clang_error_test(allow_parse_errors_env
+  allow_parse_errors_env.inst.c "lang:C" missing_header.c EXIT_ZERO
+  CHECK "-s allow_parse_errors_env.inst.c"
+  LOG "${_allow_warning}" OUT ${_c_timers})
+set_property(TEST allow_parse_errors_env APPEND
+  PROPERTY ENVIRONMENT "SALT_ALLOW_PARSE_ERRORS=1")
+# As `cd <dir>; saltfm <file>` does: the default output in the source's
+# directory.
+_salt_add_clang_error_test(allow_parse_errors_default_output
+  missing_header.inst.c "lang:C"
+  ${SALT_TEST_OUTPUT_DIR}/output_error/missing_header.c DEFAULT_OUTPUT
+  EXIT_ZERO CHECK "-s missing_header.inst.c"
+  ARGS --tau_allow_parse_errors LOG "${_allow_warning}" OUT ${_c_timers})
+_salt_add_clang_error_test(allow_parse_errors_cxx_fabricate
+  allow_parse_errors_cxx.inst.cpp "lang:CXX;fabricate" missing_header.cpp
+  EXIT_ZERO CHECK "-s allow_parse_errors_cxx.inst.cpp"
+  ARGS --tau_allow_parse_errors --tau_fabricate_unknown_types
+  LOG "${_allow_warning}"
+  OUT "scale(RealD, ComplexD &)" "int count(int)"
+  "computeOmega(std::vector<ComplexD> &, const int, const std::vector<RealD> &, const int)")
+# A source that does not exist gives nothing to instrument, so saltfm
+# must fail and leave no output for TAU's compiler wrapper to compile.
+_salt_add_clang_error_test(allow_parse_errors_missing_input
+  allow_parse_errors_missing_input.inst.c "lang:C" no_such_source.c
+  ARGS --tau_allow_parse_errors LOG "ERROR: Could not open input file")
+set_property(TEST allow_parse_errors_missing_input PROPERTY REQUIRED_FILES "")
 
 # Selective Instrumentation File (SIF) tests.
 #
@@ -2193,10 +2249,12 @@ add_fabricate_test(c_control fabricate_control.c ON
 # saltfm fails, so the fabricate tests above prove the flag matters.
 _salt_add_clang_error_test(fabricate_canary canary.fab.inst.cpp
   "lang:CXX;fabricate" fabricate_case1.cpp)
-# With the flag, the same Clang errors are expected: exit 0 and output.
+# With the flag, the same Clang errors are expected: exit 0, the
+# warning, and output.
 _salt_add_clang_error_test(fabricate_on_exit_zero fabricate_on.inst.cpp
   "lang:CXX;fabricate" fabricate_case1.cpp EXIT_ZERO
-  CHECK "-s fabricate_on.inst.cpp" ARGS --tau_fabricate_unknown_types)
+  CHECK "-s fabricate_on.inst.cpp" ARGS --tau_fabricate_unknown_types
+  LOG "${_allow_warning}")
 
 add_test(NAME instrument_fabricate_env
   COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
