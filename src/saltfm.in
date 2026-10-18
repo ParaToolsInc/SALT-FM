@@ -49,6 +49,7 @@ TAU instrumentor options:
 
   --config_file=<filename>      - Specify path to SALT-FM configuration YAML file
   --flang_exe=<path>            - Flang driver for Fortran (default: \$SALT_FLANG_EXE, else the one SALT-FM was built with)
+  --tau_allow_parse_errors      - C and C++ only: instrument what Clang's error recovery gives when it reports errors (default: \$SALT_ALLOW_PARSE_ERRORS, else false)
   --tau_fabricate_unknown_types - Fabricate declarations for unknown qualified names (default: false)
   --tau_instrument_inline       - Instrument inlined functions (default: false)
   --tau_output=<filename>       - Specify name of output instrumented file

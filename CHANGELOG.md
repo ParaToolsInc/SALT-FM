@@ -54,6 +54,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   before it writes anything, for C, C++, and Fortran; before, it
   overwrote or removed that file
   ([#85](https://github.com/ParaToolsInc/SALT-FM/issues/85)).
+- New C and C++ option `--tau_allow_parse_errors` (or
+  `SALT_ALLOW_PARSE_ERRORS=1`), off by default, makes `saltfm` warn
+  about Clang errors, write the output that Clang's error recovery
+  gives, and exit with status 0, as before. If you run `saltfm` outside
+  your build, without the project's include paths, most sources have
+  Clang errors, so `saltfm` now fails on them; set
+  `SALT_ALLOW_PARSE_ERRORS=1` to keep the old behavior.
+  `--tau_fabricate_unknown_types` also allows the errors and now prints
+  the same warning
+  ([#66](https://github.com/ParaToolsInc/SALT-FM/issues/66)).
+- When a C or C++ source does not exist, `saltfm` leaves no file at
+  the output path, even with `--tau_allow_parse_errors` or
+  `--tau_fabricate_unknown_types`; before, it left an empty file.
 - When testing is on, configuring stops with an error if the source or
   build directory path contains a space, since TAU's compiler wrappers
   and the test checks cannot handle such paths and the tests would fail.

@@ -92,8 +92,10 @@ llvm::cl::opt<std::string> selectfile("tau_select_file",
                                       llvm::cl::desc("Provide a selective instrumentation specification file"),
                                       llvm::cl::value_desc("filename"), llvm::cl::cat(MyToolCategory));
 
-static bool getEnvFabricateDefault() {
-    const char *val = getenv("SALT_FABRICATE_UNKNOWN_TYPES");
+// Whether environment variable `name` is set to a true value: anything
+// but empty, 0, false, no, or off, in any case.
+static bool getEnvBool(const char *name) {
+    const char *val = getenv(name);
     if (val == nullptr) {
         return false;
     }
@@ -105,7 +107,14 @@ static bool getEnvFabricateDefault() {
 
 llvm::cl::opt<bool> fabricate_unknown_types("tau_fabricate_unknown_types",
                                             llvm::cl::desc("Fabricate declarations for unknown qualified C++ names."),
-                                            llvm::cl::init(getEnvFabricateDefault()), llvm::cl::cat(MyToolCategory));
+                                            llvm::cl::init(getEnvBool("SALT_FABRICATE_UNKNOWN_TYPES")),
+                                            llvm::cl::cat(MyToolCategory));
+
+static llvm::cl::opt<bool> allow_parse_errors(
+    "tau_allow_parse_errors",
+    llvm::cl::desc("Instrument what Clang's error recovery gives when it reports errors "
+                   "(default: $SALT_ALLOW_PARSE_ERRORS, else false)"),
+    llvm::cl::init(getEnvBool("SALT_ALLOW_PARSE_ERRORS")), llvm::cl::cat(MyToolCategory));
 
 #include "clang_header_includes.h"
 
@@ -253,11 +262,14 @@ int main(int argc, const char **argv)
         processInstrumentationRequests(selectfile.c_str());
     }
 
-    const bool clang_errors = CodeInstrumentor.run_tool() != 0;
-    // Fabrication works through Clang's error recovery, so its errors are expected.
-    if (clang_errors && !fabricate_unknown_types)
+    if (CodeInstrumentor.run_tool() != 0)
     {
-        return EXIT_FAILURE;
+        // Fabrication works through Clang's error recovery, so its errors are expected.
+        if (!allow_parse_errors && !fabricate_unknown_types)
+        {
+            return EXIT_FAILURE;
+        }
+        llvm::errs() << "WARNING: Clang reported errors; writing the output of its error recovery\n";
     }
 
     CodeInstrumentor.select_routines(); // Apply the routine lists
