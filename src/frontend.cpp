@@ -112,7 +112,7 @@ llvm::cl::opt<bool> fabricate_unknown_types("tau_fabricate_unknown_types",
 
 static llvm::cl::opt<bool> allow_parse_errors(
     "tau_allow_parse_errors",
-    llvm::cl::desc("Instrument what Clang's error recovery gives when it reports errors "
+    llvm::cl::desc("Instrument the partial parse tree that Clang builds after errors "
                    "(default: $SALT_ALLOW_PARSE_ERRORS, else false)"),
     llvm::cl::init(getEnvBool("SALT_ALLOW_PARSE_ERRORS")), llvm::cl::cat(MyToolCategory));
 
@@ -269,7 +269,7 @@ int main(int argc, const char **argv)
         {
             return EXIT_FAILURE;
         }
-        llvm::errs() << "WARNING: Clang reported errors; writing the output of its error recovery\n";
+        llvm::errs() << "WARNING: Clang reported errors; instrumenting the partial parse tree\n";
     }
 
     CodeInstrumentor.select_routines(); // Apply the routine lists

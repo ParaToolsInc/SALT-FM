@@ -1319,7 +1319,7 @@ _salt_add_clang_error_test(clang_error_ro_output clang_error_ro.inst.c
 _salt_add_clang_error_test(missing_header_fails missing_header_fails.inst.c
   "lang:C" missing_header.c LOG "'grid_c.h' file not found")
 set(_allow_warning
-  "WARNING: Clang reported errors; writing the output of its error recovery")
+  "WARNING: Clang reported errors; instrumenting the partial parse tree")
 # Without fabrication, Clang shows the unknown types as `int`.
 set(_c_timers "void scale(int, int *)" "int count(int)")
 _salt_add_clang_error_test(allow_parse_errors_c allow_parse_errors_c.inst.c
