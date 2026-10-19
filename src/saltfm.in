@@ -61,6 +61,10 @@ TAU instrumentor options:
                                 - never, function, or always: when to parse a source that the file
                                   lists exclude and to give main its setup code without a timer
                                   (default: \$SALT_MAIN_SETUP_PARSE_LEVEL, else function)
+  --tau_parse_excluded_modules=<on|off>
+                                - Fortran only: parse a source that the file lists exclude when it
+                                  seems to define a module, for its module files, below the always
+                                  level (default: \$SALT_PARSE_EXCLUDED_MODULES, else on)
   --tau_output=<filename>       - Specify name of output instrumented file
   --tau_select_file=<filename>  - Provide a selective instrumentation specification file
   --tau_use_cxx_api             - Use TAU's C++ instrumentation API
@@ -74,7 +78,7 @@ function usage {
 # Sets `level` to the canonical level of option `$1`, whose value is in
 # variable `$2` if it is set, else in environment variable `$3`: never,
 # function (also for an empty value), or always, in any case. Stops with
-# an error and the usage for any other value.
+# an error and the usage for any other value, or a level not in `$4`.
 # Warns when the option ends the arguments without its value.
 function canonical_level {
     local name="$1"
@@ -99,7 +103,7 @@ function canonical_level {
         *) level= ;;
     esac
     shopt -u nocasematch
-    if [[ -z ${level} ]]; then
+    if [[ " $4 " != *" ${level} "* ]]; then
         echo "ERROR: unknown value '${value}' for ${name}" >&2
         usage
         exit 1
@@ -169,6 +173,12 @@ for arg in "$@"; do
         # canonical_level reads it by name
         # shellcheck disable=SC2034
         main_setup_level="${arg#*=}"
+    elif [[ $arg == --tau_parse_excluded_modules ]]; then
+        expecting_value_of=parse_excluded_modules
+    elif [[ $arg == --tau_parse_excluded_modules=* ]]; then
+        # canonical_level reads it by name
+        # shellcheck disable=SC2034
+        parse_excluded_modules="${arg#*=}"
     else
         args+=("$arg")
     fi
@@ -190,9 +200,20 @@ if [[ -z "${tool:-}" ]]; then
     exit 1
 fi
 
-canonical_level --tau_main_setup_parse_level main_setup_level SALT_MAIN_SETUP_PARSE_LEVEL
+canonical_level --tau_main_setup_parse_level main_setup_level SALT_MAIN_SETUP_PARSE_LEVEL \
+    "never function always"
 # Before the arguments, which can end with `--` and compiler options
 args=("--tau_main_setup_parse_level=${level}" ${args[@]+"${args[@]}"})
+# The values of the `function` level turn it on, and those of `never` off
+canonical_level --tau_parse_excluded_modules parse_excluded_modules SALT_PARSE_EXCLUDED_MODULES \
+    "never function"
+if [[ ${tool} == fparse-llvm ]]; then
+    modules=on
+    if [[ ${level} == never ]]; then
+        modules=off
+    fi
+    args=("--tau_parse_excluded_modules=${modules}" "${args[@]}")
+fi
 
 # Check if the tool exists
 if [[ ! -f "${_SCRIPT_DIR}/${tool}" ]]; then

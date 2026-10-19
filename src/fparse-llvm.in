@@ -61,6 +61,9 @@ TAU instrumentor options:
   --tau_main_setup_parse_level=<never|function|always>
                                - When to parse a source that the file lists exclude and to give
                                  the main program its setup code without a timer (default: function)
+  --tau_parse_excluded_modules=<on|off>
+                               - Below the always level, parse a source that the file lists exclude
+                                 when it seems to define a module, for its module files (default: on)
   --tau_output=<filename>      - Specify name of output instrumented file
   --tau_select_file=<filename> - Provide a selective instrumentation specification file
   --show                       - Print the command line that would be executed by the wrapper script
@@ -184,8 +187,10 @@ expecting_config_file=false
 expecting_select_file=false
 expecting_flang_exe=false
 expecting_main_setup_level=false
+expecting_parse_excluded_modules=false
 unset flang_exe
 main_setup_level=function
+parse_excluded_modules=on
 show=false
 version=false
 for arg in "$@"; do
@@ -227,6 +232,11 @@ for arg in "$@"; do
         expecting_main_setup_level=false
         shift
         continue
+    elif $expecting_parse_excluded_modules; then
+        parse_excluded_modules="$arg"
+        expecting_parse_excluded_modules=false
+        shift
+        continue
     elif [[ $arg == --flang_exe ]]; then
         expecting_flang_exe=true
         shift || true
@@ -238,6 +248,12 @@ for arg in "$@"; do
         shift || true
     elif [[ $arg == --tau_main_setup_parse_level=* ]]; then
         main_setup_level="${arg#*=}"
+        shift || true
+    elif [[ $arg == --tau_parse_excluded_modules ]]; then
+        expecting_parse_excluded_modules=true
+        shift || true
+    elif [[ $arg == --tau_parse_excluded_modules=* ]]; then
+        parse_excluded_modules="${arg#*=}"
         shift || true
     elif [[ $arg == --tau_output ]]; then
         expecting_output_file=true
@@ -320,10 +336,20 @@ fi
 if $expecting_main_setup_level; then
     echo "WARNING: --tau_main_setup_parse_level needs a value; using ${main_setup_level}" >&2
 fi
+if $expecting_parse_excluded_modules; then
+    echo "WARNING: --tau_parse_excluded_modules needs a value; using ${parse_excluded_modules}" >&2
+fi
 case ${main_setup_level} in
     never | function | always) ;;
     *)
         echo "ERROR: unknown value '${main_setup_level}' for --tau_main_setup_parse_level" >&2
+        exit 1
+        ;;
+esac
+case ${parse_excluded_modules} in
+    on | off) ;;
+    *)
+        echo "ERROR: unknown value '${parse_excluded_modules}' for --tau_parse_excluded_modules" >&2
         exit 1
         ;;
 esac
@@ -417,17 +443,85 @@ cmd=("${flang_exe}"
     "${input_file}"
     -o "${output_file}"
     ${args[@]+"${args[@]}"})
+echo "SALT_FORTRAN_CONFIG_FILE=\"${FORTRAN_CONFIG_FILE}\""
+echo "SALT_FORTRAN_SELECT_FILE=\"${select_file:-}\""
+echo "SALT_FORTRAN_MAIN_SETUP_PARSE_LEVEL=${main_setup_level}"
 if $show; then
-    echo "SALT_FORTRAN_CONFIG_FILE=\"${FORTRAN_CONFIG_FILE}\""
-    echo "SALT_FORTRAN_SELECT_FILE=\"${select_file:-}\""
-    echo "SALT_FORTRAN_MAIN_SETUP_PARSE_LEVEL=${main_setup_level}"
     echo "cmd: ${cmd[*]}"
-else
-    echo "SALT_FORTRAN_CONFIG_FILE=\"${FORTRAN_CONFIG_FILE}\""
-    echo "SALT_FORTRAN_SELECT_FILE=\"${select_file:-}\""
-    echo "SALT_FORTRAN_MAIN_SETUP_PARSE_LEVEL=${main_setup_level}"
+    exit 0
+fi
+
+# Runs Flang with the plugin
+function run_flang {
     echo "Running: ${cmd[*]}"
     SALT_FORTRAN_SELECT_FILE="${select_file:-}" SALT_FORTRAN_CONFIG_FILE="${FORTRAN_CONFIG_FILE}" \
         SALT_FORTRAN_MAIN_SETUP_PARSE_LEVEL="${main_setup_level}" "${cmd[@]}"
-    exit $?
+}
+
+# Returns whether `content` matches regex `$1`, in the C locale: in a
+# UTF-8 locale, a byte that is not valid UTF-8, as in Latin-1 text, can
+# stop the match
+function content_matches {
+    local LC_ALL=C
+    [[ ${content} =~ $1 ]]
+}
+
+# Below the `always` level, copy a source that the file lists exclude
+# without a parse, unless it seems to define a module, whose module files
+# other sources need. The plugin repeats the SIF warnings when Flang runs.
+sif_status=0
+if [[ -n ${select_file:-} && ${main_setup_level} != always ]]; then
+    sif_log="$("${_SCRIPT_DIR}/salt-selectfile" "${select_file}" "${input_file}" 2>&1)" ||
+        sif_status=$?
 fi
+if [[ ${sif_status} -eq 1 ]]; then
+    # One match on the whole text, with a newline in place of `^`, since a
+    # loop with `read` on each line is ten times slower. A line matches
+    # after blanks (a space or a tab) and a statement label, so comment
+    # lines do not.
+    nl=$'\n'
+    module_re="${nl}[[:blank:]]*([0-9]+[[:blank:]]+)?(sub)?module([^[:alnum:]_]|\$)"
+    program_re="${nl}[[:blank:]]*([0-9]+[[:blank:]]+)?program[[:blank:]]+[[:alpha:]]"
+    content="${nl}$(<"${input_file}")"
+    has_module=false
+    shopt -s nocasematch
+    if content_matches "${program_re}"; then
+        echo "WARNING: ${input_file} seems to hold the main program, but the" >&2
+        echo "  selective instrumentation file lists exclude it, so main gets no setup" >&2
+        echo "  code; use --tau_main_setup_parse_level=always to add it" >&2
+    fi
+    if content_matches "${module_re}"; then
+        has_module=true
+    fi
+    shopt -u nocasematch
+    if $has_module && [[ ${parse_excluded_modules} == on ]]; then
+        if [[ ${main_setup_level} == never ]]; then
+            echo "WARNING: parsing ${input_file}, which the selective instrumentation" >&2
+            echo "  file lists exclude, for its module files" >&2
+            echo "  (--tau_parse_excluded_modules=off skips the parse)" >&2
+        fi
+        if run_flang; then
+            exit 0
+        fi
+        # Flang stopped before the plugin read the SIF
+        if [[ -n ${sif_log} ]]; then
+            echo "${sif_log}" >&2
+        fi
+        echo "WARNING: Flang could not parse ${input_file}, which the selective" >&2
+        echo "  instrumentation file lists exclude; SALT-FM copies it but does not" >&2
+        echo "  write its module files, so sources that use its modules can fail" >&2
+    else
+        if [[ -n ${sif_log} ]]; then
+            echo "${sif_log}" >&2
+        fi
+        if $has_module; then
+            echo "WARNING: not parsing ${input_file}, which the selective instrumentation" >&2
+            echo "  file lists exclude; SALT-FM does not write its module files, so" >&2
+            echo "  sources that use its modules can fail" >&2
+        fi
+    fi
+    # The copy is exact, unlike $(<file), which drops the newlines at the end
+    "${_SCRIPT_DIR}/salt-selectfile" --copy "${input_file}" "${output_file}"
+    exit 0
+fi
+run_flang
