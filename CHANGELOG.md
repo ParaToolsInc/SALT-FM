@@ -67,6 +67,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - When a C or C++ source does not exist, `saltfm` leaves no file at
   the output path, even with `--tau_allow_parse_errors` or
   `--tau_fabricate_unknown_types`; before, it left an empty file.
+- `fparse-llvm` matches an argument to the flags it knows only as a
+  whole. Before, it also forwarded to Flang an argument that only
+  contained one, such as a file name like `my-Stuff.f95` (`-S`) or
+  flags such as `-fno-wrapv` (`-w`) and `-fopenmp-simd` (`-fopenmp`),
+  which it now drops as unknown flags. It also silently dropped an
+  argument that contained `-W` and a letter other than `l`, such as
+  the include or module path `-I/path/proj-Wave/inc`, which it now
+  forwards.
 - When testing is on, configuring stops with an error if the source or
   build directory path contains a space, since TAU's compiler wrappers
   and the test checks cannot handle such paths and the tests would fail.

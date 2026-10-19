@@ -2719,6 +2719,20 @@ if(TEST_FORTRAN)
     ${_fx_src})
   set_property(TEST fparse_flang_exe_flag_over_env APPEND PROPERTY
     ENVIRONMENT_MODIFICATION "SALT_FLANG_EXE=set:${_fx_dir}/fail/flang")
+  # Only whole flags match, not names that contain one, such as `-S` or
+  # `-W` here: the names are dropped, and a flag such as `-Iinc-Wave`,
+  # which contains `-W`, is forwarded.
+  set(_fx_flags "-fopenmp -Werror -Ifoo -Iinc-Wave -DBAR=1 -Jdir -std=f2018")
+  string(CONCAT _fx_pass
+    "Removed unknown flag: fortran_decoy-Stuff\\.f95\n"
+    "Removed unknown flag: fortran_decoy-Wstuff\\.f95\n.*"
+    "Remaining Arguments: ${_fx_flags}\n.*"
+    "${_fx_match_cmd}[^\n]* ${_fx_flags}\n")
+  _salt_add_flang_exe_test(fparse_whole_flag_names
+    "${_fx_pass}" "cmd:[^\n]*decoy-"
+    ${_fx_bin}/fparse-llvm --show --flang_exe=${_fx_dir}/match/flang
+    -fopenmp -Werror -Wall -Ifoo -Iinc-Wave -DBAR=1 -Jdir -std=f2018
+    -Wl,-rpath,x fortran_decoy-Stuff.f95 fortran_decoy-Wstuff.f95 ${_fx_src})
   # --flang_exe without a path stops.
   _salt_add_flang_exe_test(fparse_flang_exe_flag_no_path
     "ERROR: --flang_exe needs a path" "cmd:"

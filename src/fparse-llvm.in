@@ -126,6 +126,8 @@ _WHITELISTED_WARNING_REGEX="(${_WHITELISTED_FLAGS_WARNING_ARG[0]})"
 for flag in "${_WHITELISTED_FLAGS_WARNING_ARG[@]:1}"; do
     _WHITELISTED_WARNING_REGEX="${_WHITELISTED_WARNING_REGEX}|(${flag})"
 done
+# Only a whole flag matches, not a name such as my-Wstuff.f95
+_WHITELISTED_WARNING_REGEX="^(${_WHITELISTED_WARNING_REGEX})$"
 declare -r -a _WHITELISTED_FLAGS_MAYBE_SPACE_ARG=(
     "-I"
     "-J"
@@ -135,6 +137,8 @@ declare -r -a _WHITELISTED_FLAGS_MAYBE_SPACE_ARG=(
 for flag in "${_WHITELISTED_FLAGS_MAYBE_SPACE_ARG[@]}"; do
     _WHITELISTED_REGEX="${_WHITELISTED_REGEX}|(${flag}.+)"
 done
+# Only a whole flag matches, not a name such as my-Stuff.f95
+_WHITELISTED_REGEX="^(${_WHITELISTED_REGEX})$"
 
 declare -r -a _WHITELISTED_FLAGS_YES_SPACE_ARG=(
     "-module-dir"
