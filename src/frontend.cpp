@@ -25,6 +25,7 @@
 #include <iostream>
 #include <cstdlib>
 #include <regex>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -192,6 +193,21 @@ char **addHeadersToCommand(int *argc, const char **argv)
     return new_argv;
 }
 
+// Warns that `path`, which the file lists exclude and SALT-FM copies without a parse, gets no
+// setup code when it seems to hold the main program
+static void warnIfExcludedMain(const std::string &path)
+{
+    std::ifstream file(path);
+    std::stringstream text;
+    text << file.rdbuf();
+    if (std::regex_search(text.str(), std::regex(R"(\bmain\s*\()")))
+    {
+        llvm::errs() << "WARNING: " << path << " seems to hold the main program, but the\n"
+                     << "  selective instrumentation file lists exclude it, so main gets no setup\n"
+                     << "  code; use --tau_main_setup_parse_level=always to add it\n";
+    }
+}
+
 void findFiles(const std::vector<std::string>& files)
 {
     for (std::string fil : files)
@@ -266,14 +282,23 @@ int main(int argc, const char **argv)
             return EXIT_FAILURE;
         }
     }
-    instrumentor CodeInstrumentor;
-    CodeInstrumentor.Tool = new tooling::ClangTool(OptionsParser.getCompilations(), OptionsParser.getSourcePathList());
-    CodeInstrumentor.set_exec_name(argv[0]);
-
     if (!selectfile.empty())
     {
         processInstrumentationRequests(selectfile.c_str());
     }
+
+    findFiles(OptionsParser.getSourcePathList()); //Locate source files and mark for instrumentation/skipping
+
+    // Below the `always` level, parse only the sources that the file lists include
+    std::vector<std::string> sources = OptionsParser.getSourcePathList();
+    if (main_setup_level != MainSetupLevel::always)
+    {
+        sources = files_to_go;
+        std::for_each(files_skipped.begin(), files_skipped.end(), warnIfExcludedMain);
+    }
+    instrumentor CodeInstrumentor;
+    CodeInstrumentor.Tool = new tooling::ClangTool(OptionsParser.getCompilations(), sources);
+    CodeInstrumentor.set_exec_name(argv[0]);
 
     if (CodeInstrumentor.run_tool() != 0)
     {
@@ -286,8 +311,6 @@ int main(int argc, const char **argv)
     }
 
     CodeInstrumentor.select_routines(); // Apply the routine lists
-
-    findFiles(OptionsParser.getSourcePathList()); //Locate source files and mark for instrumentation/skipping
 
     CodeInstrumentor.instrument();
 
