@@ -65,6 +65,14 @@
   pname[i] = '\0';  \
   line++; /* found closing " */
 
+/* When SALT-FM parses a source that the file lists exclude, and whether a
+   main program that the selective instrumentation lists leave out gets
+   its setup code: `never` parses only the sources that the file lists
+   include and gives such a main no setup code; `function` parses the same
+   sources but gives a main that the routine lists leave out its setup
+   code; `always` parses all sources and gives each main its setup code. */
+enum class MainSetupLevel { never, function, always };
+
 extern std::list<std::string> excludelist;
 extern std::list<std::string> includelist;
 extern std::list<std::string> fileincludelist;
