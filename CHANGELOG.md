@@ -128,7 +128,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   opted inline functions in to instrumentation
   ([#46](https://github.com/ParaToolsInc/SALT-FM/issues/46)).
 - When a selective instrumentation file excludes the main program, an
-  include list leaves it out, or the file lists exclude its file,
+  include list leaves it out, or, at the `always` level of
+  `--tau_main_setup_parse_level`, the file lists exclude its file,
   SALT-FM removes only main's timer and keeps its setup code, which for
   TAU is `TAU_INIT` and `TAU_PROFILE_SET_NODE(0)`, or `TAU_PROFILE_INIT`
   and `TAU_PROFILE_SET_NODE(0)` in Fortran, and for perfstubs and ITT
@@ -173,6 +174,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the condition, and with `--tau_use_cxx_api` the rest of a one-line
   routine was dropped
   ([#71](https://github.com/ParaToolsInc/SALT-FM/issues/71)).
+- By default, SALT-FM no longer parses a source that the file lists of
+  a selective instrumentation file exclude: it copies the source after
+  a `#line 1` line, so a Clang or Flang error in the source no longer
+  makes `saltfm` fail, and excluding a file works around a source that
+  SALT-FM cannot parse. The main program in such a source gets no
+  setup code, so a program run without MPI or `tau_exec` writes
+  `profile.-1.0.0`; SALT-FM warns when an excluded source seems to hold
+  the main program. The new option
+  `--tau_main_setup_parse_level=<never|function|always>` (or
+  `SALT_MAIN_SETUP_PARSE_LEVEL`) selects the behavior: `always` parses
+  all sources and gives such a main its setup code, and `never` also
+  gives no setup code to a main that the routine lists leave out
+  ([#88](https://github.com/ParaToolsInc/SALT-FM/issues/88)).
+- Below the `always` level, SALT-FM still parses an excluded Fortran
+  source that seems to define a module or submodule, so that Flang
+  writes the module files that other sources need; if Flang fails, it
+  warns and copies the source. The new option
+  `--tau_parse_excluded_modules=<on|off>` (or
+  `SALT_PARSE_EXCLUDED_MODULES`) turns this parse off. SALT-FM installs
+  a new helper program, `salt-selectfile`, that `fparse-llvm` runs to
+  apply the file lists before Flang runs
+  ([#88](https://github.com/ParaToolsInc/SALT-FM/issues/88)).
 - `saltfm` and `fparse-llvm` find their own directory without the
   `dirname` program, and also when the path they are run by uses `\`
   separators, as under MSYS
