@@ -1185,7 +1185,7 @@ endif()
 # the bad and good sources and a config and a selective instrumentation
 # file to `self` ones that saltfm must refuse and keep when they are
 # also the output, and makes read-only `ro` outputs that saltfm must
-# keep and fail to open.
+# not remove and then fail to open for writing.
 set(_tests ${CMAKE_SOURCE_DIR}/tests)
 add_test(NAME make_clang_error_outputs
   COMMAND sh -c "rm -rf clang_error_new.inst.c fabricate_on.inst.cpp &&
@@ -1308,18 +1308,19 @@ _salt_add_clang_error_test(clang_config_self_output clang_config_self.yaml
 _salt_add_clang_error_test(clang_sif_self_output clang_sif_self.tau
   "lang:C" hello.c COPY_OF sif/exclude_c.tau
   ARGS --tau_select_file=clang_sif_self.tau)
-# A read-only output is kept, so opening it fails even for a good source.
+# saltfm does not remove a read-only output, so opening it for writing
+# fails even for a good source.
 _salt_add_clang_error_test(clang_error_ro_output clang_error_ro.inst.c
   "lang:C" hello.c NOT_ROOT
   CHECK "-f clang_error_ro.inst.c -a ! -w clang_error_ro.inst.c")
 # Run, as when instrumenting outside the build, with no -I for the
 # missing header: without --tau_allow_parse_errors, saltfm fails; with
-# it, it warns and instruments what Clang's error recovery gives.
+# it, it warns and instruments the partial parse tree Clang builds.
 _salt_add_clang_error_test(missing_header_fails missing_header_fails.inst.c
   "lang:C" missing_header.c LOG "'grid_c.h' file not found")
 set(_allow_warning
   "WARNING: Clang reported errors; writing the output of its error recovery")
-# Without fabrication, error recovery gives `int` for the unknown types.
+# Without fabrication, Clang shows the unknown types as `int`.
 set(_c_timers "void scale(int, int *)" "int count(int)")
 _salt_add_clang_error_test(allow_parse_errors_c allow_parse_errors_c.inst.c
   "lang:C" missing_header.c EXIT_ZERO CHECK "-s allow_parse_errors_c.inst.c"
