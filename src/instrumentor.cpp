@@ -1198,27 +1198,20 @@ void instrumentor::instrument()
         const std::string newname = inst_file_name(fname);
         DPRINT("new filename (inst): %s\n", newname.c_str());
 
+        if (skipped && inst_locations.empty())
+        {
+            if (!copySource(fname, newname))
+            {
+                std::exit(EXIT_FAILURE);
+            }
+            continue;
+        }
+
         // Open the input first, so a missing one leaves no output file
         og_file.open(fname);
         exit_if_io_failed(!og_file.is_open(), "open input file", fname);
         inst_file.open(newname);
         exit_if_io_failed(!inst_file.is_open(), "open output file", newname);
-
-        if (skipped && inst_locations.empty())
-        {
-            // __FILE__ and debug information name the source, not the copy
-            inst_file << "#line 1 \"" << fname << "\"\n";
-            // Copying an empty rdbuf() sets failbit, so copy only a non-empty file
-            if (og_file.peek() != std::ifstream::traits_type::eof())
-            {
-                inst_file << og_file.rdbuf();
-            }
-            exit_if_io_failed(!inst_file, "write output file", newname);
-            og_file.close();
-            inst_file.close();
-            exit_if_io_failed(!inst_file, "write output file", newname);
-            continue;
-        }
 
         // check for cxxparse executable name. If so, force cxx api usage
         if (strstr(exec_name, "cxxparse") != nullptr)

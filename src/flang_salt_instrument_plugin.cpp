@@ -1095,7 +1095,11 @@ namespace salt::fortran {
             // Walk the parse tree -- marks nodes for instrumentation
             const MainSetupLevel level{getMainSetupLevel()};
             SaltInstrumentParseTreeVisitor visitor{&parsing, skipInstrument, level != MainSetupLevel::never};
-            Walk(parsing.parseTree(), visitor);
+            // Below the `always` level, fparse-llvm runs Flang on an excluded source only
+            // for its module files, so it gets no instrumentation points: a copy.
+            if (!skipInstrument || level == MainSetupLevel::always) {
+                Walk(parsing.parseTree(), visitor);
+            }
 
             // Use the instrumentation points stored in the Visitor to write the instrumented file.
             instrumentFile(inputFilePath, *outputFileStream, visitor, instMap);

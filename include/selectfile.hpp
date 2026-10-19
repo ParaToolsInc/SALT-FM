@@ -106,6 +106,11 @@ bool instrumentRoutine(const std::string &name, bool ignoreCase = false);
 /* True if the file lists select file `path`, as instrumentRoutine(). */
 bool instrumentFile(const std::string &path);
 
+/* Writes a `#line 1 "<source>"` line and then `source` to `output`, so
+   that compiler messages, __FILE__, and debug information name the
+   source. Returns false after an error message that names the file. */
+bool copySource(const std::string &source, const std::string &output);
+
 /* Warns that main program `name` still gets its setup code when the
    include list is not empty, does not match it, and the exclude list
    does not match it either. Fortran names pass `ignoreCase`. */

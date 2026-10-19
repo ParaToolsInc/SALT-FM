@@ -1,4 +1,5 @@
 #include <cctype>
+#include <cerrno>
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -901,4 +902,33 @@ void warnIfMainNotIncluded(const std::string &name, bool ignoreCase)
       "  there, without a timer\n",
       name.c_str());
   }
+}
+
+/* Prints an error naming `file` and the reason when `failed`. */
+static bool ioFailed(bool failed, const char *what, const std::string &file)
+{
+  if (failed) {
+    fprintf(stderr, "ERROR: Could not %s %s: %s\n", what, file.c_str(), strerror(errno));
+  }
+  return failed;
+}
+
+bool copySource(const std::string &source, const std::string &output)
+{
+  /* Open the input first, so a missing one leaves no output file */
+  std::ifstream in(source);
+  if (ioFailed(!in.is_open(), "open input file", source)) {
+    return false;
+  }
+  std::ofstream out(output);
+  if (ioFailed(!out.is_open(), "open output file", output)) {
+    return false;
+  }
+  out << "#line 1 \"" << source << "\"\n";
+  /* Copying an empty rdbuf() sets failbit, so copy only a non-empty file */
+  if (in.peek() != std::ifstream::traits_type::eof()) {
+    out << in.rdbuf();
+  }
+  out.close();
+  return !ioFailed(!out, "write output file", output);
 }
