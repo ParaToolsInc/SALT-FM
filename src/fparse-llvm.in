@@ -148,6 +148,8 @@ done
 for flag in "${_WHITELISTED_FLAGS_MAYBE_SPACE_ARG[@]}"; do
     _WHITELISTED_OPT_ARG_REGEX="${_WHITELISTED_OPT_ARG_REGEX}|(${flag})"
 done
+# Only the whole flag takes the next argument, not a name such as other-x.f95
+_WHITELISTED_OPT_ARG_REGEX="^(${_WHITELISTED_OPT_ARG_REGEX})$"
 
 # echo "WHITELISTED_REGEX: ${_WHITELISTED_REGEX}"
 # echo "BLACKLISTED_REGEX: ${_BLACKLISTED_REGEX}"
@@ -160,8 +162,9 @@ done
 # If not found, set the output file name to the first argument with a .inst extension
 #echo "Passed command line arguments: $*"
 
-# The loop below shifts the arguments away
-given_args=("$@")
+# The arguments that can name an input: all but the output file and the
+# values forwarded after a flag
+inputs=()
 args=()
 expecting_arg_to_forward=false
 expecting_output_file=false
@@ -183,11 +186,13 @@ for arg in "$@"; do
         args+=("$arg")
         expecting_arg_to_forward=false
         shift
+        continue
         #echo "args remaining: $*"
     elif $expecting_output_file; then
         output_file="$arg"
         expecting_output_file=false
         shift
+        continue
         #echo "args remaining: $*"
     elif $expecting_config_file; then
         FORTRAN_CONFIG_FILE="$arg"
@@ -266,19 +271,17 @@ for arg in "$@"; do
         echo "Removed unknown flag: $arg"
         shift || true
     fi
+    inputs+=("$arg")
 done
 
 # Opening the output would empty an input it names, such as an argument or the
 # config or selective instrumentation file, so refuse it before anything is
-# written; the files come first, so a trailing `--tau_output` cannot skip them
-prev=""
-for arg in "${FORTRAN_CONFIG_FILE}" "${select_file:-}" "${given_args[@]}"; do
-    # The value of `--tau_output <file>` is the output itself
-    if [[ ${prev} != --tau_output && ${output_file:-} -ef ${arg} ]]; then
+# written; the loop above sets the roles, so argument order cannot skip one
+for arg in "${FORTRAN_CONFIG_FILE}" "${select_file:-}" ${inputs[@]+"${inputs[@]}"}; do
+    if [[ ${output_file:-} -ef ${arg} ]]; then
         echo "ERROR: Output file ${output_file} is an input file" >&2
         exit 1
     fi
-    prev="${arg}"
 done
 # TAU's compiler wrapper compiles any file left at this path, even a stale one,
 # so remove it before anything can fail; keep a read-only file, which then
