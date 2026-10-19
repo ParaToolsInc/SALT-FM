@@ -28,8 +28,13 @@ readonly _SALT_MOD_SUFFIX=@SALT_MOD_SUFFIX@
 readonly _RECORDED_FLANG_EXE="@salt_flang_driver@"
 readonly _LLVM_VERSION_MAJOR=@LLVM_VERSION_MAJOR@
 
-# get the absolute path of this script
-_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# get the absolute path of this script, without `dirname`; a `\` also
+# separates directories, as under MSYS
+case ${BASH_SOURCE[0]} in
+    */* | *\\*) _SCRIPT_DIR="${BASH_SOURCE[0]%[/\\]*}" ;;
+    *) _SCRIPT_DIR=. ;;
+esac
+_SCRIPT_DIR="$(cd "${_SCRIPT_DIR:-/}" && pwd)"
 readonly _SCRIPT_DIR
 readonly _SALT_INC_DIR="${_SCRIPT_DIR}/../@SALT_INC_DIR@"
 

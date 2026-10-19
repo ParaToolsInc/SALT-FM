@@ -2596,7 +2596,7 @@ if(TEST_FORTRAN)
   # flang_exe/<kind>/{flang,flang-new}: `fail` fails whenever it runs,
   # `match` and `other` report the build's LLVM major version and
   # another one, then fail for anything but --version. `nodriver` holds
-  # only what fparse-llvm needs to start. fparse-llvm-no-driver and
+  # only what the wrappers need to start: bash, but not `dirname`. fparse-llvm-no-driver and
   # fparse-llvm-no-record are copies of fparse-llvm whose recorded driver
   # is missing, or was not found at configure time.
   set(_fx_dir ${CMAKE_BINARY_DIR}/flang_exe)
@@ -2613,12 +2613,12 @@ if(TEST_FORTRAN)
     configure_file(${CMAKE_SOURCE_DIR}/tests/fortran/flang_exe/flang.in
       ${_fx_dir}/other/${fx_name} @ONLY)
   endforeach()
+  # A fresh directory, so no tool left by an older build stays in it
+  file(REMOVE_RECURSE ${_fx_dir}/nodriver)
   file(MAKE_DIRECTORY ${_fx_dir}/nodriver)
-  foreach(fx_name bash dirname)
-    find_program(_fx_tool ${fx_name} REQUIRED NO_CACHE)
-    file(CREATE_LINK ${_fx_tool} ${_fx_dir}/nodriver/${fx_name} SYMBOLIC)
-    unset(_fx_tool)
-  endforeach()
+  find_program(_fx_tool bash REQUIRED NO_CACHE)
+  file(CREATE_LINK ${_fx_tool} ${_fx_dir}/nodriver/bash SYMBOLIC)
+  unset(_fx_tool)
   _salt_configure_fparse_llvm(${_fx_bin}/fparse-llvm-no-driver
     ${_fx_dir}/missing/flang)
   _salt_configure_fparse_llvm(${_fx_bin}/fparse-llvm-no-record
@@ -2684,10 +2684,20 @@ if(TEST_FORTRAN)
 
   # No recorded driver and none on PATH.
   _salt_add_flang_exe_test(fparse_flang_exe_none_found
-    "ERROR: no flang or flang-new on PATH" "cmd:"
+    "ERROR: no flang or flang-new on PATH" "cmd:;command not found"
     ${_fx_bin}/fparse-llvm-no-driver --show ${_fx_src})
   set_tests_properties(fparse_flang_exe_none_found PROPERTIES
     ENVIRONMENT "PATH=${_fx_dir}/nodriver")
+  # saltfm finds fparse-llvm in its own directory without `dirname`,
+  # also when its name has no directory.
+  _salt_add_flang_exe_test(saltfm_no_dirname "USAGE: [^\n]*fparse-llvm"
+    "command not found" ${_fx_bin}/saltfm --help-fortran)
+  set_tests_properties(saltfm_no_dirname PROPERTIES
+    ENVIRONMENT "PATH=${_fx_dir}/nodriver")
+  _salt_add_flang_exe_test(saltfm_bare_name "USAGE: [^\n]*fparse-llvm"
+    "command not found" ${_fx_dir}/nodriver/bash saltfm --help-fortran)
+  set_tests_properties(saltfm_bare_name PROPERTIES
+    WORKING_DIRECTORY ${_fx_bin})
 
   # A driver configure did not find is not recorded: no warning.
   _salt_add_flang_exe_test(fparse_flang_exe_no_record

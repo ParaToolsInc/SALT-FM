@@ -173,6 +173,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the condition, and with `--tau_use_cxx_api` the rest of a one-line
   routine was dropped
   ([#71](https://github.com/ParaToolsInc/SALT-FM/issues/71)).
+- `saltfm` and `fparse-llvm` find their own directory without the
+  `dirname` program, and also when the path they are run by uses `\`
+  separators, as under MSYS
+  ([#88](https://github.com/ParaToolsInc/SALT-FM/issues/88)).
 
 ## [0.5.0] - 2026-10-09
 

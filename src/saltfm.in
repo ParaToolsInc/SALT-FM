@@ -23,8 +23,13 @@ set -o pipefail
 #set -o xtrace
 
 readonly _VERSION="@SALT_VERSION_FULL@"
-# get the absolute path of this script
-_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# get the absolute path of this script, without `dirname`; a `\` also
+# separates directories, as under MSYS
+case ${BASH_SOURCE[0]} in
+    */* | *\\*) _SCRIPT_DIR="${BASH_SOURCE[0]%[/\\]*}" ;;
+    *) _SCRIPT_DIR=. ;;
+esac
+_SCRIPT_DIR="$(cd "${_SCRIPT_DIR:-/}" && pwd)"
 readonly _SCRIPT_DIR
 
 read -r -d '' _USAGE <<EOF || true
