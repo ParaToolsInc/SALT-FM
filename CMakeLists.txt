@@ -1179,12 +1179,13 @@ endif()
 # When Clang or Flang reports errors, saltfm must exit with a status
 # from 1 to 127 and leave no file at the --tau_output path. The setup
 # removes the `new`, fabricated, and missing header outputs, copies
-# missing_header.c to the working directory, writes stale `old` and
-# `early_exit` ones that saltfm must remove, makes the `dir` ones empty
-# directories that saltfm must keep, copies the bad and good sources and
-# a config and a selective instrumentation file to `self` ones that
-# saltfm must refuse and keep when they are also the output, and makes
-# read-only `ro` outputs that saltfm must keep and fail to open.
+# missing_header.c to the working directory, writes stale `old`,
+# `early_exit`, and `forwarded_value` ones that saltfm must remove,
+# makes the `dir` ones empty directories that saltfm must keep, copies
+# the bad and good sources and a config and a selective instrumentation
+# file to `self` ones that saltfm must refuse and keep when they are
+# also the output, and makes read-only `ro` outputs that saltfm must
+# keep and fail to open.
 set(_tests ${CMAKE_SOURCE_DIR}/tests)
 add_test(NAME make_clang_error_outputs
   COMMAND sh -c "rm -rf clang_error_new.inst.c fabricate_on.inst.cpp &&
@@ -1212,7 +1213,11 @@ add_test(NAME make_clang_error_outputs
     cp ${_tests}/setup_timer_name.yaml fortran_config_self.yaml &&
     cp ${_tests}/setup_timer_name.yaml fortran_config_tail_self.yaml &&
     cp ${_tests}/sif/exclude_f90.tau fortran_sif_self.tau &&
-    cp ${_tests}/fortran/hello.f90 fortran_hello_self.f90")
+    cp ${_tests}/fortran/hello.f90 fortran_hello_self.f90 &&
+    cp ${_tests}/fortran/hello.f90 fortran_select_value_self.f90 &&
+    cp ${_tests}/fortran/hello.f90 fortran_dash_x_name_self.f90 &&
+    cp ${_tests}/fortran/hello.f90 fortran_other-x.f95 &&
+    echo stale > fortran_forwarded_value")
 set_tests_properties(make_clang_error_outputs PROPERTIES
   FIXTURES_SETUP clang_error_outputs
   LABELS "phase:setup")
@@ -3015,6 +3020,28 @@ if(TEST_FORTRAN)
   _salt_add_clang_error_test(fortran_early_exit_space_output
     fortran_early_exit_space.inst.F90 "lang:Fortran" fortran/hello.f90
     SPACE ARGS --flang_exe=/nonexistent/flang)
+  # The second `--tau_output` is the selective instrumentation file, so the
+  # source after it is an input that saltfm must refuse to overwrite.
+  _salt_add_clang_error_test(fortran_select_value_self_output
+    fortran_select_value_self.f90 "lang:Fortran"
+    ${SALT_TEST_OUTPUT_DIR}/output_error/fortran_select_value_self.f90
+    DEFAULT_OUTPUT COPY_OF fortran/hello.f90
+    ARGS --flang_exe=/nonexistent/flang
+    --tau_output=fortran_select_value_self.f90 --tau_select_file --tau_output)
+  # The value of `-D` is not an input, so saltfm must not refuse an output
+  # of the same name, and must remove the stale one.
+  _salt_add_clang_error_test(fortran_forwarded_value_output
+    fortran_forwarded_value "lang:Fortran" fortran/hello.f90
+    ARGS -D fortran_forwarded_value --flang_exe=/nonexistent/flang)
+  # Only a whole `-x` token takes a value, not a name that contains `-x`,
+  # so the source after such a name is an input that saltfm must refuse
+  # to overwrite.
+  _salt_add_clang_error_test(fortran_dash_x_name_self_output
+    fortran_dash_x_name_self.f90 "lang:Fortran"
+    ${SALT_TEST_OUTPUT_DIR}/output_error/fortran_dash_x_name_self.f90
+    DEFAULT_OUTPUT COPY_OF fortran/hello.f90
+    ARGS --tau_output=fortran_dash_x_name_self.f90
+    --flang_exe=/nonexistent/flang fortran_other-x.f95)
 
   set(SALT_FORTRAN_COMPILERS_TO_TEST gfortran flang-new)
 
