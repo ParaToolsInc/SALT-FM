@@ -232,9 +232,9 @@ their build, without the project's include paths:
 
 - `--tau_allow_parse_errors`, or `SALT_ALLOW_PARSE_ERRORS` set to any
   value but empty, `0`, `false`, `no`, or `off` (in any case), makes
-  `saltfm` print `WARNING: Clang reported errors; writing the output
-  of its error recovery`, write the output file, and exit with status
-  0. Timers can then be wrong or missing: Clang uses `int` for an
+  `saltfm` print `WARNING: Clang reported errors; instrumenting the
+  partial parse tree`, write the output file, and exit with status 0.
+  Timers can then be wrong or missing: Clang uses `int` for an
   unknown type, so the timer of `void scale(RealD factor, ComplexD *z)`
   is named `void scale(int, int *)`, and a function such as
   `void f(std::vector<RealD> &v)` gets no timer.
