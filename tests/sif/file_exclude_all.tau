@@ -1,0 +1,4 @@
+# SIF: exclude every source file.
+BEGIN_FILE_EXCLUDE_LIST
+*
+END_FILE_EXCLUDE_LIST

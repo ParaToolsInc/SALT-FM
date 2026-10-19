@@ -1660,7 +1660,7 @@ add_sif_test_no_output(file_exclude_empty_c c tests/sif_empty.c tests/sif/file_e
 # - match: source IS on the list, so instrumentation proceeds and
 #   keep_routine appears in the output.
 # - nomatch: list contains a real but unrelated file, so the source under
-#   test is not whitelisted and its output has no timer.
+#   test is not whitelisted and its output is a copy.
 # Together these protect against both "list silently ignored" and
 # "match condition silently over-broad" parser regressions.
 add_sif_test(file_include_match_c
@@ -1674,9 +1674,8 @@ foreach(lang c cpp)
   )
 endforeach()
 foreach(lang c cpp)
-  add_sif_test(file_include_nomatch_${lang}
+  add_sif_test_no_output(file_include_nomatch_${lang}
     ${lang} tests/sif_excl.${lang} tests/sif/file_include_nomatch_${lang}.tau)
-  _sif_check_file_excluded(file_include_nomatch_${lang})
 endforeach()
 
 if(TEST_FORTRAN)
@@ -1948,7 +1947,8 @@ foreach(lang c cpp)
 endforeach()
 
 # Setup code fills in main's timer name, as for a kept main, when a
-# routine or file list removes main's timer.
+# routine or file list removes main's timer; a file list needs the
+# `always` level.
 set(_sif_setup_name_c "SETUP_TIMER_NAME[(]\"int main[(]")
 set(_sif_setup_name_cpp "${_sif_setup_name_c}")
 set(_sif_setup_name_fortran "SETUP_TIMER_NAME[(]\"&\n     &${_sif_main_timer_fortran}")
@@ -1958,7 +1958,7 @@ set(_sif_file_exclude_fortran file_exclude_f90)
 foreach(lang IN LISTS _sif_langs)
   foreach(sif exclude_main include_list ${_sif_file_exclude_${lang}})
     add_sif_test(setup_name_${sif}_${lang} ${lang} ${_sif_src_${lang}} tests/sif/${sif}.tau
-      CONFIG tests/setup_timer_name.yaml)
+      CONFIG tests/setup_timer_name.yaml ARGS --tau_main_setup_parse_level=always)
     set_tests_properties(check_sif_setup_name_${sif}_${lang}
       PROPERTIES
       PASS_REGULAR_EXPRESSION "${_sif_setup_name_${lang}}"
@@ -1979,13 +1979,15 @@ endforeach()
 # Routines that the lists leave out keep returns that share their line with
 # other code as written: no repeated code before the return, and no timer
 # stop in main. '.' stands for each ';' of the source, which would split
-# the pattern lists.
+# the pattern lists. The `always` level parses the source that the file
+# list excludes.
 string(CONCAT _sif_oneline_pass
   "\nint dropped[(]void[)] [{] return 11. [}]\n"
   ".*\n    if [(]n == 22[)] return 22.\n"
   ".* return dropped[(][)] [+] cond_dropped[(]0[)] [+] kept[(][)] - 44. [}]\n")
 foreach(sif include exclude file_exclude)
-  add_sif_test(oneline_${sif} c tests/sif_oneline.c tests/sif/oneline_${sif}.tau)
+  add_sif_test(oneline_${sif} c tests/sif_oneline.c tests/sif/oneline_${sif}.tau
+    ARGS --tau_main_setup_parse_level=always)
   set_tests_properties(check_sif_oneline_${sif}
     PROPERTIES
     PASS_REGULAR_EXPRESSION "${_sif_oneline_pass}"
@@ -2030,7 +2032,8 @@ endforeach()
 
 # Quotes are part of a file pattern, as in TAU, so a quoted file entry does
 # not match the source, and SALT-FM warns about it. Routine lists still
-# remove quotes.
+# remove quotes. The `always` level gives main its setup code in the
+# source that the quoted include entry leaves out.
 string(CONCAT _sif_quoted_file_warning
   "WARNING: file %s list entry at selective instrumentation file line 4:\n"
   "  the quotes in \"sif_excl[.][*]\" are part of the pattern")
@@ -2042,7 +2045,8 @@ foreach(lang IN LISTS _sif_langs)
     PROPERTIES PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_${lang}}")
   string(REPLACE "%s" "include" _warning "${_sif_quoted_file_warning}")
   add_sif_test(file_include_quoted_${lang} ${lang} ${_sif_src_${lang}}
-    tests/sif/file_include_quoted.tau WARNINGS "${_warning}")
+    tests/sif/file_include_quoted.tau WARNINGS "${_warning}"
+    ARGS --tau_main_setup_parse_level=always)
   _sif_check_file_excluded(file_include_quoted_${lang})
 endforeach()
 
@@ -2170,6 +2174,36 @@ if(TEST_FORTRAN)
     ENVIRONMENT_MODIFICATION "SALT_MAIN_SETUP_PARSE_LEVEL=unset:"
     LABELS "lang:Fortran;phase:smoke")
 endif()
+
+# Below the `always` level, saltfm does not parse a source that the file
+# lists exclude: a Clang error in it does not stop saltfm, and saltfm
+# copies it. At `always`, the error does.
+foreach(level never function)
+  add_sif_test_no_output(parse_error_${level}_c c tests/clang_error.c
+    tests/sif/file_exclude_all.tau ARGS --tau_main_setup_parse_level=${level})
+endforeach()
+_salt_add_clang_error_test(parse_error_always_c parse_error_always.inst.c
+  "lang:C" clang_error.c ARGS --tau_main_setup_parse_level=always
+  --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau
+  LOG "undeclared identifier 'undeclared_name'")
+
+# Below the `always` level, the main program of a source that the file
+# lists exclude gets no setup code, and saltfm warns about it.
+set(_excluded_main_warning
+  "WARNING: [^\n]*/sif_excl[.]c(pp)? seems to hold the main program")
+foreach(lang c cpp)
+  foreach(level never function)
+    add_sif_test_no_output(file_exclude_main_${level}_${lang} ${lang}
+      tests/sif_excl.${lang} tests/sif/file_exclude_${lang}.tau
+      ARGS --tau_main_setup_parse_level=${level})
+    set_tests_properties(instrument_sif_file_exclude_main_${level}_${lang}
+      PROPERTIES PASS_REGULAR_EXPRESSION "${_excluded_main_warning}")
+  endforeach()
+  set_property(TEST warn_sif_file_exclude_${lang}
+    APPEND PROPERTY FAIL_REGULAR_EXPRESSION "${_excluded_main_warning}")
+endforeach()
+set_property(TEST instrument_sif_file_exclude_nomain_c
+  APPEND PROPERTY FAIL_REGULAR_EXPRESSION "seems to hold the main program")
 
 # At `never`, a main program that the routine lists leave out gets no
 # setup code, and saltfm does not warn about the include list; at
@@ -3289,10 +3323,15 @@ if(HAVE_TAU)
   # builds `src` with `sif` for each compiler of its language in a fresh
   # <name>.d directory, runs it there, and checks that the profile matches
   # `pass`, such as keep_routine, but not main's timer, which `main_timer`
-  # matches. The optional OUTPUT must match the program's output, and the
+  # matches. The optional OUTPUT must match the program's output, the
+  # optional PROFILE names the profile (default: profile.0.0.0), and the
   # other arguments are extra compile options.
   function(_salt_add_tau_main_test name src sif pass main_timer)
-    cmake_parse_arguments(PARSE_ARGV 5 ARG "" "OUTPUT" "")
+    cmake_parse_arguments(PARSE_ARGV 5 ARG "" "OUTPUT;PROFILE" "")
+    set(profile profile.0.0.0)
+    if(ARG_PROFILE)
+      set(profile ${ARG_PROFILE})
+    endif()
     if(src MATCHES "[.]f90$")
       set(tauc ${TAUF90})
       set(compilers ${SALT_FORTRAN_COMPILERS_TO_TEST})
@@ -3368,7 +3407,7 @@ if(HAVE_TAU)
           PROPERTIES ENVIRONMENT_MODIFICATION "${dyld_mods}")
       endif()
       add_test(NAME check_${comp}_${name}_profile
-        COMMAND ${CMAKE_COMMAND} -E cat profile.0.0.0
+        COMMAND ${CMAKE_COMMAND} -E cat ${profile}
         WORKING_DIRECTORY ${work_dir}
       )
       set_tests_properties(check_${comp}_${name}_profile
@@ -3403,7 +3442,9 @@ if(HAVE_TAU)
   endforeach()
   # A source with main that the file lists exclude compiles without an
   # error, from SALT-FM's copy, whose #line 1 keeps __FILE__ the name of
-  # the source. Its main has no timer but sets the node, so the program,
+  # the source. At the `always` level, which the test sets in
+  # SALT_MAIN_SETUP_PARSE_LEVEL in the environment of TAU's compiler
+  # wrapper, its main has no timer but sets the node, so the program,
   # with the timer of keep_routine in sif_nomain.c, writes profile.0.0.0.
   foreach(ext c cpp)
     _salt_add_tau_main_test(sif_file_exclude_main_${ext}
@@ -3411,6 +3452,20 @@ if(HAVE_TAU)
       keep_routine "int main[(]"
       OUTPUT "file: [^\n]*/tests/sif_file_name[.]${ext}\n"
       ${CMAKE_SOURCE_DIR}/tests/sif_nomain.c)
+    foreach(comp IN LISTS SALT_COMPILERS_TO_TEST)
+      set_property(TEST compile_${comp}_sif_file_exclude_main_${ext}
+        APPEND PROPERTY ENVIRONMENT SALT_MAIN_SETUP_PARSE_LEVEL=always)
+    endforeach()
+  endforeach()
+  # At the default level, its main gets no setup code, so the program
+  # sets no node and writes profile.-1.0.0.
+  _salt_add_tau_main_test(sif_file_exclude_main_default_c
+    tests/sif_file_name.c tests/sif/file_exclude_file_name.tau
+    keep_routine "int main[(]" PROFILE profile.-1.0.0
+    ${CMAKE_SOURCE_DIR}/tests/sif_nomain.c)
+  foreach(comp IN LISTS SALT_COMPILERS_TO_TEST)
+    set_property(TEST compile_${comp}_sif_file_exclude_main_default_c
+      APPEND PROPERTY ENVIRONMENT_MODIFICATION "SALT_MAIN_SETUP_PARSE_LEVEL=unset:")
   endforeach()
   if(TEST_FORTRAN)
     _salt_add_tau_main_test(sif_file_exclude_main_fortran
