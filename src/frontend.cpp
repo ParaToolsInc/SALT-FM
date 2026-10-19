@@ -116,6 +116,19 @@ static llvm::cl::opt<bool> allow_parse_errors(
                    "(default: $SALT_ALLOW_PARSE_ERRORS, else false)"),
     llvm::cl::init(getEnvBool("SALT_ALLOW_PARSE_ERRORS")), llvm::cl::cat(MyToolCategory));
 
+llvm::cl::opt<MainSetupLevel> main_setup_level(
+    "tau_main_setup_parse_level",
+    llvm::cl::desc("When to parse a source that the file lists exclude and to give main its "
+                   "setup code without a timer"),
+    llvm::cl::values(
+        clEnumValN(MainSetupLevel::never, "never",
+                   "Parse no excluded source; no setup code for an excluded main"),
+        clEnumValN(MainSetupLevel::function, "function",
+                   "Parse no excluded source; setup code for a main that the routine lists exclude"),
+        clEnumValN(MainSetupLevel::always, "always",
+                   "Parse all sources; setup code for each excluded main")),
+    llvm::cl::init(MainSetupLevel::function), llvm::cl::cat(MyToolCategory));
+
 #include "clang_header_includes.h"
 
 char **addHeadersToCommand(int *argc, const char **argv)

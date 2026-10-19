@@ -5,6 +5,8 @@
 #include "clang/Tooling/Tooling.h"
 #include <vector>
 
+#include "selectfile.hpp"
+
 /* defines */
 #ifdef TAU_WINDOWS
 #define TAU_DIR_CHARACTER '\\'
@@ -35,6 +37,8 @@ extern llvm::cl::opt<bool> do_inline;
 extern llvm::cl::opt<std::string> selectfile;
 
 extern llvm::cl::opt<bool> fabricate_unknown_types;
+
+extern llvm::cl::opt<MainSetupLevel> main_setup_level;
 
 typedef struct inst_loc {
     int line = -1;

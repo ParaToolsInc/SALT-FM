@@ -988,7 +988,8 @@ void instrumentor::select_routines()
     {
         const std::string name = selectName(loc->full_timer_name);
         loc->skip = !instrumentRoutine(name);
-        if (loc->kind == BEGIN_FUNC && strcmp(loc->func_name, "main") == 0)
+        if (main_setup_level != MainSetupLevel::never && loc->kind == BEGIN_FUNC &&
+            strcmp(loc->func_name, "main") == 0)
         {
             warnIfMainNotIncluded(name);
         }
@@ -1164,8 +1165,9 @@ void instrumentor::instrument()
             {
                 loc->skip = loc->skip || skipped;
                 // A routine the lists leave out keeps its lines as written,
-                // except that main gets its setup code
-                if (loc->skip && (loc->kind != BEGIN_FUNC || strcmp(loc->func_name, "main") != 0))
+                // except that main gets its setup code above the `never` level
+                if (loc->skip && (main_setup_level == MainSetupLevel::never || loc->kind != BEGIN_FUNC ||
+                                  strcmp(loc->func_name, "main") != 0))
                 {
                     continue;
                 }

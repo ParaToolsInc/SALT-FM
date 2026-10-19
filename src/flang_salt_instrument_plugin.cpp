@@ -79,8 +79,10 @@ namespace salt::fortran {
     class SaltInstrumentAction final : public PluginParseTreeAction {
         struct SaltInstrumentParseTreeVisitor {
             explicit SaltInstrumentParseTreeVisitor(Fortran::parser::Parsing *parsing,
-                                                    const bool skipInstrument = false)
-                : mainProgramLine_(0), subProgramLine_(0), skipInstrumentFile_(skipInstrument), parsing(parsing) {
+                                                    const bool skipInstrument = false,
+                                                    const bool mainSetup = true)
+                : mainProgramLine_(0), subProgramLine_(0), skipInstrumentFile_(skipInstrument),
+                  mainSetup_(mainSetup), parsing(parsing) {
             }
 
             bool shouldInstrument() const {
@@ -558,16 +560,18 @@ namespace salt::fortran {
 
                     const std::string splitTimerName{ss2.str()};
 
-                    if (isInMainProgram_) {
+                    if (isInMainProgram_ && mainSetup_) {
                         warnIfMainNotIncluded(procName, /*ignoreCase=*/true);
                     }
                     if (isInMainProgram_ && (skipInstrumentFile_ || !shouldInstrumentSubprogram(procName))) {
-                        // Keep the setup code but not the timer; the flag also
-                        // drops the timer stop
+                        // Keep the setup code, if any, but not the timer; the
+                        // flag also drops the timer stop
                         verboseStream() << "Skipping the timer of " << procName <<
                                 " due to selective instrumentation\n";
                         skipInstrumentSubprogram_ = true;
-                        addProgramSetupInstrumentation(startLoc.line, splitTimerName);
+                        if (mainSetup_) {
+                            addProgramSetupInstrumentation(startLoc.line, splitTimerName);
+                        }
                     } else if (isInMainProgram_) {
                         verboseStream() << "Program begin \"" << mainProgramName_ << "\" at " << startLoc.line <<
                                 ", " << startLoc.column << "\n";
@@ -729,6 +733,8 @@ namespace salt::fortran {
 
             bool skipInstrumentFile_;
             bool skipInstrumentSubprogram_{false};
+            // Whether a main program that the lists leave out gets its setup code
+            bool mainSetup_;
 
             std::vector<std::unique_ptr<const InstrumentationPoint> > instrumentationPoints_;
 
@@ -870,6 +876,16 @@ namespace salt::fortran {
                 }
             }
             return std::nullopt;
+        }
+
+        // The level that fparse-llvm gives in the environment; `function` if none
+        [[nodiscard]] static MainSetupLevel getMainSetupLevel() {
+            const char *val = getenv(SALT_FORTRAN_MAIN_SETUP_PARSE_LEVEL_VAR);
+            const std::string level{val ? val : ""};
+            if (level == "never") {
+                return MainSetupLevel::never;
+            }
+            return level == "always" ? MainSetupLevel::always : MainSetupLevel::function;
         }
 
         [[nodiscard]] static ryml::Tree getConfigYamlTree(const std::string &configPath) {
@@ -1077,7 +1093,8 @@ namespace salt::fortran {
                 skipInstrument = true;
             }
             // Walk the parse tree -- marks nodes for instrumentation
-            SaltInstrumentParseTreeVisitor visitor{&parsing, skipInstrument};
+            const MainSetupLevel level{getMainSetupLevel()};
+            SaltInstrumentParseTreeVisitor visitor{&parsing, skipInstrument, level != MainSetupLevel::never};
             Walk(parsing.parseTree(), visitor);
 
             // Use the instrumentation points stored in the Visitor to write the instrumented file.

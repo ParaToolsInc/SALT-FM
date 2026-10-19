@@ -58,6 +58,9 @@ TAU instrumentor options:
 
   --config_file=<filename>     - Specify path to SALT-FM configuration YAML file
   --flang_exe=<path>           - Flang driver to run (default: \$SALT_FLANG_EXE, else the one SALT-FM was built with)
+  --tau_main_setup_parse_level=<never|function|always>
+                               - When to parse a source that the file lists exclude and to give
+                                 the main program its setup code without a timer (default: function)
   --tau_output=<filename>      - Specify name of output instrumented file
   --tau_select_file=<filename> - Provide a selective instrumentation specification file
   --show                       - Print the command line that would be executed by the wrapper script
@@ -180,7 +183,9 @@ expecting_output_file=false
 expecting_config_file=false
 expecting_select_file=false
 expecting_flang_exe=false
+expecting_main_setup_level=false
 unset flang_exe
+main_setup_level=function
 show=false
 version=false
 for arg in "$@"; do
@@ -217,11 +222,22 @@ for arg in "$@"; do
         flang_exe="$arg"
         expecting_flang_exe=false
         shift
+    elif $expecting_main_setup_level; then
+        main_setup_level="$arg"
+        expecting_main_setup_level=false
+        shift
+        continue
     elif [[ $arg == --flang_exe ]]; then
         expecting_flang_exe=true
         shift || true
     elif [[ $arg == --flang_exe=* ]]; then
         flang_exe="${arg#--flang_exe=}"
+        shift || true
+    elif [[ $arg == --tau_main_setup_parse_level ]]; then
+        expecting_main_setup_level=true
+        shift || true
+    elif [[ $arg == --tau_main_setup_parse_level=* ]]; then
+        main_setup_level="${arg#*=}"
         shift || true
     elif [[ $arg == --tau_output ]]; then
         expecting_output_file=true
@@ -301,6 +317,16 @@ if ! $show && ! $version && [[ -f ${output_file:-} && -w ${output_file} ]] &&
     exit 1
 fi
 
+if $expecting_main_setup_level; then
+    echo "WARNING: --tau_main_setup_parse_level needs a value; using ${main_setup_level}" >&2
+fi
+case ${main_setup_level} in
+    never | function | always) ;;
+    *)
+        echo "ERROR: unknown value '${main_setup_level}' for --tau_main_setup_parse_level" >&2
+        exit 1
+        ;;
+esac
 if $expecting_flang_exe || [[ -n ${flang_exe+set} && -z ${flang_exe} ]]; then
     echo "ERROR: --flang_exe needs a path" >&2
     exit 1
@@ -394,11 +420,14 @@ cmd=("${flang_exe}"
 if $show; then
     echo "SALT_FORTRAN_CONFIG_FILE=\"${FORTRAN_CONFIG_FILE}\""
     echo "SALT_FORTRAN_SELECT_FILE=\"${select_file:-}\""
+    echo "SALT_FORTRAN_MAIN_SETUP_PARSE_LEVEL=${main_setup_level}"
     echo "cmd: ${cmd[*]}"
 else
     echo "SALT_FORTRAN_CONFIG_FILE=\"${FORTRAN_CONFIG_FILE}\""
     echo "SALT_FORTRAN_SELECT_FILE=\"${select_file:-}\""
+    echo "SALT_FORTRAN_MAIN_SETUP_PARSE_LEVEL=${main_setup_level}"
     echo "Running: ${cmd[*]}"
-    SALT_FORTRAN_SELECT_FILE="${select_file:-}" SALT_FORTRAN_CONFIG_FILE="${FORTRAN_CONFIG_FILE}" "${cmd[@]}"
+    SALT_FORTRAN_SELECT_FILE="${select_file:-}" SALT_FORTRAN_CONFIG_FILE="${FORTRAN_CONFIG_FILE}" \
+        SALT_FORTRAN_MAIN_SETUP_PARSE_LEVEL="${main_setup_level}" "${cmd[@]}"
     exit $?
 fi

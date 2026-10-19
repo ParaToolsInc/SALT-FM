@@ -57,6 +57,10 @@ TAU instrumentor options:
   --tau_allow_parse_errors      - C and C++ only: instrument the partial parse tree that Clang builds after errors (default: \$SALT_ALLOW_PARSE_ERRORS, else false)
   --tau_fabricate_unknown_types - Fabricate declarations for unknown qualified names (default: false)
   --tau_instrument_inline       - Instrument inlined functions (default: false)
+  --tau_main_setup_parse_level=<level>
+                                - never, function, or always: when to parse a source that the file
+                                  lists exclude and to give main its setup code without a timer
+                                  (default: \$SALT_MAIN_SETUP_PARSE_LEVEL, else function)
   --tau_output=<filename>       - Specify name of output instrumented file
   --tau_select_file=<filename>  - Provide a selective instrumentation specification file
   --tau_use_cxx_api             - Use TAU's C++ instrumentation API
@@ -67,6 +71,41 @@ function usage {
     echo "$_USAGE"
 }
 
+# Sets `level` to the canonical level of option `$1`, whose value is in
+# variable `$2` if it is set, else in environment variable `$3`: never,
+# function (also for an empty value), or always, in any case. Stops with
+# an error and the usage for any other value.
+# Warns when the option ends the arguments without its value.
+function canonical_level {
+    local name="$1"
+    local value="${!2-}"
+    if [[ -z ${!2+set} ]]; then
+        name="$3"
+        value="${!3-}"
+    fi
+    if [[ ${expecting_value_of} == "$2" ]]; then
+        local from="${name}=${value}"
+        if [[ -z ${value} ]]; then
+            from="the default"
+        fi
+        echo "WARNING: $1 needs a value; using" >&2
+        echo "  ${from}" >&2
+    fi
+    shopt -s nocasematch
+    case ${value} in
+        never | no | off | false | 0) level=never ;;
+        '' | function | procedure | default | medium | yes | on | true | 1) level=function ;;
+        always | file | force | all) level=always ;;
+        *) level= ;;
+    esac
+    shopt -u nocasematch
+    if [[ -z ${level} ]]; then
+        echo "ERROR: unknown value '${value}' for ${name}" >&2
+        usage
+        exit 1
+    fi
+}
+
 if [[ $# -eq 0 ]]; then
     usage
     exit 1
@@ -74,9 +113,14 @@ fi
 
 # Reconstruct argument list to forward to tool
 args=()
+# The variable that takes the next argument, the value of an option
+expecting_value_of=
 for arg in "$@"; do
     #echo "working on arg: $arg"
-    if [[ $arg == --lang=* ]]; then
+    if [[ -n ${expecting_value_of} ]]; then
+        printf -v "${expecting_value_of}" '%s' "${arg}"
+        expecting_value_of=
+    elif [[ $arg == --lang=* ]]; then
         lang="${arg#--lang=}"
         case "${lang}" in
             fortran|Fortran)
@@ -119,6 +163,12 @@ for arg in "$@"; do
         fi
     elif [[ $arg == --show ]]; then
         show=true
+    elif [[ $arg == --tau_main_setup_parse_level ]]; then
+        expecting_value_of=main_setup_level
+    elif [[ $arg == --tau_main_setup_parse_level=* ]]; then
+        # canonical_level reads it by name
+        # shellcheck disable=SC2034
+        main_setup_level="${arg#*=}"
     else
         args+=("$arg")
     fi
@@ -139,6 +189,10 @@ if [[ -z "${tool:-}" ]]; then
     echo "No source files provided, language not detected."
     exit 1
 fi
+
+canonical_level --tau_main_setup_parse_level main_setup_level SALT_MAIN_SETUP_PARSE_LEVEL
+# Before the arguments, which can end with `--` and compiler options
+args=("--tau_main_setup_parse_level=${level}" ${args[@]+"${args[@]}"})
 
 # Check if the tool exists
 if [[ ! -f "${_SCRIPT_DIR}/${tool}" ]]; then

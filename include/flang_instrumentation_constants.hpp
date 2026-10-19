@@ -26,6 +26,9 @@ limitations under the License.
 // Selective instrumentation environment variable
 #define SALT_FORTRAN_SELECT_FILE_VAR "SALT_FORTRAN_SELECT_FILE"
 
+// Main setup and parse level environment variable: never, function, or always
+#define SALT_FORTRAN_MAIN_SETUP_PARSE_LEVEL_VAR "SALT_FORTRAN_MAIN_SETUP_PARSE_LEVEL"
+
 // Configuration file YAML keys
 #define SALT_FORTRAN_KEY "Fortran"
 #define SALT_FORTRAN_PROGRAM_BEGIN_KEY "program_insert"
