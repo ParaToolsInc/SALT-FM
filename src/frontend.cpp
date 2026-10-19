@@ -242,8 +242,8 @@ int main(int argc, const char **argv)
         return EXIT_FAILURE;
     }
     // TAU's compiler wrapper compiles any file left at this path, even a stale one, so
-    // remove it before anything can fail; keep a read-only file, which then fails to
-    // open.
+    // remove it before anything can fail. Skip a read-only file; the open for writing
+    // then fails and saltfm exits with an error.
     if (llvm::sys::fs::is_regular_file(outputfile) &&
         !llvm::sys::fs::access(outputfile, llvm::sys::fs::AccessMode::Write))
     {

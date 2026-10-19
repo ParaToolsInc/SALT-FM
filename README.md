@@ -223,11 +223,12 @@ an error.
 ### C and C++ sources with errors
 
 When Clang reports errors in a C or C++ source, `saltfm` exits with a
-non-zero status and writes no output file. Clang recovers from many
-errors, such as a missing header or an unknown type name, and these
-options make `saltfm` instrument what its error recovery gives, for
-example to instrument sources outside their build, without the
-project's include paths:
+non-zero status and writes no output file. After many errors, such as
+a missing header or an unknown type name, Clang marks declarations
+that use unknown names invalid and keeps parsing. These options make
+`saltfm` insert timers in the original source from the partial parse
+tree that Clang builds, for example to instrument sources outside
+their build, without the project's include paths:
 
 - `--tau_allow_parse_errors`, or `SALT_ALLOW_PARSE_ERRORS` set to any
   value but empty, `0`, `false`, `no`, or `off` (in any case), makes
@@ -238,9 +239,10 @@ project's include paths:
   is named `void scale(int, int *)`, and a function such as
   `void f(std::vector<RealD> &v)` gets no timer.
 - `--tau_fabricate_unknown_types`, or `SALT_FABRICATE_UNKNOWN_TYPES`,
-  fabricates declarations for unknown qualified names such as
-  `std::vector`, so more functions get timers, and the timer names use
-  the types as the source spells them. It also allows the errors, as
+  adds declarations for unknown qualified names such as `std::vector`
+  to Clang's parse tree in memory, so more functions get timers, and
+  the timer names use the types as the source spells them. Clang still
+  reports errors for those names, so it also allows the errors, as
   `--tau_allow_parse_errors` does.
 
 These options are for C and C++ only: when Flang reports an error, it

@@ -41,25 +41,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and failed without naming the file when a write failed.
 - When Clang reports errors in a C or C++ source, `saltfm` now exits
   with a non-zero status and writes no instrumented output. Before, it
-  exited with status 0 and wrote the output that Clang's error
-  recovery gave. With `--tau_fabricate_unknown_types` (or
-  `SALT_FABRICATE_UNKNOWN_TYPES`), which relies on that error recovery,
-  `saltfm` keeps the old behavior. For C, C++, and Fortran, `saltfm`
-  now removes a regular file already at the `--tau_output` path before
-  instrumentation starts, so a failed run never leaves a stale one for
-  TAU's compiler wrapper to compile. It keeps a read-only file, and
-  stops with an error when it cannot remove the file. When the
-  `--tau_output` path is an input source, the configuration file, or
-  the selective instrumentation file, `saltfm` now stops with an error
-  before it writes anything, for C, C++, and Fortran; before, it
-  overwrote or removed that file
+  exited with status 0 and wrote output instrumented from the partial
+  parse tree that Clang builds after errors, which can miss timers.
+  With `--tau_fabricate_unknown_types` (or
+  `SALT_FABRICATE_UNKNOWN_TYPES`), for which Clang still reports
+  errors, `saltfm` keeps the old behavior
+  ([#85](https://github.com/ParaToolsInc/SALT-FM/issues/85)).
+- For C, C++, and Fortran, `saltfm` now removes a regular file already
+  at the `--tau_output` path before instrumentation starts, so a
+  failed run never leaves a stale one for TAU's compiler wrapper to
+  compile. It does not remove a read-only file; the run then fails to
+  open it for writing and exits with an error. It stops with an error
+  when it cannot remove a writable file
+  ([#85](https://github.com/ParaToolsInc/SALT-FM/issues/85)).
+- When the `--tau_output` path is an input source, the configuration
+  file, or the selective instrumentation file, `saltfm` now stops with
+  an error before it writes anything, for C, C++, and Fortran; before,
+  it overwrote or removed that file
   ([#85](https://github.com/ParaToolsInc/SALT-FM/issues/85)).
 - New C and C++ option `--tau_allow_parse_errors` (or
   `SALT_ALLOW_PARSE_ERRORS=1`), off by default, makes `saltfm` warn
-  about Clang errors, write the output that Clang's error recovery
-  gives, and exit with status 0, as before. If you run `saltfm` outside
-  your build, without the project's include paths, most sources have
-  Clang errors, so `saltfm` now fails on them; set
+  about Clang errors, write output instrumented from the partial parse
+  tree that Clang builds, and exit with status 0, as before. If you run
+  `saltfm` outside your build, without the project's include paths,
+  most sources have Clang errors, so `saltfm` now fails on them; set
   `SALT_ALLOW_PARSE_ERRORS=1` to keep the old behavior.
   `--tau_fabricate_unknown_types` also allows the errors and now prints
   the same warning

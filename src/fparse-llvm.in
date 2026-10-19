@@ -288,8 +288,8 @@ for arg in "${FORTRAN_CONFIG_FILE}" "${select_file:-}" ${inputs[@]+"${inputs[@]}
     fi
 done
 # TAU's compiler wrapper compiles any file left at this path, even a stale one,
-# so remove it before anything can fail; keep a read-only file, which then
-# fails to open
+# so remove it before anything can fail. Skip a read-only file; the open for
+# writing then fails and saltfm exits with an error
 if ! $show && ! $version && [[ -f ${output_file:-} && -w ${output_file} ]] &&
     ! rm_err="$(rm -f -- "${output_file}" 2>&1)"; then
     echo "ERROR: Could not remove output file ${output_file}: ${rm_err##*: }" >&2
