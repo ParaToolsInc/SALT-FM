@@ -38,7 +38,7 @@ extern llvm::cl::opt<std::string> selectfile;
 
 extern llvm::cl::opt<bool> fabricate_unknown_types;
 
-extern llvm::cl::opt<MainSetupLevel> main_setup_level;
+extern llvm::cl::opt<ExcludedMainSetup> excluded_main_setup;
 
 typedef struct inst_loc {
     int line = -1;

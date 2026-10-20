@@ -116,20 +116,17 @@ static llvm::cl::opt<bool> allow_parse_errors(
                    "(default: $SALT_ALLOW_PARSE_ERRORS, else false)"),
     llvm::cl::init(getEnvBool("SALT_ALLOW_PARSE_ERRORS")), llvm::cl::cat(MyToolCategory));
 
-llvm::cl::opt<MainSetupLevel> main_setup_level(
-    "tau_main_setup_parse_level",
-    llvm::cl::desc("When to parse a source that the file lists exclude and to give main its "
-                   "setup code without a timer"),
+llvm::cl::opt<ExcludedMainSetup> excluded_main_setup(
+    "tau_excluded_main_setup",
+    llvm::cl::desc("Selects which excluded main programs get setup code"),
     llvm::cl::values(
-        clEnumValN(MainSetupLevel::never, "never",
-                   "Parse no source that the file lists exclude; no setup code for a main "
-                   "that the SIF excludes"),
-        clEnumValN(MainSetupLevel::function, "function",
-                   "Parse no source that the file lists exclude; setup code for a main that "
-                   "the routine lists exclude"),
-        clEnumValN(MainSetupLevel::always, "always",
-                   "Parse all sources; setup code for each main that the SIF excludes")),
-    llvm::cl::init(MainSetupLevel::function), llvm::cl::cat(MyToolCategory));
+        clEnumValN(ExcludedMainSetup::none, "none", "No excluded main program gets setup code"),
+        clEnumValN(ExcludedMainSetup::routine, "routine",
+                   "A main program that the routine lists exclude gets setup code (default)"),
+        clEnumValN(ExcludedMainSetup::file, "file",
+                   "Also a main program in a file that the file lists exclude (parses all "
+                   "excluded files, adds no timers to them)")),
+    llvm::cl::init(ExcludedMainSetup::routine), llvm::cl::cat(MyToolCategory));
 
 #include "clang_header_includes.h"
 
@@ -195,7 +192,7 @@ char **addHeadersToCommand(int *argc, const char **argv)
 }
 
 // Warns that `path`, which the file lists exclude and SALT-FM copies without a parse, gets no
-// setup code when it seems to hold the main program: a `main` token right before a `(` token,
+// setup code when it seems to contain the main program: a `main` token right before a `(` token,
 // from Clang's raw lexer, which skips comments, keeps each string literal one token, does
 // no preprocessing, and does not fail on bad code
 static void warnIfExcludedMain(const std::string &path)
@@ -219,9 +216,9 @@ static void warnIfExcludedMain(const std::string &path)
         at_end = lexer.LexFromRawLexer(tok);
         if (after_main && tok.is(tok::l_paren))
         {
-            llvm::errs() << "WARNING: " << path << " seems to hold the main program, but the\n"
-                         << "  selective instrumentation file lists exclude it, so main gets no setup\n"
-                         << "  code; use --tau_main_setup_parse_level=always to add it\n";
+            llvm::errs() << "WARNING: " << path << " seems to contain the main program. The file lists\n"
+                         << "  exclude this file, so the main program gets no setup code. To add the\n"
+                         << "  setup code, use --tau_excluded_main_setup=file.\n";
             return;
         }
         after_main = tok.is(tok::raw_identifier) && tok.getRawIdentifier() == "main";
@@ -309,9 +306,9 @@ int main(int argc, const char **argv)
 
     findFiles(OptionsParser.getSourcePathList()); //Locate source files and mark for instrumentation/skipping
 
-    // At the `never` and `function` levels, parse only the sources that the file lists include
+    // Unless --tau_excluded_main_setup=file, parse only the sources that the file lists include
     std::vector<std::string> sources = OptionsParser.getSourcePathList();
-    if (main_setup_level != MainSetupLevel::always)
+    if (excluded_main_setup != ExcludedMainSetup::file)
     {
         sources = files_to_go;
         std::for_each(files_skipped.begin(), files_skipped.end(), warnIfExcludedMain);

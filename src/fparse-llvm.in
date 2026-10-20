@@ -58,13 +58,37 @@ TAU instrumentor options:
 
   --config_file=<filename>     - Specify path to SALT-FM configuration YAML file
   --flang_exe=<path>           - Flang driver to run (default: \$SALT_FLANG_EXE, else the one SALT-FM was built with)
-  --tau_main_setup_parse_level=<never|function|always>
-                               - When to parse a source that the file lists exclude and to give
-                                 the main program its setup code without a timer (default: function)
+  --tau_excluded_main_setup=<none|routine|file>
+                               - Selects which excluded main programs get setup code.
+                                 Setup code makes sure that the measurement library
+                                 starts correctly. We recommend it for all programs.
+                                   none:    No excluded main program gets setup code.
+                                   routine: A main program that the routine lists
+                                            exclude gets setup code. This is the
+                                            default.
+                                   file:    A main program in a file that the file
+                                            lists exclude also gets setup code. This
+                                            makes SALT-FM parse all excluded files.
+                                            SALT-FM adds setup code to each main
+                                            program that it finds, but it adds no
+                                            timers to these files.
+                                 (default: routine)
   --tau_parse_excluded_modules=<off|modules-only|submodules-and-modules>
-                               - At the never and function levels, parse a source that the file
-                                 lists exclude when it seems to define or include a module, or with
-                                 submodules-and-modules also a submodule, for its module files
+                               - Fortran only. Selects which excluded files SALT-FM
+                                 parses to write their module files. SALT-FM needs
+                                 these module files to instrument the files that use
+                                 the modules. It adds no timers to the excluded files.
+                                   off:          SALT-FM parses no excluded file.
+                                   modules-only: SALT-FM parses an excluded file that
+                                                 defines or includes a module. This
+                                                 is the default.
+                                   submodules-and-modules:
+                                                 SALT-FM also parses an excluded file
+                                                 that has only submodules. Only the
+                                                 child submodules of a submodule need
+                                                 its module file.
+                                 With --tau_excluded_main_setup=file, SALT-FM parses all
+                                 files, and this option has no effect.
                                  (default: modules-only)
   --tau_output=<filename>      - Specify name of output instrumented file
   --tau_select_file=<filename> - Provide a selective instrumentation specification file
@@ -188,10 +212,10 @@ expecting_output_file=false
 expecting_config_file=false
 expecting_select_file=false
 expecting_flang_exe=false
-expecting_main_setup_level=false
+expecting_excluded_main_setup=false
 expecting_parse_excluded_modules=false
 unset flang_exe
-main_setup_level=function
+excluded_main_setup=routine
 parse_excluded_modules=modules-only
 show=false
 version=false
@@ -229,9 +253,9 @@ for arg in "$@"; do
         flang_exe="$arg"
         expecting_flang_exe=false
         shift
-    elif $expecting_main_setup_level; then
-        main_setup_level="$arg"
-        expecting_main_setup_level=false
+    elif $expecting_excluded_main_setup; then
+        excluded_main_setup="$arg"
+        expecting_excluded_main_setup=false
         shift
         continue
     elif $expecting_parse_excluded_modules; then
@@ -245,11 +269,11 @@ for arg in "$@"; do
     elif [[ $arg == --flang_exe=* ]]; then
         flang_exe="${arg#--flang_exe=}"
         shift || true
-    elif [[ $arg == --tau_main_setup_parse_level ]]; then
-        expecting_main_setup_level=true
+    elif [[ $arg == --tau_excluded_main_setup ]]; then
+        expecting_excluded_main_setup=true
         shift || true
-    elif [[ $arg == --tau_main_setup_parse_level=* ]]; then
-        main_setup_level="${arg#*=}"
+    elif [[ $arg == --tau_excluded_main_setup=* ]]; then
+        excluded_main_setup="${arg#*=}"
         shift || true
     elif [[ $arg == --tau_parse_excluded_modules ]]; then
         expecting_parse_excluded_modules=true
@@ -335,16 +359,16 @@ if ! $show && ! $version && [[ -f ${output_file:-} && -w ${output_file} ]] &&
     exit 1
 fi
 
-if $expecting_main_setup_level; then
-    echo "WARNING: --tau_main_setup_parse_level needs a value; using ${main_setup_level}" >&2
+if $expecting_excluded_main_setup; then
+    echo "WARNING: --tau_excluded_main_setup needs a value; using ${excluded_main_setup}" >&2
 fi
 if $expecting_parse_excluded_modules; then
     echo "WARNING: --tau_parse_excluded_modules needs a value; using ${parse_excluded_modules}" >&2
 fi
-case ${main_setup_level} in
-    never | function | always) ;;
+case ${excluded_main_setup} in
+    none | routine | file) ;;
     *)
-        echo "ERROR: unknown value '${main_setup_level}' for --tau_main_setup_parse_level" >&2
+        echo "ERROR: unknown value '${excluded_main_setup}' for --tau_excluded_main_setup" >&2
         exit 1
         ;;
 esac
@@ -447,7 +471,7 @@ cmd=("${flang_exe}"
     ${args[@]+"${args[@]}"})
 echo "SALT_FORTRAN_CONFIG_FILE=\"${FORTRAN_CONFIG_FILE}\""
 echo "SALT_FORTRAN_SELECT_FILE=\"${select_file:-}\""
-echo "SALT_FORTRAN_MAIN_SETUP_PARSE_LEVEL=${main_setup_level}"
+echo "SALT_FORTRAN_EXCLUDED_MAIN_SETUP=${excluded_main_setup}"
 if $show; then
     echo "cmd: ${cmd[*]}"
     exit 0
@@ -457,7 +481,7 @@ fi
 function run_flang {
     echo "Running: ${cmd[*]}"
     SALT_FORTRAN_SELECT_FILE="${select_file:-}" SALT_FORTRAN_CONFIG_FILE="${FORTRAN_CONFIG_FILE}" \
-        SALT_FORTRAN_MAIN_SETUP_PARSE_LEVEL="${main_setup_level}" "${cmd[@]}"
+        SALT_FORTRAN_EXCLUDED_MAIN_SETUP="${excluded_main_setup}" "${cmd[@]}"
 }
 
 # Returns whether `content` matches regex `$1`, in the C locale: in a
@@ -468,14 +492,14 @@ function content_matches {
     [[ ${content} =~ $1 ]]
 }
 
-# At the `never` and `function` levels, copy a source that the file lists
+# Unless --tau_excluded_main_setup=file, copy a source that the file lists
 # exclude without a parse, unless it seems to define a module, whose
 # module files other sources need, or holds an INCLUDE line or an
 # `#include`, whose text can; with submodules-and-modules, also unless it
 # seems to define a submodule, whose module file only its child
 # submodules need. The plugin repeats the SIF warnings when Flang runs.
 sif_status=0
-if [[ -n ${select_file:-} && ${main_setup_level} != always ]]; then
+if [[ -n ${select_file:-} && ${excluded_main_setup} != file ]]; then
     sif_log="$("${_SCRIPT_DIR}/salt-selectfile" "${select_file}" "${input_file}" 2>&1)" ||
         sif_status=$?
 fi
@@ -503,9 +527,9 @@ if [[ ${sif_status} -eq 1 ]]; then
     kind=
     shopt -s nocasematch
     if content_matches "${program_re}"; then
-        echo "WARNING: ${input_file} seems to hold the main program, but the" >&2
-        echo "  selective instrumentation file lists exclude it, so main gets no setup" >&2
-        echo "  code; use --tau_main_setup_parse_level=always to add it" >&2
+        echo "WARNING: ${input_file} seems to contain the main program. The file lists" >&2
+        echo "  exclude this file, so the main program gets no setup code. To add the" >&2
+        echo "  setup code, use --tau_excluded_main_setup=file." >&2
     fi
     if content_matches "${module_re}" || content_matches "${include_re}"; then
         kind=module
@@ -523,7 +547,7 @@ if [[ ${sif_status} -eq 1 ]]; then
         can_fail="child submodules of its submodules can fail"
     fi
     if $parse; then
-        if [[ ${main_setup_level} == never ]]; then
+        if [[ ${excluded_main_setup} == none ]]; then
             echo "WARNING: parsing ${input_file}, which the selective instrumentation" >&2
             echo "  file lists exclude, for its module files" >&2
             echo "  (--tau_parse_excluded_modules=off skips the parse)" >&2
