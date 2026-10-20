@@ -2302,6 +2302,13 @@ foreach(lang IN LISTS _sif_langs)
 endforeach()
 set_property(TEST instrument_sif_file_exclude_nomain_c
   APPEND PROPERTY FAIL_REGULAR_EXPRESSION "seems to hold the main program")
+# A `main(` in a comment or a string literal is not a main program.
+foreach(lang c cpp)
+  add_sif_test_no_output(file_exclude_main_text_${lang} ${lang}
+    tests/sif_main_text.${lang} tests/sif/file_exclude_all.tau)
+  set_property(TEST instrument_sif_file_exclude_main_text_${lang}
+    APPEND PROPERTY FAIL_REGULAR_EXPRESSION "seems to hold the main program")
+endforeach()
 
 # At `never`, a main program that the routine lists leave out gets no
 # setup code, and saltfm does not warn about the include list; at

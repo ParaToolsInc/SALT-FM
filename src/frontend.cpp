@@ -14,18 +14,17 @@
 #include "clang/Basic/SourceManager.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendAction.h"
+#include "clang/Lex/Lexer.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include <algorithm>
 #include <cctype>
 #include <cstring>
-#include <fstream>
 #include <iostream>
 #include <cstdlib>
-#include <regex>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -196,17 +195,36 @@ char **addHeadersToCommand(int *argc, const char **argv)
 }
 
 // Warns that `path`, which the file lists exclude and SALT-FM copies without a parse, gets no
-// setup code when it seems to hold the main program
+// setup code when it seems to hold the main program: a `main` token right before a `(` token,
+// from Clang's raw lexer, which skips comments, keeps each string literal one token, does
+// no preprocessing, and does not fail on bad code
 static void warnIfExcludedMain(const std::string &path)
 {
-    std::ifstream file(path);
-    std::stringstream text;
-    text << file.rdbuf();
-    if (std::regex_search(text.str(), std::regex(R"(\bmain\s*\()")))
+    auto buffer = llvm::MemoryBuffer::getFile(path);
+    if (!buffer)
     {
-        llvm::errs() << "WARNING: " << path << " seems to hold the main program, but the\n"
-                     << "  selective instrumentation file lists exclude it, so main gets no setup\n"
-                     << "  code; use --tau_main_setup_parse_level=always to add it\n";
+        return;
+    }
+    LangOptions opts;
+    opts.CPlusPlus = true;
+    opts.LineComment = true;
+    llvm::StringRef text = (*buffer)->getBuffer();
+    Lexer lexer(SourceLocation(), opts, text.begin(), text.begin(), text.end());
+    Token tok;
+    bool after_main = false;
+    bool at_end = false;
+    while (!at_end)
+    {
+        // The last token comes with `true` when the file ends right after it
+        at_end = lexer.LexFromRawLexer(tok);
+        if (after_main && tok.is(tok::l_paren))
+        {
+            llvm::errs() << "WARNING: " << path << " seems to hold the main program, but the\n"
+                         << "  selective instrumentation file lists exclude it, so main gets no setup\n"
+                         << "  code; use --tau_main_setup_parse_level=always to add it\n";
+            return;
+        }
+        after_main = tok.is(tok::raw_identifier) && tok.getRawIdentifier() == "main";
     }
 }
 
