@@ -2898,7 +2898,8 @@ if(TEST_FORTRAN)
   _salt_add_flang_exe_test(saltfm_bare_name "USAGE: [^\n]*fparse-llvm"
     "command not found" ${_fx_dir}/nodriver/bash saltfm --help-fortran)
   set_tests_properties(saltfm_bare_name PROPERTIES
-    WORKING_DIRECTORY ${_fx_bin})
+    WORKING_DIRECTORY ${_fx_bin}
+    ENVIRONMENT "PATH=${_fx_dir}/nodriver")
 
   # A driver configure did not find is not recorded: no warning.
   _salt_add_flang_exe_test(fparse_flang_exe_no_record
