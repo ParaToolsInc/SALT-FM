@@ -362,16 +362,24 @@ output is still a copy, and at `never` SALT-FM warns about the parse.
 If Flang cannot parse the source, SALT-FM warns, copies it, and does
 not write its module files, so sources that use its modules can fail.
 A fixed-form `module` statement with no blank before the name, such as
-`MODULEFOO`, is not found; for such a source, use
+`MODULEFOO`, or with sequence numbers in columns 73-80, is not found;
+for such a source, use
 `--tau_main_setup_parse_level=always`, or do not exclude the file and
 leave out its routines with the routine exclude list instead.
 
-`--tau_parse_excluded_modules=off`,
-or `SALT_PARSE_EXCLUDED_MODULES=off`, skips this parse, with a warning
-that sources that use the modules can fail; use it when Flang cannot
-finish the parse of an excluded source, for example when it takes too
-long. The default is `on`. At `always`, SALT-FM parses all sources and
-this option has no effect.
+`--tau_parse_excluded_modules=<value>`, or
+`SALT_PARSE_EXCLUDED_MODULES`, selects this parse:
+
+- `modules-only` (default): parse the sources described above.
+- `submodules-and-modules`: also parse an excluded source that seems to
+  define a submodule. Only the submodule's own child submodules need
+  its module file, so use this value when another source holds such a
+  child.
+- `off`: parse no excluded source, with a warning that sources that use
+  its modules can fail; use it when Flang cannot finish the parse of an
+  excluded source, for example when it takes too long.
+
+At `always`, SALT-FM parses all sources and this option has no effect.
 
 ## Notes for package maintainers
 
