@@ -2218,6 +2218,36 @@ _salt_add_clang_error_test(parse_error_always_c parse_error_always.inst.c
   "lang:C" clang_error.c ARGS --tau_main_setup_parse_level=always
   --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau
   LOG "undeclared identifier 'undeclared_name'")
+# The `#line` lines of C and C++ output escape `\` and `"` in the file
+# name, in an instrumented source and in the copy of an excluded one.
+foreach(ext c cpp)
+  set(_compiler ${CMAKE_C_COMPILER})
+  if(ext STREQUAL "cpp")
+    set(_compiler ${CMAKE_CXX_COMPILER})
+  endif()
+  _salt_lang_to_label(${ext} _lang_label)
+  foreach(mode instrumented excluded)
+    set(_args "")
+    if(mode STREQUAL "excluded")
+      set(_args -DSIF=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau)
+    elseif(LLVM_VERSION_MAJOR LESS 23)
+      # Clang's tooling before LLVM 23 turns each `\` of a source path
+      # into `/`, so it cannot open the source
+      set(_args -DNO_BACKSLASH=ON)
+    endif()
+    add_test(NAME line_escape_${mode}_${ext}
+      COMMAND ${CMAKE_COMMAND}
+        -DSALTFM=${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+        -DCONFIG=${CMAKE_SOURCE_DIR}/tests/line_escape.yaml
+        -DCOMPILER=${_compiler} -DSRC=${CMAKE_SOURCE_DIR}/tests/line_escape.c
+        -DEXT=${ext} -DNAME=line_escape_${mode}_${ext} ${_args}
+        -P ${CMAKE_SOURCE_DIR}/tests/check_line_escape.cmake)
+    set_tests_properties(line_escape_${mode}_${ext} PROPERTIES
+      ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}"
+      LABELS "${_lang_label};phase:run")
+    _salt_in_test_output(instrument line_escape_${mode}_${ext})
+  endforeach()
+endforeach()
 if(TEST_FORTRAN)
   foreach(level never function)
     add_sif_test_no_output(parse_error_${level}_fortran fortran
@@ -3320,6 +3350,25 @@ if(TEST_FORTRAN)
     LOG "ERROR: Could not open input file")
   set_tests_properties(excluded_missing_input PROPERTIES REQUIRED_FILES ""
     ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}")
+  # Fortran output keeps the file name of its `#line` lines as written,
+  # in the copy of an excluded source and in an instrumented one (#97).
+  # Adds test fortran_names_<name>: tests/check_fortran_names.cmake on
+  # tests/fortran/line_escape.f90, with the -D options in ARGN.
+  function(_salt_add_fortran_names_test name)
+    add_test(NAME fortran_names_${name}
+      COMMAND ${CMAKE_COMMAND}
+        -DSALTFM=${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+        -DSRC=${CMAKE_SOURCE_DIR}/tests/fortran/line_escape.f90
+        -DNAME=fortran_names_${name} ${ARGN}
+        -P ${CMAKE_SOURCE_DIR}/tests/check_fortran_names.cmake)
+    set_tests_properties(fortran_names_${name} PROPERTIES
+      ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}"
+      LABELS "lang:Fortran;phase:check")
+    _salt_in_test_output(instrument fortran_names_${name})
+  endfunction()
+  _salt_add_fortran_names_test(line_instrumented -DMODE=line)
+  _salt_add_fortran_names_test(line_excluded -DMODE=line
+    -DSIF=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau)
   # A byte that is not valid in the locale's encoding, here Latin-1 in
   # UTF-8, does not hide the module.
   _salt_add_excluded_test(mod_latin1 excluded_mod_latin1.f90

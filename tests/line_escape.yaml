@@ -1,0 +1,14 @@
+# A configuration file whose code needs no TAU header and names no
+# timer, so that the output compiles alone and only its `#line` lines
+# name the source.
+instrumentation: TAU
+include:
+  - <stdio.h>
+main_setup_insert:
+  - "    (void)0;"
+main_insert:
+  - "    (void)0;"
+function_begin_insert:
+  - "    (void)0;"
+function_end_insert:
+  - "(void)0;"

@@ -330,8 +330,9 @@ When its file lists exclude the source file, SALT-FM does not parse or
 instrument it, by default: it writes the source to the output file
 after a `#line 1` line that names it, so TAU's compiler wrappers compile
 it without timers, and compiler messages, `__FILE__`, and debug
-information name the source. A parse error in an excluded source does
-not stop `saltfm`, so excluding a file works around a source that
+information name the source. In C and C++, that name escapes `\` and
+`"`; in Fortran, it is as written. A parse error in an excluded source
+does not stop `saltfm`, so excluding a file works around a source that
 SALT-FM cannot parse. A main program in such a source gets no setup
 code, so a program run without MPI or `tau_exec` writes
 `profile.-1.0.0`. SALT-FM warns when an excluded source seems to hold
