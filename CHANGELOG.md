@@ -202,17 +202,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   separators, as under MSYS
   ([#88](https://github.com/ParaToolsInc/SALT-FM/issues/88)).
 - In C and C++ output, the file name of the `#line` lines escapes `\`
-  and `"`, so that compiler messages, `__FILE__`, and debug information
-  name a source whose path holds them. Before, a `"` broke the `#line`
-  line, and the compiler read a `\` as the start of an escape. Fortran
-  output keeps the name as written, since Flang and ifx read it that
-  way; gfortran reads escapes, and Flang rejects a `"`
+  and `"`, and writes a line break as `\n`, so that compiler messages,
+  `__FILE__`, and debug information name a source whose path holds
+  them. Before, a `"` broke the `#line` line, and the compiler read a
+  `\` as the start of an escape. Fortran output keeps the name as
+  written, since Flang and ifx read it that way; gfortran reads
+  escapes, and Flang rejects a `"`
   ([#88](https://github.com/ParaToolsInc/SALT-FM/issues/88),
   [#97](https://github.com/ParaToolsInc/SALT-FM/issues/97)).
 - `${full_timer_name}` is written for its string literal. In C and C++,
   a `\` comes before each `\` and `"` of the file path and the
-  signature, such as `operator""_km` or `S<'\n'>`. In Fortran, each `"`
-  is doubled, and the split name never breaks the pair across lines.
+  signature, such as `operator""_km` or `S<'\n'>`, and a line break is
+  written as `\n`. In Fortran, each `"` is doubled, and the split name
+  never breaks the pair across lines.
   Before, such a path or signature broke the inserted code or changed
   the timer name, in Fortran a `$&` or `$1` in the path was replaced as
   a regex format escape, and in C and C++ a `${full_timer_name}` in

@@ -165,7 +165,7 @@ static void append_main_code(ryml::ConstNodeRef lines, inst_loc *loc, std::strin
     {
         std::stringstream ss;
         ss << child.val();
-        code += ReplacePhrase(ss.str(), "${full_timer_name}", escapeCString(loc->full_timer_name)) + "\n";
+        code += ReplacePhrase(ss.str(), "${full_timer_name}", Lexer::Stringify(loc->full_timer_name)) + "\n";
     }
 }
 
@@ -207,7 +207,7 @@ void make_begin_func_code(inst_loc *loc, std::string &code, ryml::Tree yaml_tree
                 std::stringstream ss;
                 ss << child.val();
                 std::string updated_str;
-                updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", escapeCString(loc->full_timer_name));
+                updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", Lexer::Stringify(loc->full_timer_name));
                 code += updated_str + "\n";
             }
         }
@@ -235,7 +235,7 @@ void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, rym
                 std::stringstream ss;
                 ss << child.val();
                 std::string updated_str;
-                updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", escapeCString(loc->full_timer_name));
+                updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", Lexer::Stringify(loc->full_timer_name));
                 code += "\t" + updated_str + "\n";
             }
             return;
@@ -255,7 +255,7 @@ void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, rym
                 std::stringstream ss;
                 ss << child.val();
                 std::string updated_str;
-                updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", escapeCString(loc->full_timer_name));
+                updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", Lexer::Stringify(loc->full_timer_name));
                 code += "\t{" + updated_str + " ";
             }
             code += "return;}\n";
@@ -277,7 +277,7 @@ void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, rym
                     std::stringstream ss;
                     ss << child.val();
                     std::string updated_str;
-                    updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", escapeCString(loc->full_timer_name));
+                    updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", Lexer::Stringify(loc->full_timer_name));
                     code += " " + updated_str + " ";
                 }
                 code += "return; }\n";
@@ -300,7 +300,7 @@ void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, rym
                     std::stringstream ss;
                     ss << child.val();
                     std::string updated_str;
-                    updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", escapeCString(loc->full_timer_name));
+                    updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", Lexer::Stringify(loc->full_timer_name));
                     code += " " + updated_str + " ";
                 }
                 code += "return inst_ret_val; }\n";
@@ -322,7 +322,7 @@ void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, rym
                     std::stringstream ss;
                     ss << child.val();
                     std::string updated_str;
-                    updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", escapeCString(loc->full_timer_name));
+                    updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", Lexer::Stringify(loc->full_timer_name));
                     code += " " + updated_str + " ";
                 }
                 code += "return inst_ret_val; }\n";
@@ -999,7 +999,7 @@ void instrumentor::instrument_file(std::ifstream &og_file, std::ofstream &inst_f
         inst_file << "#include " << child.val() << "\n";
     }
 
-    inst_file << "#line 1 \"" << escapeCString(filename) << "\"\n";
+    inst_file << "#line 1 \"" << Lexer::Stringify(filename) << "\"\n";
 
     while (getline(og_file, line))
     {
@@ -1191,7 +1191,7 @@ void instrumentor::instrument()
 
         if (skipped && inst_locations.empty())
         {
-            if (!copySource(fname, newname, true))
+            if (!copySource(fname, newname, Lexer::Stringify(fname)))
             {
                 std::exit(EXIT_FAILURE);
             }
