@@ -1504,8 +1504,12 @@ function(add_sif_test_no_output test_name lang src sif)
     FIXTURES_SETUP ${name}_output
     LABELS "${_lang_label};phase:setup;sif"
   )
+  # A pass pattern hides the exit status, so a status other than 0 is
+  # printed and fails the step
   add_test(NAME instrument_${name}
-    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+    COMMAND sh -c "\"$0\" \"$@\"; rc=$?
+      [ $rc -eq 0 ] || echo \"saltfm exited with status $rc\"; exit $rc"
+            ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
             ${ARG_ARGS}
             --tau_select_file=${CMAKE_SOURCE_DIR}/${sif}
             --tau_output=${out_file}
@@ -1519,7 +1523,8 @@ function(add_sif_test_no_output test_name lang src sif)
     FIXTURES_SETUP ${name}_inst
     LABELS "${_lang_label};phase:instrument;sif"
   )
-  _sif_set_warning_checks(instrument_${name} "${ARG_WARNINGS}" "Instrumentation:")
+  _sif_set_warning_checks(instrument_${name} "${ARG_WARNINGS}"
+    "Instrumentation:;saltfm exited with status")
   add_test(NAME check_${name}_copy
     COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR}/${src} -DOUT=${out_file}
             -P ${CMAKE_SOURCE_DIR}/tests/check_copy.cmake
