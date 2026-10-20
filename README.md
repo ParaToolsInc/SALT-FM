@@ -280,11 +280,17 @@ as `config_files/tau_config.yaml` does.
   the declarations that the main program's timer needs in
   `program_setup_insert`, as `tau_config.yaml` does.
 
+If the configuration file is missing, cannot be read, does not parse,
+or lacks a key the run needs, `saltfm` stops with an error that names
+the key or the parse error position, and writes no output.
+
 ### Selective instrumentation
 
 `saltfm --tau_select_file=<file>` reads a TAU selective instrumentation
 file; TAU's compiler wrappers pass the file given with
 `-optTauSelectFile=<file>`.
+If `saltfm` cannot read the file, it stops with an error and writes no
+output.
 SALT-FM removes the whitespace at the two ends of each line, including
 the carriage return of a CRLF line ending, and has no line length limit.
 It matches the entries of the lists as TAU does, in C, C++, and Fortran:

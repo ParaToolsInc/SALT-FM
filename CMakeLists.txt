@@ -418,6 +418,7 @@ target_link_libraries(SALT_LLVM_TOOLING INTERFACE ${CLANG_LIBS} ${LLVM_LIBS})
 # Explicitly listing source files is safer than globbing them--you might accidentally put
 # an experiment or back up file in include or src and not realize it.
 set(SALT_HEADER_FILES
+  config_file.hpp
   dprint.hpp
   ryml_all.hpp
   selectfile.hpp
@@ -447,17 +448,20 @@ set(CPARSE_LLVM_SRCS
 
 list(TRANSFORM CPARSE_LLVM_SRCS PREPEND "${CMAKE_SOURCE_DIR}/src/")
 
-# selectfile.cpp, compiled once for cparse-llvm, the Flang plugin (thus
-# position independent), salt-selectfile, and sif_check
-add_library(salt_selectfile_obj OBJECT src/selectfile.cpp)
-target_include_directories(salt_selectfile_obj PRIVATE
-  ${CMAKE_SOURCE_DIR}/include ${LLVM_INCLUDE_DIRS})
-target_compile_definitions(salt_selectfile_obj PRIVATE ${LLVM_DEFINITIONS_LIST})
-target_compile_features(salt_selectfile_obj PRIVATE cxx_std_17)
-target_compile_options(salt_selectfile_obj PRIVATE
-  ${USE_RTTI} -Wall -Wpedantic -Wno-unused-variable ${SALT_WERROR})
-set_target_properties(salt_selectfile_obj PROPERTIES
-  POSITION_INDEPENDENT_CODE ON)
+# selectfile.cpp and config_file.cpp, compiled once for cparse-llvm and
+# the Flang plugin (thus position independent), and selectfile.cpp for
+# salt-selectfile and sif_check too
+foreach(name selectfile config_file)
+  add_library(salt_${name}_obj OBJECT src/${name}.cpp)
+  target_include_directories(salt_${name}_obj PRIVATE
+    ${CMAKE_SOURCE_DIR}/include ${LLVM_INCLUDE_DIRS})
+  target_compile_definitions(salt_${name}_obj PRIVATE ${LLVM_DEFINITIONS_LIST})
+  target_compile_features(salt_${name}_obj PRIVATE cxx_std_17)
+  target_compile_options(salt_${name}_obj PRIVATE
+    ${USE_RTTI} -Wall -Wpedantic -Wno-unused-variable ${SALT_WERROR})
+  set_target_properties(salt_${name}_obj PROPERTIES
+    POSITION_INDEPENDENT_CODE ON)
+endforeach()
 
 #---------------------
 # Add the main targets
@@ -478,7 +482,7 @@ target_include_directories(cparse-llvm PUBLIC
 target_compile_features(cparse-llvm PUBLIC cxx_std_17)
 # Inherit definitions, compile features, etc.
 target_link_libraries(cparse-llvm PUBLIC SALT_LLVM_TOOLING)
-target_link_libraries(cparse-llvm PRIVATE salt_selectfile_obj)
+target_link_libraries(cparse-llvm PRIVATE salt_selectfile_obj salt_config_file_obj)
 # You can try adding -static. The --as-needed/--no-allow-shlib-undefined/
 # --no-undefined flags are GNU ld extensions; Apple ld doesn't recognize
 # them, so gate on linker family.
@@ -606,6 +610,7 @@ if(MLIR_FOUND AND Flang_FOUND)
   endif()
 
   set(SALT_FLANG_PLUGIN_HEADER_FILES
+    config_file.hpp
     dprint.hpp
     selectfile.hpp
     flang_source_location.hpp
@@ -633,7 +638,8 @@ if(MLIR_FOUND AND Flang_FOUND)
     "${CMAKE_SOURCE_DIR}/include" "${CMAKE_BINARY_DIR}/include")
   target_compile_features(salt-flang-plugin PUBLIC cxx_std_17)
   target_link_libraries(salt-flang-plugin PUBLIC SALT_FLANG_FRONTEND)
-  target_link_libraries(salt-flang-plugin PRIVATE salt_selectfile_obj)
+  target_link_libraries(salt-flang-plugin PRIVATE salt_selectfile_obj
+    salt_config_file_obj)
   # Apple ld uses `-undefined dynamic_lookup`; GNU ld uses --as-needed and
   # rejects -undefined dynamic_lookup. Pick per linker.
   target_link_options(salt-flang-plugin PUBLIC
@@ -1210,8 +1216,9 @@ endif()
 # makes the `dir` ones empty directories that saltfm must keep, copies
 # the bad and good sources and a config and a selective instrumentation
 # file to `self` ones that saltfm must refuse and keep when they are
-# also the output, and makes read-only `ro` outputs that saltfm must
-# not remove and then fail to open for writing.
+# also the output, makes read-only `ro` outputs that saltfm must not
+# remove and then fail to open for writing, and makes a configuration
+# file that saltfm cannot read.
 set(_tests ${CMAKE_SOURCE_DIR}/tests)
 add_test(NAME make_clang_error_outputs
   COMMAND sh -c "rm -rf clang_error_new.inst.c fabricate_on.inst.cpp &&
@@ -1243,6 +1250,9 @@ add_test(NAME make_clang_error_outputs
     cp ${_tests}/fortran/hello.f90 fortran_select_value_self.f90 &&
     cp ${_tests}/fortran/hello.f90 fortran_dash_x_name_self.f90 &&
     cp ${_tests}/fortran/hello.f90 fortran_other-x.f95 &&
+    rm -f config_unreadable.yaml &&
+    cp ${_tests}/setup_timer_name.yaml config_unreadable.yaml &&
+    chmod a-r config_unreadable.yaml &&
     echo stale > fortran_forwarded_value")
 set_tests_properties(make_clang_error_outputs PROPERTIES
   FIXTURES_SETUP clang_error_outputs
@@ -1377,6 +1387,176 @@ _salt_add_clang_error_test(allow_parse_errors_missing_input
   allow_parse_errors_missing_input.inst.c "lang:C" no_such_source.c
   ARGS --tau_allow_parse_errors LOG "ERROR: Could not open input file")
 set_property(TEST allow_parse_errors_missing_input PROPERTY REQUIRED_FILES "")
+
+# A bad configuration file stops saltfm with an error that names the file
+# and the problem, and leaves no output, in Debug and Release builds
+# (#51, #54, #83, #90). config_errors/no_<key>.yaml in the build
+# directory is the TAU configuration file without `key` and its entries.
+set(_config_errors ${CMAKE_BINARY_DIR}/config_errors)
+set(_tau_config_path ${CMAKE_SOURCE_DIR}/config_files/tau_config.yaml)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_tau_config_path})
+file(READ ${_tau_config_path} _tau_config)
+foreach(key instrumentation include main_insert main_insert_scope
+    function_begin_insert function_begin_insert_scope function_end_insert)
+  string(REGEX REPLACE "\n${key}:[^\n]*(\n  [^\n]*)*" "" _config "${_tau_config}")
+  file(WRITE ${_config_errors}/no_${key}.yaml "${_config}")
+endforeach()
+string(REGEX REPLACE "\nFortran:.*" "\n" _config "${_tau_config}")
+file(WRITE ${_config_errors}/no_Fortran.yaml "${_config}")
+file(WRITE ${_config_errors}/scalar_Fortran.yaml "${_config}Fortran: x\n")
+foreach(key program_insert procedure_begin_insert procedure_end_insert)
+  string(REGEX REPLACE "\n  ${key}:[^\n]*(\n    [^\n]*)*" "" _config "${_tau_config}")
+  file(WRITE ${_config_errors}/no_${key}.yaml "${_config}")
+endforeach()
+# config_errors/cxx_api.yaml has only the keys that --tau_use_cxx_api
+# uses, and fortran.yaml only `Fortran`.
+set(_config "${_tau_config}")
+foreach(key main_insert function_begin_insert function_end_insert)
+  string(REGEX REPLACE "\n${key}:[^\n]*(\n  [^\n]*)*" "" _config "${_config}")
+endforeach()
+file(WRITE ${_config_errors}/cxx_api.yaml "${_config}")
+string(REGEX MATCH "Fortran:.*" _config "${_tau_config}")
+file(WRITE ${_config_errors}/fortran.yaml "${_config}")
+# config_errors/<name>.yaml is the TAU configuration file with one value
+# changed: from `_from_<name>` to `_to_<name>`.
+set(_include "include:\n  - <Profile/Profiler.h>")
+set(_from_scalar_include "${_include}")
+set(_to_scalar_include "include: <Profile/Profiler.h>")
+set(_from_empty_include "${_include}")
+set(_to_empty_include "include: []")
+set(_from_null_include "${_include}")
+set(_to_null_include "include:")
+set(_from_alias_include "${_include}")
+set(_to_alias_include "headers: &x\n  - <Profile/Profiler.h>\ninclude: *x")
+set(_from_undefined_alias_include "${_include}")
+set(_to_undefined_alias_include "include: *nope")
+set(_from_list_instrumentation "instrumentation: TAU")
+set(_to_list_instrumentation "instrumentation: [TAU]")
+set(_from_map_function_end_insert "\n  - \"TAU_PROFILE_STOP")
+set(_to_map_function_end_insert "\n  - stop: \"TAU_PROFILE_STOP")
+set(_from_scalar_procedure_end_insert "procedure_end_insert:\n    - ")
+set(_to_scalar_procedure_end_insert "procedure_end_insert: ")
+set(_from_map_program_setup_insert "program_setup_insert:\n    - ")
+set(_to_map_program_setup_insert "program_setup_insert:\n    - setup: ")
+foreach(name scalar_include empty_include null_include alias_include
+    undefined_alias_include list_instrumentation map_function_end_insert
+    scalar_procedure_end_insert map_program_setup_insert)
+  string(REPLACE "${_from_${name}}" "${_to_${name}}" _config "${_tau_config}")
+  file(WRITE ${_config_errors}/${name}.yaml "${_config}")
+endforeach()
+# A configuration file that does not parse: line 4 is a key in a list.
+set(_config_parse_error ${_config_errors}/parse_error.yaml)
+file(WRITE ${_config_parse_error}
+  "instrumentation: TAU\ninclude:\n  - <Profile/Profiler.h>\n  main_insert:\n    - x\n")
+# Adds config_error_<name>: saltfm on `src` (relative to tests/) with
+# --config_file=`config` and the other ARGN must fail with `log` and
+# leave no output.
+function(_salt_add_config_error_test name labels src config log)
+  _salt_add_clang_error_test(config_error_${name} config_error_${name}.out
+    "${labels}" ${src} ARGS --config_file=${config} ${ARGN} LOG "${log}")
+endfunction()
+# Adds the config_error_<name>_<lang> tests for a missing, an unreadable,
+# and an unparsable configuration file, and one with an undefined YAML
+# alias, and config_env_<lang>,
+# config_env_option_<lang>, and config_env_empty_<lang>: without
+# --config_file, SALT_CONFIG_FILE selects the file unless it is empty, and
+# --config_file has priority over it.
+function(_salt_add_config_read_error_tests lang labels src)
+  set(missing ${_config_errors}/no_such_file.yaml)
+  _salt_add_config_error_test(missing_${lang} "${labels}" ${src}
+    ${missing} "ERROR: Could not read configuration file ${missing}")
+  _salt_add_clang_error_test(config_env_${lang} config_env_${lang}.out
+    "${labels}" ${src} LOG "ERROR: Could not read configuration file ${missing}")
+  _salt_add_clang_error_test(config_env_option_${lang}
+    config_env_option_${lang}.out "${labels}" ${src} EXIT_ZERO
+    CHECK "-s config_env_option_${lang}.out"
+    ARGS --config_file=${_tau_config_path})
+  set_property(TEST config_env_${lang} config_env_option_${lang} APPEND
+    PROPERTY ENVIRONMENT "SALT_CONFIG_FILE=${missing}")
+  _salt_add_clang_error_test(config_env_empty_${lang}
+    config_env_empty_${lang}.out "${labels}" ${src} EXIT_ZERO
+    CHECK "-s config_env_empty_${lang}.out")
+  set_property(TEST config_env_empty_${lang} APPEND
+    PROPERTY ENVIRONMENT "SALT_CONFIG_FILE=")
+  # Root can read the file.
+  _salt_add_config_error_test(unreadable_${lang} "${labels}" ${src}
+    config_unreadable.yaml
+    "ERROR: Could not read configuration file config_unreadable.yaml" NOT_ROOT)
+  _salt_add_config_error_test(parse_${lang} "${labels}" ${src}
+    ${_config_parse_error} "ERROR: ${_config_parse_error}:4:3: parse error")
+  set(alias ${_config_errors}/undefined_alias_include.yaml)
+  _salt_add_config_error_test(undefined_alias_${lang} "${labels}" ${src}
+    ${alias} "ERROR: ${alias}: anchor not found: 'nope'")
+endfunction()
+_salt_add_config_read_error_tests(c "lang:C" hello.c)
+foreach(key instrumentation include main_insert function_begin_insert
+    function_end_insert)
+  _salt_add_config_error_test(no_${key}_c "lang:C" hello.c
+    ${_config_errors}/no_${key}.yaml
+    "ERROR: '${key}' key not found in the configuration file")
+endforeach()
+# --tau_use_cxx_api uses the `_scope` keys.
+foreach(key main_insert_scope function_begin_insert_scope)
+  _salt_add_config_error_test(no_${key}_cxx "lang:CXX" c11test.cpp
+    ${_config_errors}/no_${key}.yaml
+    "ERROR: '${key}' key not found in the configuration file"
+    --tau_use_cxx_api)
+endforeach()
+# A value that SALT-FM cannot use is an error too.
+set(_in_config "in the configuration file ${_config_errors}")
+set(_list "must be a list of strings")
+_salt_add_config_error_test(scalar_include_c "lang:C" hello.c
+  ${_config_errors}/scalar_include.yaml
+  "ERROR: 'include' ${_in_config}/scalar_include.yaml ${_list}")
+_salt_add_config_error_test(map_function_end_insert_c "lang:C" hello.c
+  ${_config_errors}/map_function_end_insert.yaml
+  "ERROR: 'function_end_insert' ${_in_config}/map_function_end_insert.yaml ${_list}")
+_salt_add_config_error_test(list_instrumentation_c "lang:C" hello.c
+  ${_config_errors}/list_instrumentation.yaml
+  "ERROR: 'instrumentation' ${_in_config}/list_instrumentation.yaml must be a string")
+# A run needs only the keys that it uses: an empty list is valid, and a C
+# run needs no `_scope` keys without --tau_use_cxx_api, no
+# main_setup_insert, and no `Fortran` section, which the NVTX and ROCTX
+# configuration files lack (main_excluded_<cfg>_c covers perfstubs and
+# ITT).
+foreach(name empty_include null_include)
+  _salt_add_clang_error_test(config_ok_${name}_c config_ok_${name}_c.out
+    "lang:C" hello.c EXIT_ZERO CHECK "-s config_ok_${name}_c.out"
+    ARGS --config_file=${_config_errors}/${name}.yaml LOG "Instrumentation: TAU")
+endforeach()
+# A YAML alias gives the value of its anchor.
+_salt_add_clang_error_test(config_ok_alias_include_c
+  config_ok_alias_include_c.out "lang:C" hello.c EXIT_ZERO
+  CHECK "-s config_ok_alias_include_c.out"
+  ARGS --config_file=${_config_errors}/alias_include.yaml
+  OUT "#include <Profile/Profiler.h>")
+# --tau_use_cxx_api needs no main_insert, function_begin_insert, or
+# function_end_insert.
+_salt_add_clang_error_test(config_ok_cxx_api_cxx config_ok_cxx_api_cxx.out
+  "lang:CXX" c11test.cpp EXIT_ZERO CHECK "-s config_ok_cxx_api_cxx.out"
+  ARGS --config_file=${_config_errors}/cxx_api.yaml --tau_use_cxx_api
+  OUT "TAU_PROFILE(")
+# A selective instrumentation file that cannot be read stops saltfm too.
+set(_no_such_sif ${CMAKE_SOURCE_DIR}/tests/sif/no_such_file.tau)
+foreach(lang c cxx)
+  set(_src hello.c)
+  set(_label C)
+  if(lang STREQUAL "cxx")
+    set(_src c11test.cpp)
+    set(_label CXX)
+  endif()
+  _salt_add_clang_error_test(clang_sif_unreadable_${lang}
+    clang_sif_unreadable_${lang}.out "lang:${_label}" ${_src}
+    ARGS --tau_select_file=${_no_such_sif}
+    LOG "ERROR: Cannot open selective instrumentation file: ${_no_such_sif}")
+endforeach()
+foreach(cfg nvtx roctx)
+  string(TOUPPER ${cfg} _name)
+  _salt_add_clang_error_test(config_ok_${cfg}_c config_ok_${cfg}_c.out
+    "lang:C" hello.c EXIT_ZERO CHECK "-s config_ok_${cfg}_c.out"
+    ARGS --config_file=${CMAKE_SOURCE_DIR}/config_files/${cfg}_config.yaml
+    LOG "Instrumentation: ${_name}")
+endforeach()
 
 # Selective Instrumentation File (SIF) tests.
 #
@@ -1691,6 +1871,14 @@ foreach(lang c cpp)
 endforeach()
 add_sif_test_no_output(file_exclude_nomain_c
   c tests/sif_nomain.c tests/sif/file_exclude_nomain_c.tau)
+# saltfm copies a source that the file lists exclude without reading the
+# configuration file, even when it parses the source for main's setup
+# code.
+foreach(level routine file)
+  add_sif_test_no_output(bad_config_${level}_c c tests/sif_nomain.c
+    tests/sif/file_exclude_nomain_c.tau
+    ARGS --tau_excluded_main_setup=${level} --config_file=${_config_parse_error})
+endforeach()
 # An excluded empty source gets an empty copy, not a write error.
 add_sif_test_no_output(file_exclude_empty_c c tests/sif_empty.c tests/sif/file_exclude_empty_c.tau)
 
@@ -3511,19 +3699,23 @@ if(TEST_FORTRAN)
     ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}")
   # When salt-selectfile cannot read the selective instrumentation file
   # (status 2), fparse-llvm gives no warning and runs Flang, and the
-  # plugin reports the error.
-  add_test(NAME fparse_sif_unreadable
-    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
-            --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/no_such_file.tau
-            --tau_output=sif_unreadable.inst.F90
-            ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+  # plugin reports the error and fails.
+  _salt_add_clang_error_test(fparse_sif_unreadable sif_unreadable.inst.F90
+    "lang:Fortran" fortran/hello.f90
+    ARGS --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/no_such_file.tau
+    LOG "Running:" "ERROR: Unable to read selective instrumentation file")
   set_tests_properties(fparse_sif_unreadable PROPERTIES
-    PASS_REGULAR_EXPRESSION
-      "Running: .*ERROR: Unable to read selective instrumentation file"
     FAIL_REGULAR_EXPRESSION "salt-selectfile failed"
-    ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
-    LABELS "lang:Fortran;phase:instrument")
-  _salt_in_test_output(instrument fparse_sif_unreadable)
+    ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}")
+  # The plugin copies a source that the file lists exclude without reading
+  # the configuration file, also when Flang parses it for its module files
+  # or main program.
+  _salt_add_excluded_test(mod_bad_config excluded_mod.f90 MOD excluded_mod
+    ARGS --config_file=${_config_parse_error}
+    NOT_LOG "${_excluded_flang_error_text}")
+  add_sif_test_no_output(bad_config_file_fortran fortran
+    tests/fortran/excluded_mod.f90 tests/sif/file_exclude_all.tau
+    ARGS --tau_excluded_main_setup=file --config_file=${_config_parse_error})
   # Fortran output keeps the file name of its `#line` lines as written,
   # in the copy of an excluded source and in an instrumented one (#97).
   # Adds test fortran_names_<name>: tests/check_fortran_names.cmake on
@@ -3817,6 +4009,29 @@ if(TEST_FORTRAN)
     DEFAULT_OUTPUT COPY_OF fortran/hello.f90
     ARGS --tau_output=fortran_dash_x_name_self.f90
     --flang_exe=/nonexistent/flang fortran_other-x.f95)
+  _salt_add_config_read_error_tests(fortran "lang:Fortran" fortran/hello.f90)
+  _salt_add_config_error_test(no_Fortran_fortran "lang:Fortran"
+    fortran/hello.f90 ${_config_errors}/no_Fortran.yaml
+    "ERROR: 'Fortran' key not found ${_in_config}/no_Fortran.yaml")
+  _salt_add_config_error_test(scalar_Fortran_fortran "lang:Fortran"
+    fortran/hello.f90 ${_config_errors}/scalar_Fortran.yaml
+    "ERROR: 'Fortran' ${_in_config}/scalar_Fortran.yaml must be a map")
+  foreach(key program_insert procedure_begin_insert procedure_end_insert)
+    _salt_add_config_error_test(no_${key}_fortran "lang:Fortran"
+      fortran/hello.f90 ${_config_errors}/no_${key}.yaml
+      "ERROR: '${key}' key not found under 'Fortran' ${_in_config}/no_${key}.yaml")
+  endforeach()
+  foreach(name scalar_procedure_end_insert map_program_setup_insert)
+    string(REGEX MATCH "^[a-z]+_(.*)" _ ${name})
+    _salt_add_config_error_test(${name}_fortran "lang:Fortran"
+      fortran/hello.f90 ${_config_errors}/${name}.yaml
+      "ERROR: '${CMAKE_MATCH_1}' under 'Fortran' ${_in_config}/${name}.yaml ${_list}")
+  endforeach()
+  # A Fortran run needs no top-level C and C++ keys.
+  _salt_add_clang_error_test(config_ok_fortran config_ok_fortran.out
+    "lang:Fortran" fortran/hello.f90 EXIT_ZERO CHECK "-s config_ok_fortran.out"
+    ARGS --config_file=${_config_errors}/fortran.yaml
+    OUT "call TAU_PROFILE_START(tauProfileTimer)")
 
   set(SALT_FORTRAN_COMPILERS_TO_TEST gfortran flang-new)
 

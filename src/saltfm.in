@@ -52,7 +52,7 @@ Generic SALT-FM Options:
 
 TAU instrumentor options:
 
-  --config_file=<filename>      - Specify path to SALT-FM configuration YAML file
+  --config_file=<filename>      - Specify path to SALT-FM configuration YAML file (default: \$SALT_CONFIG_FILE, else the installed config.yaml)
   --flang_exe=<path>            - Flang driver for Fortran (default: \$SALT_FLANG_EXE, else the one SALT-FM was built with)
   --tau_allow_parse_errors      - C and C++ only: instrument the partial parse tree that Clang builds after errors (default: \$SALT_ALLOW_PARSE_ERRORS, else false)
   --tau_fabricate_unknown_types - Fabricate declarations for unknown qualified names (default: false)

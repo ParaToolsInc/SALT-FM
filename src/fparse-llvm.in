@@ -39,7 +39,8 @@ readonly _SCRIPT_DIR
 readonly _SALT_INC_DIR="${_SCRIPT_DIR}/../@SALT_INC_DIR@"
 
 SALT_PLUGIN_SO="${_SCRIPT_DIR}/../@CMAKE_INSTALL_LIBDIR@/${_SALTFM_PLUGIN_SO}"
-FORTRAN_CONFIG_FILE="${_SCRIPT_DIR}/../@CMAKE_INSTALL_DATADIR@/@CMAKE_PROJECT_NAME@/config_files/config.yaml"
+# --config_file, then SALT_CONFIG_FILE, then the installed one
+FORTRAN_CONFIG_FILE="${SALT_CONFIG_FILE:-${_SCRIPT_DIR}/../@CMAKE_INSTALL_DATADIR@/@CMAKE_PROJECT_NAME@/config_files/config.yaml}"
 
 read -r -d '' _USAGE <<EOF || true
 OVERVIEW: Tool for adding TAU instrumentation to source files.
@@ -56,7 +57,7 @@ Generic Options:
 
 TAU instrumentor options:
 
-  --config_file=<filename>     - Specify path to SALT-FM configuration YAML file
+  --config_file=<filename>     - Specify path to SALT-FM configuration YAML file (default: \$SALT_CONFIG_FILE, else the installed config.yaml)
   --flang_exe=<path>           - Flang driver to run (default: \$SALT_FLANG_EXE, else the one SALT-FM was built with)
   --tau_excluded_main_setup=<none|routine|file>
                                - Selects which excluded main programs get setup code.

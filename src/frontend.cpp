@@ -69,7 +69,7 @@ std::string getExecutablePath() {
 
 std::string getEnvCfgFile() {
     char *val = getenv("SALT_CONFIG_FILE");
-    if (val == NULL) {
+    if (val == NULL || *val == '\0') {
         std::string execPath = getExecutablePath();
         return execPath + "/" + SALT_DEFAULT_CONFIG_FILE;
     } else {
@@ -78,7 +78,9 @@ std::string getEnvCfgFile() {
 }
 
 
-llvm::cl::opt<std::string> configfile("config_file", llvm::cl::desc("Specify path to SALT configuration YAML file"),
+llvm::cl::opt<std::string> configfile("config_file",
+                                      llvm::cl::desc("Specify path to SALT configuration YAML file (default: "
+                                                     "$SALT_CONFIG_FILE, else the installed config.yaml)"),
                                       llvm::cl::value_desc("filename"), llvm::cl::init(getEnvCfgFile()),
                                       llvm::cl::cat(MyToolCategory));
 
@@ -299,9 +301,10 @@ int main(int argc, const char **argv)
             return EXIT_FAILURE;
         }
     }
-    if (!selectfile.empty())
+    // processInstrumentationRequests() reports a file that it cannot read
+    if (!selectfile.empty() && !processInstrumentationRequests(selectfile.c_str()))
     {
-        processInstrumentationRequests(selectfile.c_str());
+        return EXIT_FAILURE;
     }
 
     findFiles(OptionsParser.getSourcePathList()); //Locate source files and mark for instrumentation/skipping

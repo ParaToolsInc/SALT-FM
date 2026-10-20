@@ -30,11 +30,9 @@ limitations under the License.
 #include <filesystem>
 
 
-#define RYML_SINGLE_HDR_DEFINE_NOW
-#define RYML_SHARED
-
 #include <dprint.hpp>
 #include <ryml_all.hpp>
+#include "config_file.hpp"
 
 // On macOS, ryml_all.hpp transitively includes <sys/param.h>, which
 // defines MAX(a,b) and MIN(a,b) as function-like macros.  Those collide
@@ -897,85 +895,51 @@ namespace salt::fortran {
             return level == "file" ? ExcludedMainSetup::file : ExcludedMainSetup::routine;
         }
 
-        [[nodiscard]] static ryml::Tree getConfigYamlTree(const std::string &configPath) {
-            std::ifstream inputStream{configPath};
-            if (!inputStream) {
-                llvm::errs() << "ERROR: Could not open configuration file " << configPath << "\n"
-                        << "Set $" SALT_FORTRAN_CONFIG_FILE_VAR " to path to desired configuration file.\n";
-                std::exit(-3);
+        // The code lines of `key` under the "Fortran" node of the configuration
+        // file `configPath`, one per line. Exits with an error when the key is
+        // missing, unless `optional`, or is not a list of strings; an empty one
+        // gives no lines.
+        [[nodiscard]] static std::string getCodeLines(const ryml::ConstNodeRef fortranNode, const char *key,
+                                                      const std::string &configPath, const bool optional = false) {
+            const ryml::ConstNodeRef node{check_config_key(fortranNode, key, configPath, SALT_FORTRAN_KEY, optional)};
+            if (node.invalid()) {
+                return "";
             }
-            std::stringstream configStream;
-            configStream << inputStream.rdbuf();
-            return ryml::parse_in_arena(ryml::to_csubstr(configStream.str()));
+            std::stringstream ss;
+            for (const ryml::ConstNodeRef child: node.children()) {
+                ss << child.val() << "\n";
+            }
+            return ss.str();
         }
 
-        [[nodiscard]] static InstrumentationMap getInstrumentationMap(const ryml::Tree &tree) {
+        [[nodiscard]] static InstrumentationMap getInstrumentationMap(const std::string &configPath) {
             InstrumentationMap map;
-            std::stringstream ss;
+            const ryml::Tree tree{read_config_file(configPath)};
 
             // Access the "Fortran" node
-            ryml::ConstNodeRef fortranNode = tree[SALT_FORTRAN_KEY];
-
-            // Validate that the "Fortran" node exists
-            if (fortranNode.invalid()) {
-                llvm::errs() << "ERROR: '" << SALT_FORTRAN_KEY << "' key not found in the configuration file.\n";
-                std::exit(-3);
-            }
+            const ryml::ConstNodeRef fortranNode{check_config_key(tree.crootref(), SALT_FORTRAN_KEY, configPath)};
 
             // The optional "program_setup_insert" node: setup code at the start
             // of the main program, inserted with or without its timer.
-            // find_child, unlike [], does not assert that the key exists.
-            if (ryml::ConstNodeRef programSetupNode = fortranNode.find_child(SALT_FORTRAN_PROGRAM_SETUP_KEY);
-                !programSetupNode.invalid()) {
-                for (const ryml::ConstNodeRef child: programSetupNode.children()) {
-                    ss << child.val() << "\n";
-                }
-            }
-            const std::string programSetup{ss.str()};
+            const std::string programSetup{getCodeLines(fortranNode, SALT_FORTRAN_PROGRAM_SETUP_KEY, configPath, true)};
             map.emplace(InstrumentationPointType::PROGRAM_SETUP, programSetup);
-            ss.str(""s);
 
-            // Access and process the "program_insert" node: the main
-            // program's timer, after its setup code
-            ryml::ConstNodeRef programBeginNode = fortranNode[SALT_FORTRAN_PROGRAM_BEGIN_KEY];
-            if (programBeginNode.invalid()) {
-                llvm::errs() << "ERROR: '" << SALT_FORTRAN_PROGRAM_BEGIN_KEY << "' key not found under 'Fortran'.\n";
-                std::exit(-3);
-            }
-            for (const ryml::ConstNodeRef child: programBeginNode.children()) {
-                ss << child.val() << "\n";
-            }
-            map.emplace(InstrumentationPointType::PROGRAM_BEGIN, programSetup + ss.str());
-            ss.str(""s);
+            // The "program_insert" node: the main program's timer, after its
+            // setup code
+            map.emplace(InstrumentationPointType::PROGRAM_BEGIN,
+                        programSetup + getCodeLines(fortranNode, SALT_FORTRAN_PROGRAM_BEGIN_KEY, configPath));
 
-            // Access and process the "procedure_begin_insert" node
-            ryml::ConstNodeRef procedureBeginNode = fortranNode[SALT_FORTRAN_PROCEDURE_BEGIN_KEY];
-            if (procedureBeginNode.invalid()) {
-                llvm::errs() << "ERROR: '" << SALT_FORTRAN_PROCEDURE_BEGIN_KEY << "' key not found under 'Fortran'.\n";
-                std::exit(-3);
-            }
-            for (const ryml::ConstNodeRef child: procedureBeginNode.children()) {
-                ss << child.val() << "\n";
-            }
-            map.emplace(InstrumentationPointType::PROCEDURE_BEGIN, ss.str());
-            ss.str(""s);
+            map.emplace(InstrumentationPointType::PROCEDURE_BEGIN,
+                        getCodeLines(fortranNode, SALT_FORTRAN_PROCEDURE_BEGIN_KEY, configPath));
 
-            // Access and process the "procedure_end_insert" node
-            ryml::ConstNodeRef procedureEndNode = fortranNode[SALT_FORTRAN_PROCEDURE_END_KEY];
-            if (procedureEndNode.invalid()) {
-                llvm::errs() << "ERROR: '" << SALT_FORTRAN_PROCEDURE_END_KEY << "' key not found under 'Fortran'.\n";
-                std::exit(-3);
-            }
-            for (const ryml::ConstNodeRef child: procedureEndNode.children()) {
-                ss << child.val() << "\n";
-            }
-            map.emplace(InstrumentationPointType::PROCEDURE_END, ss.str());
+            const std::string procedureEnd{getCodeLines(fortranNode, SALT_FORTRAN_PROCEDURE_END_KEY, configPath)};
+            map.emplace(InstrumentationPointType::PROCEDURE_END, procedureEnd);
             // The return statement uses the same text as procedure end,
             // but is inserted before the line instead of after.
-            map.emplace(InstrumentationPointType::RETURN_STMT, ss.str());
+            map.emplace(InstrumentationPointType::RETURN_STMT, procedureEnd);
             // The if-return statement uses the same text as procedure end,
             // but requires transformation to if-then-endif
-            map.emplace(InstrumentationPointType::IF_RETURN, ss.str());
+            map.emplace(InstrumentationPointType::IF_RETURN, procedureEnd);
 
             return map;
         }
@@ -1054,18 +1018,37 @@ namespace salt::fortran {
 
             const std::filesystem::path inputFilePath{inputFilePathStr.value()};
 
-            // Read and parse the yaml configuration file
-            const std::string configPath{getConfigPath()};
-            const ryml::Tree yamlTree = getConfigYamlTree(configPath);
-            const InstrumentationMap instMap = getInstrumentationMap(yamlTree);
-
             if (const auto selectPath{getSelectFilePath()}; selectPath.has_value()) {
                 if (processInstrumentationRequests(selectPath->c_str())) {
                     dumpSelectiveRequests();
                 } else {
                     llvm::errs() << "ERROR: Unable to read selective instrumentation file at " << selectPath << "\n";
-                    std::exit(-4);
+                    std::exit(EXIT_FAILURE);
                 }
+            }
+
+            // If visitor has skipInstrument set, no instrumentation points are added
+            // so the file is output into the .inst file unchanged.
+            bool skipInstrument{false};
+            if (!shouldInstrumentFile(inputFilePath)) {
+                verboseStream() << "Skipping instrumentation of " << inputFilePath
+                        << " due to selective instrumentation.\n";
+                skipInstrument = true;
+            }
+            // Walk the parse tree -- marks nodes for instrumentation
+            const ExcludedMainSetup level{getExcludedMainSetup()};
+            SaltInstrumentParseTreeVisitor visitor{&parsing, skipInstrument, level != ExcludedMainSetup::none};
+            // Unless --tau_excluded_main_setup=file, fparse-llvm runs Flang on an excluded
+            // source only for its module files, so it gets no instrumentation points: a copy.
+            if (!skipInstrument || level == ExcludedMainSetup::file) {
+                Walk(parsing.parseTree(), visitor);
+            }
+
+            // Read and parse the yaml configuration file, before the output is
+            // opened, unless the output is a copy, which does not need it
+            InstrumentationMap instMap;
+            if (!visitor.getInstrumentationPoints().empty()) {
+                instMap = getInstrumentationMap(getConfigPath());
             }
 
             // Get the extension of the input file
@@ -1091,23 +1074,6 @@ namespace salt::fortran {
                 llvm::errs() << "ERROR: Could not open output file "
                         << getInstance().getFrontendOpts().outputFile << "\n";
                 std::exit(EXIT_FAILURE);
-            }
-
-            // If visitor has skipInstrument set, no instrumentation points are added
-            // so the file is output into the .inst file unchanged.
-            bool skipInstrument{false};
-            if (!shouldInstrumentFile(inputFilePath)) {
-                verboseStream() << "Skipping instrumentation of " << inputFilePath
-                        << " due to selective instrumentation.\n";
-                skipInstrument = true;
-            }
-            // Walk the parse tree -- marks nodes for instrumentation
-            const ExcludedMainSetup level{getExcludedMainSetup()};
-            SaltInstrumentParseTreeVisitor visitor{&parsing, skipInstrument, level != ExcludedMainSetup::none};
-            // Unless --tau_excluded_main_setup=file, fparse-llvm runs Flang on an excluded
-            // source only for its module files, so it gets no instrumentation points: a copy.
-            if (!skipInstrument || level == ExcludedMainSetup::file) {
-                Walk(parsing.parseTree(), visitor);
             }
 
             // Use the instrumentation points stored in the Visitor to write the instrumented file.
