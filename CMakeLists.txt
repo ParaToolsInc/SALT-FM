@@ -2203,7 +2203,7 @@ if(TEST_FORTRAN)
     PASS_REGULAR_EXPRESSION "${_level_no_value}")
   set_tests_properties(saltfm_level_fortran fparse_level_canonical_only
     saltfm_level_fortran_next fparse_level_next fparse_level_no_value PROPERTIES
-    ENVIRONMENT_MODIFICATION "SALT_MAIN_SETUP_PARSE_LEVEL=unset:"
+    ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}"
     LABELS "lang:Fortran;phase:smoke")
 endif()
 
@@ -2281,6 +2281,8 @@ if(TEST_FORTRAN)
     ARGS --tau_main_setup_parse_level=always
     --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau
     LOG "undeclared_name")
+  set_tests_properties(parse_error_always_fortran PROPERTIES
+    ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}")
 endif()
 
 # At the `never` and `function` levels, the main program of a source that
@@ -3378,6 +3380,21 @@ if(TEST_FORTRAN)
     LOG "ERROR: Could not open input file")
   set_tests_properties(excluded_missing_input PROPERTIES REQUIRED_FILES ""
     ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}")
+  # When salt-selectfile cannot read the selective instrumentation file
+  # (status 2), fparse-llvm gives no warning and runs Flang, and the
+  # plugin reports the error.
+  add_test(NAME fparse_sif_unreadable
+    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+            --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/no_such_file.tau
+            --tau_output=sif_unreadable.inst.F90
+            ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+  set_tests_properties(fparse_sif_unreadable PROPERTIES
+    PASS_REGULAR_EXPRESSION
+      "Running: .*ERROR: Unable to read selective instrumentation file"
+    FAIL_REGULAR_EXPRESSION "salt-selectfile failed"
+    ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}"
+    LABELS "lang:Fortran;phase:instrument")
+  _salt_in_test_output(instrument fparse_sif_unreadable)
   # Fortran output keeps the file name of its `#line` lines as written,
   # in the copy of an excluded source and in an instrumented one (#97).
   # Adds test fortran_names_<name>: tests/check_fortran_names.cmake on
@@ -3445,6 +3462,10 @@ if(TEST_FORTRAN)
     set_property(TEST excluded_${test} APPEND PROPERTY
       ENVIRONMENT_MODIFICATION "SALT_PARSE_EXCLUDED_MODULES=set:Off")
   endforeach()
+  # At `always`, the option has no effect: Flang parses the source.
+  _salt_add_excluded_test(mod_always_off excluded_mod.f90 MOD excluded_mod
+    ARGS --tau_main_setup_parse_level=always --tau_parse_excluded_modules=off
+    LOG "Running:" NOT_LOG "${_excluded_off_text}")
   # The values of the `never` (off) and `function` (on) levels only.
   add_test(NAME saltfm_modules_always
     COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
@@ -3478,8 +3499,7 @@ if(TEST_FORTRAN)
     "WARNING: --tau_parse_excluded_modules needs a value. using\n  the default\n"
     ".*fparse-llvm --show --tau_parse_excluded_modules=on ")
   set_tests_properties(saltfm_modules_no_value PROPERTIES
-    PASS_REGULAR_EXPRESSION "${_modules_no_value}"
-    ENVIRONMENT_MODIFICATION "SALT_PARSE_EXCLUDED_MODULES=unset:")
+    PASS_REGULAR_EXPRESSION "${_modules_no_value}")
   add_test(NAME fparse_modules_no_value
     COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show
             ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90 --tau_parse_excluded_modules)
@@ -3488,7 +3508,8 @@ if(TEST_FORTRAN)
       "WARNING: --tau_parse_excluded_modules needs a value. using on\n.*\ncmd: ")
   set_tests_properties(saltfm_modules_always fparse_modules_canonical_only
     fparse_modules_next saltfm_modules_no_value fparse_modules_no_value
-    PROPERTIES LABELS "lang:Fortran;phase:smoke")
+    PROPERTIES ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}"
+    LABELS "lang:Fortran;phase:smoke")
 
   # The module and main program checks, with the parse off so that
   # Flang does not run. A comment line does not match, in free and fixed
