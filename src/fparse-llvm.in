@@ -482,7 +482,9 @@ if [[ ${sif_status} -eq 1 ]]; then
     nl=$'\n'
     module_re="${nl}[[:blank:]]*([0-9]+[[:blank:]]+)?(sub)?module([^[:alnum:]_]|\$)"
     program_re="${nl}[[:blank:]]*([0-9]+[[:blank:]]+)?program[[:blank:]]+[[:alpha:]]"
-    content="${nl}$(<"${input_file}")"
+    content="$(<"${input_file}")"
+    # Flang accepts a UTF-8 byte order mark before the first line
+    content="${nl}${content#$'\xef\xbb\xbf'}"
     has_module=false
     shopt -s nocasematch
     if content_matches "${program_re}"; then
