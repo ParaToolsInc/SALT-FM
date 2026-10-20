@@ -1008,7 +1008,7 @@ void instrumentor::instrument_file(std::ifstream &og_file, std::ofstream &inst_f
         inst_file << "#include " << child.val() << "\n";
     }
 
-    inst_file << "#line 1 \"" << filename << "\"\n";
+    inst_file << "#line 1 \"" << escapeCString(filename) << "\"\n";
 
     while (getline(og_file, line))
     {
@@ -1200,7 +1200,7 @@ void instrumentor::instrument()
 
         if (skipped && inst_locations.empty())
         {
-            if (!copySource(fname, newname))
+            if (!copySource(fname, newname, true))
             {
                 std::exit(EXIT_FAILURE);
             }

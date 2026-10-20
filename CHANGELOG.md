@@ -200,6 +200,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `dirname` program, and also when the path they are run by uses `\`
   separators, as under MSYS
   ([#88](https://github.com/ParaToolsInc/SALT-FM/issues/88)).
+- In C and C++ output, the file name of the `#line` lines escapes `\`
+  and `"`, so that compiler messages, `__FILE__`, and debug information
+  name a source whose path holds them. Before, a `"` broke the `#line`
+  line, and the compiler read a `\` as the start of an escape. Fortran
+  output keeps the name as written, since Flang and ifx read it that
+  way; gfortran reads escapes, and Flang rejects a `"`
+  ([#88](https://github.com/ParaToolsInc/SALT-FM/issues/88),
+  [#97](https://github.com/ParaToolsInc/SALT-FM/issues/97)).
 
 ## [0.5.0] - 2026-10-09
 

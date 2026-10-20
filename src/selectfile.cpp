@@ -913,7 +913,19 @@ static bool ioFailed(bool failed, const char *what, const std::string &file)
   return failed;
 }
 
-bool copySource(const std::string &source, const std::string &output)
+std::string escapeCString(const std::string &name)
+{
+  std::string escaped;
+  for (const char c : name) {
+    if (c == '\\' || c == '"') {
+      escaped += '\\';
+    }
+    escaped += c;
+  }
+  return escaped;
+}
+
+bool copySource(const std::string &source, const std::string &output, bool escape)
 {
   /* Open the input first, so a missing one leaves no output file */
   std::ifstream in(source);
@@ -924,7 +936,7 @@ bool copySource(const std::string &source, const std::string &output)
   if (ioFailed(!out.is_open(), "open output file", output)) {
     return false;
   }
-  out << "#line 1 \"" << source << "\"\n";
+  out << "#line 1 \"" << (escape ? escapeCString(source) : source) << "\"\n";
   /* Copying an empty rdbuf() sets failbit, so copy only a non-empty file */
   if (in.peek() != std::ifstream::traits_type::eof()) {
     out << in.rdbuf();
