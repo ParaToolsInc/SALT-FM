@@ -256,12 +256,10 @@ instrumentation file exclude, so its errors do not stop `saltfm` (see
 The YAML configuration file (`--config_file`; `config_files/` has one
 for TAU, perfstubs, ITT, NVTX, and ROCTX) holds all the code that
 SALT-FM inserts. `${full_timer_name}` in an entry stands for the timer
-name, written for a `"`-delimited string literal: in C and C++, with a
-`\` before each `\` and `"`; in Fortran, with each `"` doubled, and
-split into pieces of at most 64 characters, each on a continuation
-line, so a Fortran entry follows `${full_timer_name}` with `&` and
-closes the literal on the next line, as `config_files/tau_config.yaml`
-does.
+name, ready to go in a `"`-delimited string literal. In Fortran, the
+name is split over continuation lines, so an entry follows
+`${full_timer_name}` with `&` and closes the literal on the next line,
+as `config_files/tau_config.yaml` does.
 
 - `include`: lines written at the top of an instrumented C or C++ file.
 - `main_setup_insert` (optional): setup code at the start of `main`,
@@ -331,52 +329,49 @@ It matches the entries of the lists as TAU does, in C, C++, and Fortran:
   exclude list entry names it, SALT-FM warns that main still gets the
   setup code.
 
-When its file lists exclude the source file, SALT-FM does not parse or
-instrument it, by default: it writes the source to the output file
-after a `#line 1` line that names it, so TAU's compiler wrappers compile
+When the file lists exclude a source file, SALT-FM does not parse or
+instrument it, by default: it copies the source to the output file
+after a `#line` line that names it, so TAU's compiler wrappers compile
 it without timers, and compiler messages, `__FILE__`, and debug
-information name the source. In C and C++, that name escapes `\` and
-`"`; in Fortran, it is as written. A parse error in an excluded source
-does not stop `saltfm`, so excluding a file works around a source that
-SALT-FM cannot parse. A main program in such a source gets no setup
-code, so a program run without MPI or `tau_exec` writes
-`profile.-1.0.0`. SALT-FM warns when an excluded source seems to hold
-the main program: `main(` in C and C++, a `program` statement in
-Fortran.
+information name the source. A parse error in such a source does not
+stop `saltfm`, so excluding a file works around a source that SALT-FM
+cannot parse. A main program in such a source gets no setup code, so a
+program run without MPI or `tau_exec` writes `profile.-1.0.0`; SALT-FM
+warns when an excluded source seems to hold the main program. Use
+`--tau_main_setup_parse_level=always` to give it its setup code.
 
 `--tau_main_setup_parse_level=<level>`, or the environment variable
-`SALT_MAIN_SETUP_PARSE_LEVEL`, selects the behavior. The option has
-priority, the values ignore case, an empty value selects the default,
-and an unknown value stops `saltfm` with an error:
+`SALT_MAIN_SETUP_PARSE_LEVEL`, selects the level; the option has
+priority over the environment variable:
 
-| Level | Values | A main that the routine lists leave out | A source that the file lists exclude |
-|---|---|---|---|
-| `never` | `never`, `no`, `off`, `false`, `0` | No setup code, and no warning about the include list | Copied without a parse |
-| `function` (default) | `function`, `procedure`, `default`, `medium`, `yes`, `on`, `true`, `1` | Setup code, no timer | Copied without a parse |
-| `always` | `always`, `file`, `force`, `all` | Setup code, no timer | Parsed; its main gets the setup code, and a parse error makes `saltfm` fail |
+| Level | A main that the routine lists leave out | A source that the file lists exclude |
+|---|---|---|
+| `never` | No setup code, and no warning about the include list | Copied without a parse |
+| `function` (default) | Setup code, no timer | Copied without a parse |
+| `always` | Setup code, no timer | Parsed, with no timers; its main gets setup code, and a parse error makes `saltfm` fail |
 
-A main program that the selective instrumentation file includes gets
-its setup code and its timer at all levels.
+The levels also accept common synonyms in any case, such as `off` for
+`never`, `on` for `function`, and `all` for `always`. A main program
+that the selective instrumentation file includes gets its setup code
+and its timer at all levels.
 
 At the `never` and `function` levels, SALT-FM still parses an excluded
-Fortran source that seems to define a module or submodule (a line that
-starts, after blanks and a statement label, with `module` or
-`submodule`), or that holds an INCLUDE line or an `#include`, which can
-bring one in, so that Flang writes the module files that other sources
-need; the output is still a copy, and at `never` SALT-FM warns about
-the parse. A fixed-form `module` statement with no blank before the
-name, such as `MODULEFOO`, is not found. For such a source, use
-`--tau_main_setup_parse_level=always`, which parses it but still adds
-no timers to it, or do not exclude the file and leave out its
-routines with the routine exclude list instead. If Flang fails,
-SALT-FM warns that it does not write the module files, writes the
-copy, and exits with status 0.
-`--tau_parse_excluded_modules=off`, or `SALT_PARSE_EXCLUDED_MODULES`
-set to a value of the `never` level, skips this parse, with a warning
+Fortran source that seems to define or include a module, so that Flang
+writes its module files and other sources can `use` its modules. The
+output is still a copy, and at `never` SALT-FM warns about the parse.
+If Flang cannot parse the source, SALT-FM warns, copies it, and does
+not write its module files, so sources that use its modules can fail.
+A fixed-form `module` statement with no blank before the name, such as
+`MODULEFOO`, is not found; for such a source, use
+`--tau_main_setup_parse_level=always`, or do not exclude the file and
+leave out its routines with the routine exclude list instead.
+
+`--tau_parse_excluded_modules=off`,
+or `SALT_PARSE_EXCLUDED_MODULES=off`, skips this parse, with a warning
 that sources that use the modules can fail; use it when Flang cannot
 finish the parse of an excluded source, for example when it takes too
-long. `on`, the default, takes the values of the `function` level. At
-`always`, SALT-FM parses all sources and this option has no effect.
+long. The default is `on`. At `always`, SALT-FM parses all sources and
+this option has no effect.
 
 ## Notes for package maintainers
 
