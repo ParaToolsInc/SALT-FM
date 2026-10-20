@@ -526,4 +526,12 @@ if [[ ${sif_status} -eq 1 ]]; then
     "${_SCRIPT_DIR}/salt-selectfile" --copy "${input_file}" "${output_file}"
     exit 0
 fi
+# Status 2 is an error in the SIF, which the plugin reports
+if [[ ${sif_status} -ne 0 && ${sif_status} -ne 2 ]]; then
+    if [[ -n ${sif_log} ]]; then
+        echo "${sif_log}" >&2
+    fi
+    echo "WARNING: salt-selectfile failed with status ${sif_status}, so SALT-FM" >&2
+    echo "  parses ${input_file} before it applies the file lists" >&2
+fi
 run_flang
