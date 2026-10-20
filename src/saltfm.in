@@ -57,15 +57,38 @@ TAU instrumentor options:
   --tau_allow_parse_errors      - C and C++ only: instrument the partial parse tree that Clang builds after errors (default: \$SALT_ALLOW_PARSE_ERRORS, else false)
   --tau_fabricate_unknown_types - Fabricate declarations for unknown qualified names (default: false)
   --tau_instrument_inline       - Instrument inlined functions (default: false)
-  --tau_main_setup_parse_level=<level>
-                                - never, function, or always: when to parse a source that the file
-                                  lists exclude and to give main its setup code without a timer
-                                  (default: \$SALT_MAIN_SETUP_PARSE_LEVEL, else function)
+  --tau_excluded_main_setup=<none|routine|file>
+                                - Selects which excluded main programs get setup code.
+                                  Setup code makes sure that the measurement library
+                                  starts correctly. We recommend it for all programs.
+                                    none:    No excluded main program gets setup code.
+                                    routine: A main program that the routine lists
+                                             exclude gets setup code. This is the
+                                             default.
+                                    file:    A main program in a file that the file
+                                             lists exclude also gets setup code. This
+                                             makes SALT-FM parse all excluded files.
+                                             SALT-FM adds setup code to each main
+                                             program that it finds, but it adds no
+                                             timers to these files.
+                                  (default: \$SALT_EXCLUDED_MAIN_SETUP, else routine)
   --tau_parse_excluded_modules=<off|modules-only|submodules-and-modules>
-                                - Fortran only: parse a source that the file lists exclude when it
-                                  seems to define or include a module, or with submodules-and-modules
-                                  also a submodule, for its module files, at the never and function
-                                  levels (default: \$SALT_PARSE_EXCLUDED_MODULES, else modules-only)
+                                - Fortran only. Selects which excluded files SALT-FM
+                                  parses to write their module files. SALT-FM needs
+                                  these module files to instrument the files that use
+                                  the modules. It adds no timers to the excluded files.
+                                    off:          SALT-FM parses no excluded file.
+                                    modules-only: SALT-FM parses an excluded file that
+                                                  defines or includes a module. This
+                                                  is the default.
+                                    submodules-and-modules:
+                                                  SALT-FM also parses an excluded file
+                                                  that has only submodules. Only the
+                                                  child submodules of a submodule need
+                                                  its module file.
+                                  With --tau_excluded_main_setup=file, SALT-FM parses all
+                                  files, and this option has no effect.
+                                  (default: \$SALT_PARSE_EXCLUDED_MODULES, else modules-only)
   --tau_output=<filename>       - Specify name of output instrumented file
   --tau_select_file=<filename>  - Provide a selective instrumentation specification file
   --tau_use_cxx_api             - Use TAU's C++ instrumentation API
@@ -76,14 +99,13 @@ function usage {
     echo "$_USAGE"
 }
 
-# Sets `level` to the canonical level of option `$1`, whose value is in
-# variable `$2` if it is set, else in environment variable `$3`, in any
-# case: for --tau_parse_excluded_modules, off, modules-only (also for an
-# empty value), or submodules-and-modules; else never, function (also
-# for an empty value), or always, or a synonym. Stops with an error and
-# the usage for any other value.
+# Sets `option_value` to the canonical value of option `$1`. The value
+# comes from variable `$2` if it is set, else from environment variable
+# `$3`. An empty value gives the default `$4`. Any other value must match
+# one of the space-separated values in `$5`, in any case, and gives that
+# value as `$5` writes it; else this stops with an error and the usage.
 # Warns when the option ends the arguments without its value.
-function canonical_level {
+function canonical_value {
     local name="$1"
     local value="${!2-}"
     if [[ -z ${!2+set} ]]; then
@@ -98,24 +120,19 @@ function canonical_level {
         echo "WARNING: $1 needs a value; using" >&2
         echo "  ${from}" >&2
     fi
-    shopt -s nocasematch
-    if [[ $1 == --tau_parse_excluded_modules ]]; then
-        case ${value} in
-            off) level=off ;;
-            '' | modules-only) level=modules-only ;;
-            submodules-and-modules) level=submodules-and-modules ;;
-            *) level= ;;
-        esac
-    else
-        case ${value} in
-            never | no | off | false | 0) level=never ;;
-            '' | function | procedure | default | medium | yes | on | true | 1) level=function ;;
-            always | file | force | all) level=always ;;
-            *) level= ;;
-        esac
+    option_value="$4"
+    if [[ -n ${value} ]]; then
+        option_value=
+        local canonical
+        shopt -s nocasematch
+        for canonical in $5; do
+            if [[ ${value} == "${canonical}" ]]; then
+                option_value="${canonical}"
+            fi
+        done
+        shopt -u nocasematch
     fi
-    shopt -u nocasematch
-    if [[ -z ${level} ]]; then
+    if [[ -z ${option_value} ]]; then
         echo "ERROR: unknown value '${value}' for ${name}" >&2
         usage
         exit 1
@@ -179,16 +196,16 @@ for arg in "$@"; do
         fi
     elif [[ $arg == --show ]]; then
         show=true
-    elif [[ $arg == --tau_main_setup_parse_level ]]; then
-        expecting_value_of=main_setup_level
-    elif [[ $arg == --tau_main_setup_parse_level=* ]]; then
-        # canonical_level reads it by name
+    elif [[ $arg == --tau_excluded_main_setup ]]; then
+        expecting_value_of=excluded_main_setup
+    elif [[ $arg == --tau_excluded_main_setup=* ]]; then
+        # canonical_value reads it by name
         # shellcheck disable=SC2034
-        main_setup_level="${arg#*=}"
+        excluded_main_setup="${arg#*=}"
     elif [[ $arg == --tau_parse_excluded_modules ]]; then
         expecting_value_of=parse_excluded_modules
     elif [[ $arg == --tau_parse_excluded_modules=* ]]; then
-        # canonical_level reads it by name
+        # canonical_value reads it by name
         # shellcheck disable=SC2034
         parse_excluded_modules="${arg#*=}"
     else
@@ -212,12 +229,14 @@ if [[ -z "${tool:-}" ]]; then
     exit 1
 fi
 
-canonical_level --tau_main_setup_parse_level main_setup_level SALT_MAIN_SETUP_PARSE_LEVEL
+canonical_value --tau_excluded_main_setup excluded_main_setup SALT_EXCLUDED_MAIN_SETUP \
+    routine "none routine file"
 # Before the arguments, which can end with `--` and compiler options
-args=("--tau_main_setup_parse_level=${level}" ${args[@]+"${args[@]}"})
+args=("--tau_excluded_main_setup=${option_value}" ${args[@]+"${args[@]}"})
 if [[ ${tool} == fparse-llvm ]]; then
-    canonical_level --tau_parse_excluded_modules parse_excluded_modules SALT_PARSE_EXCLUDED_MODULES
-    args=("--tau_parse_excluded_modules=${level}" "${args[@]}")
+    canonical_value --tau_parse_excluded_modules parse_excluded_modules SALT_PARSE_EXCLUDED_MODULES \
+        modules-only "off modules-only submodules-and-modules"
+    args=("--tau_parse_excluded_modules=${option_value}" "${args[@]}")
 fi
 
 # Check if the tool exists

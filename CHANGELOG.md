@@ -128,8 +128,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   opted inline functions in to instrumentation
   ([#46](https://github.com/ParaToolsInc/SALT-FM/issues/46)).
 - When a selective instrumentation file excludes the main program, an
-  include list leaves it out, or, at the `always` level of
-  `--tau_main_setup_parse_level`, the file lists exclude its file,
+  include list leaves it out, or, with
+  `--tau_excluded_main_setup=file`, the file lists exclude its file,
   SALT-FM removes only main's timer and keeps its setup code, which for
   TAU is `TAU_INIT` and `TAU_PROFILE_SET_NODE(0)`, or `TAU_PROFILE_INIT`
   and `TAU_PROFILE_SET_NODE(0)` in Fortran, and for perfstubs and ITT
@@ -180,14 +180,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   makes `saltfm` fail, and excluding a file works around a source that
   SALT-FM cannot parse. The main program in such a source gets no
   setup code, so a program run without MPI or `tau_exec` writes
-  `profile.-1.0.0`; SALT-FM warns when an excluded source seems to hold
-  the main program. The new option
-  `--tau_main_setup_parse_level=<never|function|always>` (or
-  `SALT_MAIN_SETUP_PARSE_LEVEL`) selects the behavior: `always` parses
-  all sources and gives such a main its setup code, and `never` also
-  gives no setup code to a main that the routine lists leave out
+  `profile.-1.0.0`; SALT-FM warns when an excluded source seems to
+  contain the main program. The new option
+  `--tau_excluded_main_setup=<none|routine|file>` (or
+  `SALT_EXCLUDED_MAIN_SETUP`; default `routine`) selects which excluded
+  main programs get setup code: `file` parses all sources and gives
+  such a main its setup code, and `none` also gives no setup code to a
+  main that the routine lists leave out
   ([#88](https://github.com/ParaToolsInc/SALT-FM/issues/88)).
-- At the `never` and `function` levels, SALT-FM still parses an
+- Unless `--tau_excluded_main_setup=file`, SALT-FM still parses an
   excluded Fortran source that seems to define a module, or that holds
   an INCLUDE line or an `#include`, which can bring one in, so that
   Flang writes the module files that other sources need; if Flang

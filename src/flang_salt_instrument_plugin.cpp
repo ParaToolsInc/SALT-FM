@@ -887,14 +887,14 @@ namespace salt::fortran {
             return std::nullopt;
         }
 
-        // The level that fparse-llvm gives in the environment; `function` if none
-        [[nodiscard]] static MainSetupLevel getMainSetupLevel() {
-            const char *val = getenv(SALT_FORTRAN_MAIN_SETUP_PARSE_LEVEL_VAR);
+        // The value that fparse-llvm gives in the environment; `routine` if none
+        [[nodiscard]] static ExcludedMainSetup getExcludedMainSetup() {
+            const char *val = getenv(SALT_FORTRAN_EXCLUDED_MAIN_SETUP_VAR);
             const std::string level{val ? val : ""};
-            if (level == "never") {
-                return MainSetupLevel::never;
+            if (level == "none") {
+                return ExcludedMainSetup::none;
             }
-            return level == "always" ? MainSetupLevel::always : MainSetupLevel::function;
+            return level == "file" ? ExcludedMainSetup::file : ExcludedMainSetup::routine;
         }
 
         [[nodiscard]] static ryml::Tree getConfigYamlTree(const std::string &configPath) {
@@ -1102,11 +1102,11 @@ namespace salt::fortran {
                 skipInstrument = true;
             }
             // Walk the parse tree -- marks nodes for instrumentation
-            const MainSetupLevel level{getMainSetupLevel()};
-            SaltInstrumentParseTreeVisitor visitor{&parsing, skipInstrument, level != MainSetupLevel::never};
-            // At the `never` and `function` levels, fparse-llvm runs Flang on an excluded
+            const ExcludedMainSetup level{getExcludedMainSetup()};
+            SaltInstrumentParseTreeVisitor visitor{&parsing, skipInstrument, level != ExcludedMainSetup::none};
+            // Unless --tau_excluded_main_setup=file, fparse-llvm runs Flang on an excluded
             // source only for its module files, so it gets no instrumentation points: a copy.
-            if (!skipInstrument || level == MainSetupLevel::always) {
+            if (!skipInstrument || level == ExcludedMainSetup::file) {
                 Walk(parsing.parseTree(), visitor);
             }
 

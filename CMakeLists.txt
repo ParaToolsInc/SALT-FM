@@ -1413,10 +1413,10 @@ function(_sif_set_warning_checks test warnings fail)
   endif()
 endfunction()
 
-# The SIF tests expect the default level unless their ARGS set one, so a
-# level in the developer's environment must not reach saltfm.
-set(_salt_unset_level_env
-  "SALT_MAIN_SETUP_PARSE_LEVEL=unset:;SALT_PARSE_EXCLUDED_MODULES=unset:")
+# The SIF tests expect the default values unless their ARGS set them, so
+# a value in the developer's environment must not reach saltfm.
+set(_salt_unset_option_env
+  "SALT_EXCLUDED_MAIN_SETUP=unset:;SALT_PARSE_EXCLUDED_MODULES=unset:")
 
 # Standard SIF test: instrumented output IS produced and inspected by
 # check_sif_<test_name>. The caller is responsible for setting
@@ -1468,7 +1468,7 @@ function(add_sif_test test_name lang src sif)
     PROPERTIES
     REQUIRED_FILES "${CMAKE_SOURCE_DIR}/${src};${sif_path}"
     ENVIRONMENT "SALT_FORTRAN_VERBOSE=1"
-    ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}"
+    ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
     FIXTURES_REQUIRED ${name}_output
     FIXTURES_SETUP ${name}_inst
     LABELS "${_lang_label};phase:instrument;sif"
@@ -1531,7 +1531,7 @@ function(add_sif_test_no_output test_name lang src sif)
   set_tests_properties(instrument_${name}
     PROPERTIES
     REQUIRED_FILES "${CMAKE_SOURCE_DIR}/${src};${CMAKE_SOURCE_DIR}/${sif}"
-    ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}"
+    ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
     FIXTURES_REQUIRED ${name}_output
     FIXTURES_SETUP ${name}_inst
     LABELS "${_lang_label};phase:instrument;sif"
@@ -1679,12 +1679,12 @@ function(_sif_check_file_excluded test_name)
 endfunction()
 
 # File-level EXCLUDE_LIST: the C/C++ frontend does not instrument a source
-# file on the file exclude list. At the `always` level, main keeps TAU's
-# setup code, and a file without main is copied.
+# file on the file exclude list. With --tau_excluded_main_setup=file,
+# main keeps TAU's setup code, and a file without main is copied.
 foreach(lang c cpp)
   add_sif_test(file_exclude_${lang}
     ${lang} tests/sif_excl.${lang} tests/sif/file_exclude_${lang}.tau
-    ARGS --tau_main_setup_parse_level=always)
+    ARGS --tau_excluded_main_setup=file)
   _sif_check_file_excluded(file_exclude_${lang})
 endforeach()
 add_sif_test_no_output(file_exclude_nomain_c
@@ -1747,7 +1747,7 @@ if(TEST_FORTRAN)
 
   add_sif_test(file_exclude_fortran
     fortran tests/fortran/sif_excl.f90 tests/sif/file_exclude_f90.tau
-    ARGS --tau_main_setup_parse_level=always)
+    ARGS --tau_excluded_main_setup=file)
   _sif_check_file_excluded(file_exclude_fortran)
 
   add_sif_test(file_include_match_fortran
@@ -1976,7 +1976,7 @@ endforeach()
 
 # Setup code fills in main's timer name, as for a kept main, when a
 # routine or file list removes main's timer; a file list needs the
-# `always` level.
+# `file` value.
 set(_sif_setup_name_c "SETUP_TIMER_NAME[(]\"int main[(]")
 set(_sif_setup_name_cpp "${_sif_setup_name_c}")
 set(_sif_setup_name_fortran "SETUP_TIMER_NAME[(]\"&\n     &${_sif_main_timer_fortran}")
@@ -1986,7 +1986,7 @@ set(_sif_file_exclude_fortran file_exclude_f90)
 foreach(lang IN LISTS _sif_langs)
   foreach(sif exclude_main include_list ${_sif_file_exclude_${lang}})
     add_sif_test(setup_name_${sif}_${lang} ${lang} ${_sif_src_${lang}} tests/sif/${sif}.tau
-      CONFIG tests/setup_timer_name.yaml ARGS --tau_main_setup_parse_level=always)
+      CONFIG tests/setup_timer_name.yaml ARGS --tau_excluded_main_setup=file)
     set_tests_properties(check_sif_setup_name_${sif}_${lang}
       PROPERTIES
       PASS_REGULAR_EXPRESSION "${_sif_setup_name_${lang}}"
@@ -2007,7 +2007,7 @@ endforeach()
 # Routines that the lists leave out keep returns that share their line with
 # other code as written: no repeated code before the return, and no timer
 # stop in main. '.' stands for each ';' of the source, which would split
-# the pattern lists. The `always` level parses the source that the file
+# the pattern lists. The `file` value parses the source that the file
 # list excludes.
 string(CONCAT _sif_oneline_pass
   "\nint dropped[(]void[)] [{] return 11. [}]\n"
@@ -2015,7 +2015,7 @@ string(CONCAT _sif_oneline_pass
   ".* return dropped[(][)] [+] cond_dropped[(]0[)] [+] kept[(][)] - 44. [}]\n")
 foreach(sif include exclude file_exclude)
   add_sif_test(oneline_${sif} c tests/sif_oneline.c tests/sif/oneline_${sif}.tau
-    ARGS --tau_main_setup_parse_level=always)
+    ARGS --tau_excluded_main_setup=file)
   set_tests_properties(check_sif_oneline_${sif}
     PROPERTIES
     PASS_REGULAR_EXPRESSION "${_sif_oneline_pass}"
@@ -2060,7 +2060,7 @@ endforeach()
 
 # Quotes are part of a file pattern, as in TAU, so a quoted file entry does
 # not match the source, and SALT-FM warns about it. Routine lists still
-# remove quotes. The `always` level gives main its setup code in the
+# remove quotes. The `file` value gives main its setup code in the
 # source that the quoted include entry leaves out.
 string(CONCAT _sif_quoted_file_warning
   "WARNING: file %s list entry at selective instrumentation file line 4:\n"
@@ -2074,7 +2074,7 @@ foreach(lang IN LISTS _sif_langs)
   string(REPLACE "%s" "include" _warning "${_sif_quoted_file_warning}")
   add_sif_test(file_include_quoted_${lang} ${lang} ${_sif_src_${lang}}
     tests/sif/file_include_quoted.tau WARNINGS "${_warning}"
-    ARGS --tau_main_setup_parse_level=always)
+    ARGS --tau_excluded_main_setup=file)
   _sif_check_file_excluded(file_include_quoted_${lang})
 endforeach()
 
@@ -2088,134 +2088,134 @@ set_tests_properties(check_sif_include_inline_cpp
     "TAU_PROFILE_TIMER[^\n]*method_in_class_body;TAU_PROFILE_TIMER[^\n]*int main"
 )
 
-# saltfm gives cparse-llvm and fparse-llvm the canonical level of
-# --tau_main_setup_parse_level, or else of SALT_MAIN_SETUP_PARSE_LEVEL:
-# never, function, or always. Values ignore case, an empty one selects
-# `function`, and an unknown one stops saltfm with the usage (#88).
-# Adds test saltfm_level_<name>: `saltfm --show ARGN hello.c`, with
-# SALT_MAIN_SETUP_PARSE_LEVEL set to `value` (unset for `unset`), must
+# saltfm gives cparse-llvm and fparse-llvm the value of
+# --tau_excluded_main_setup, or else of SALT_EXCLUDED_MAIN_SETUP: none,
+# routine, or file. Values ignore case, an empty one selects `routine`,
+# and any other one stops saltfm with the usage (#88).
+# Adds test saltfm_main_setup_<name>: `saltfm --show ARGN hello.c`, with
+# SALT_EXCLUDED_MAIN_SETUP set to `value` (unset for `unset`), must
 # match `pass` and must not match `fail`.
-function(_salt_add_level_test name value pass fail)
-  set(mod "SALT_MAIN_SETUP_PARSE_LEVEL=set:${value}")
+function(_salt_add_main_setup_test name value pass fail)
+  set(mod "SALT_EXCLUDED_MAIN_SETUP=set:${value}")
   if(value STREQUAL "unset")
-    set(mod "SALT_MAIN_SETUP_PARSE_LEVEL=unset:")
+    set(mod "SALT_EXCLUDED_MAIN_SETUP=unset:")
   endif()
-  add_test(NAME saltfm_level_${name}
+  add_test(NAME saltfm_main_setup_${name}
     COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show ${ARGN}
             ${CMAKE_SOURCE_DIR}/tests/hello.c)
-  set_tests_properties(saltfm_level_${name} PROPERTIES
+  set_tests_properties(saltfm_main_setup_${name} PROPERTIES
     PASS_REGULAR_EXPRESSION "${pass}"
     FAIL_REGULAR_EXPRESSION "${fail}"
     ENVIRONMENT_MODIFICATION "${mod}"
     LABELS "lang:C;phase:smoke")
 endfunction()
-set(_level_shown "cparse-llvm --tau_main_setup_parse_level=")
-# Each value, in capitals, with another level in the environment, which
+set(_main_setup_shown "cparse-llvm --tau_excluded_main_setup=")
+# Each value, in capitals, with another value in the environment, which
 # the option overrides.
-foreach(pair
-    never:never no:never off:never false:never 0:never
-    function:function procedure:function default:function medium:function
-    yes:function on:function true:function 1:function
-    always:always file:always force:always all:always)
-  string(REPLACE ":" ";" _fields "${pair}")
-  list(GET _fields 0 _value)
-  list(GET _fields 1 _level)
-  set(_other always)
-  if(_level STREQUAL "always")
-    set(_other never)
+foreach(main_setup none routine file)
+  set(_other file)
+  if(main_setup STREQUAL "file")
+    set(_other none)
   endif()
-  string(TOUPPER ${_value} _upper)
-  _salt_add_level_test(value_${_value} ${_other} "${_level_shown}${_level} " ""
-    --tau_main_setup_parse_level=${_upper})
+  string(TOUPPER ${main_setup} _upper)
+  _salt_add_main_setup_test(value_${main_setup} ${_other}
+    "${_main_setup_shown}${main_setup} " "" --tau_excluded_main_setup=${_upper})
 endforeach()
-_salt_add_level_test(env Always "${_level_shown}always " "")
-_salt_add_level_test(env_empty "" "${_level_shown}function " "")
-_salt_add_level_test(default unset "${_level_shown}function " "")
-_salt_add_level_test(option_empty never "${_level_shown}function " ""
-  --tau_main_setup_parse_level=)
+# The values of the old option name are not values of this option.
+foreach(main_setup never function always on off)
+  _salt_add_main_setup_test(old_${main_setup} unset
+    "ERROR: unknown value '${main_setup}' for --tau_excluded_main_setup\n.*USAGE:"
+    "${_main_setup_shown}" --tau_excluded_main_setup=${main_setup})
+endforeach()
+_salt_add_main_setup_test(env File "${_main_setup_shown}file " "")
+_salt_add_main_setup_test(env_empty "" "${_main_setup_shown}routine " "")
+_salt_add_main_setup_test(default unset "${_main_setup_shown}routine " "")
+_salt_add_main_setup_test(option_empty none "${_main_setup_shown}routine " ""
+  --tau_excluded_main_setup=)
 # The value can also be the next argument. Without one, the option at the
 # end gives a warning and is left out.
-_salt_add_level_test(option_next never "${_level_shown}always " ""
-  --tau_main_setup_parse_level Always)
-string(CONCAT _level_no_value
-  "WARNING: --tau_main_setup_parse_level needs a value. using\n"
-  "  SALT_MAIN_SETUP_PARSE_LEVEL=always\n.*${_level_shown}always [^\n]*/hello[.]c\n")
-add_test(NAME saltfm_level_no_value
+_salt_add_main_setup_test(option_next none "${_main_setup_shown}file " ""
+  --tau_excluded_main_setup File)
+string(CONCAT _main_setup_no_value
+  "WARNING: --tau_excluded_main_setup needs a value. using\n"
+  "  SALT_EXCLUDED_MAIN_SETUP=file\n.*${_main_setup_shown}file [^\n]*/hello[.]c\n")
+add_test(NAME saltfm_main_setup_no_value
   COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
-          ${CMAKE_SOURCE_DIR}/tests/hello.c --tau_main_setup_parse_level)
-set_tests_properties(saltfm_level_no_value PROPERTIES
-  PASS_REGULAR_EXPRESSION "${_level_no_value}"
-  ENVIRONMENT_MODIFICATION "SALT_MAIN_SETUP_PARSE_LEVEL=set:always"
+          ${CMAKE_SOURCE_DIR}/tests/hello.c --tau_excluded_main_setup)
+set_tests_properties(saltfm_main_setup_no_value PROPERTIES
+  PASS_REGULAR_EXPRESSION "${_main_setup_no_value}"
+  ENVIRONMENT_MODIFICATION "SALT_EXCLUDED_MAIN_SETUP=set:file"
   LABELS "lang:C;phase:smoke")
-_salt_add_level_test(unknown never
-  "ERROR: unknown value 'sometimes' for --tau_main_setup_parse_level\n.*USAGE:"
-  "${_level_shown}" --tau_main_setup_parse_level=sometimes)
-_salt_add_level_test(unknown_env sometimes
-  "ERROR: unknown value 'sometimes' for SALT_MAIN_SETUP_PARSE_LEVEL\n.*USAGE:"
-  "${_level_shown}")
+_salt_add_main_setup_test(unknown none
+  "ERROR: unknown value 'sometimes' for --tau_excluded_main_setup\n.*USAGE:"
+  "${_main_setup_shown}" --tau_excluded_main_setup=sometimes)
+_salt_add_main_setup_test(unknown_env always
+  "ERROR: unknown value 'always' for SALT_EXCLUDED_MAIN_SETUP\n.*USAGE:"
+  "${_main_setup_shown}")
 # saltfm checks the Fortran-only SALT_PARSE_EXCLUDED_MODULES only for Fortran.
-_salt_add_level_test(modules_env_c unset "${_level_shown}function " "ERROR")
-set_property(TEST saltfm_level_modules_env_c APPEND
+_salt_add_main_setup_test(modules_env_c unset "${_main_setup_shown}routine " "ERROR")
+set_property(TEST saltfm_main_setup_modules_env_c APPEND
   PROPERTY ENVIRONMENT_MODIFICATION "SALT_PARSE_EXCLUDED_MODULES=set:bogus")
 # cparse-llvm takes only the canonical names.
-add_test(NAME cparse_level_canonical_only
-  COMMAND $<TARGET_FILE:cparse-llvm> --tau_main_setup_parse_level=yes
+add_test(NAME cparse_main_setup_canonical_only
+  COMMAND $<TARGET_FILE:cparse-llvm> --tau_excluded_main_setup=File
           ${CMAKE_SOURCE_DIR}/tests/hello.c --)
-set_tests_properties(cparse_level_canonical_only PROPERTIES
-  PASS_REGULAR_EXPRESSION "Cannot find option named 'yes'"
+set_tests_properties(cparse_main_setup_canonical_only PROPERTIES
+  PASS_REGULAR_EXPRESSION "Cannot find option named 'File'"
   LABELS "lang:C;phase:smoke")
 if(TEST_FORTRAN)
-  # saltfm gives fparse-llvm the canonical level, which fparse-llvm gives
+  # saltfm gives fparse-llvm the canonical value, which fparse-llvm gives
   # the plugin; fparse-llvm takes only the canonical names.
-  add_test(NAME saltfm_level_fortran
+  add_test(NAME saltfm_main_setup_fortran
     COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
-            --tau_main_setup_parse_level=Off
+            --tau_excluded_main_setup=None
             ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
-  add_test(NAME fparse_level_canonical_only
+  add_test(NAME fparse_main_setup_canonical_only
     COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show
-            --tau_main_setup_parse_level=off
+            --tau_excluded_main_setup=None
             ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
-  set_tests_properties(saltfm_level_fortran PROPERTIES
-    PASS_REGULAR_EXPRESSION "\nSALT_FORTRAN_MAIN_SETUP_PARSE_LEVEL=never\ncmd: ")
-  set_tests_properties(fparse_level_canonical_only PROPERTIES
-    PASS_REGULAR_EXPRESSION "ERROR: unknown value 'off' for --tau_main_setup_parse_level"
+  set_tests_properties(saltfm_main_setup_fortran PROPERTIES
+    PASS_REGULAR_EXPRESSION "\nSALT_FORTRAN_EXCLUDED_MAIN_SETUP=none\ncmd: ")
+  set_tests_properties(fparse_main_setup_canonical_only PROPERTIES
+    PASS_REGULAR_EXPRESSION "ERROR: unknown value 'None' for --tau_excluded_main_setup"
     FAIL_REGULAR_EXPRESSION "cmd: ")
   # Both also take the value as the next argument.
-  add_test(NAME saltfm_level_fortran_next
+  add_test(NAME saltfm_main_setup_fortran_next
     COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
-            --tau_main_setup_parse_level never
+            --tau_excluded_main_setup None
             ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
-  add_test(NAME fparse_level_next
+  add_test(NAME fparse_main_setup_next
     COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show
-            --tau_main_setup_parse_level always
+            --tau_excluded_main_setup file
             ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
-  set_tests_properties(saltfm_level_fortran_next PROPERTIES
-    PASS_REGULAR_EXPRESSION "\nSALT_FORTRAN_MAIN_SETUP_PARSE_LEVEL=never\ncmd: ")
-  set_tests_properties(fparse_level_next PROPERTIES
-    PASS_REGULAR_EXPRESSION "\nSALT_FORTRAN_MAIN_SETUP_PARSE_LEVEL=always\ncmd: ")
-  add_test(NAME fparse_level_no_value
+  set_tests_properties(saltfm_main_setup_fortran_next PROPERTIES
+    PASS_REGULAR_EXPRESSION "\nSALT_FORTRAN_EXCLUDED_MAIN_SETUP=none\ncmd: ")
+  set_tests_properties(fparse_main_setup_next PROPERTIES
+    PASS_REGULAR_EXPRESSION "\nSALT_FORTRAN_EXCLUDED_MAIN_SETUP=file\ncmd: ")
+  add_test(NAME fparse_main_setup_no_value
     COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show
-            ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90 --tau_main_setup_parse_level)
-  string(CONCAT _level_no_value
-    "WARNING: --tau_main_setup_parse_level needs a value. using function\n"
-    ".*\nSALT_FORTRAN_MAIN_SETUP_PARSE_LEVEL=function\ncmd: ")
-  set_tests_properties(fparse_level_no_value PROPERTIES
-    PASS_REGULAR_EXPRESSION "${_level_no_value}")
-  set_tests_properties(saltfm_level_fortran fparse_level_canonical_only
-    saltfm_level_fortran_next fparse_level_next fparse_level_no_value PROPERTIES
-    ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}"
+            ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90 --tau_excluded_main_setup)
+  string(CONCAT _main_setup_no_value
+    "WARNING: --tau_excluded_main_setup needs a value. using routine\n"
+    ".*\nSALT_FORTRAN_EXCLUDED_MAIN_SETUP=routine\ncmd: ")
+  set_tests_properties(fparse_main_setup_no_value PROPERTIES
+    PASS_REGULAR_EXPRESSION "${_main_setup_no_value}")
+  set_tests_properties(saltfm_main_setup_fortran fparse_main_setup_canonical_only
+    saltfm_main_setup_fortran_next fparse_main_setup_next fparse_main_setup_no_value
+    PROPERTIES
+    ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
     LABELS "lang:Fortran;phase:smoke")
 endif()
 
-# At the `never` and `function` levels, saltfm does not parse a source
+# Unless --tau_excluded_main_setup=file, saltfm does not parse a source
 # that the file lists exclude: a Clang error in it does not stop saltfm,
-# and saltfm copies it. At `always`, the error does.
-foreach(level never function)
+# and saltfm copies it. With `file`, the error does.
+foreach(level none routine)
   add_sif_test_no_output(parse_error_${level}_c c tests/clang_error.c
-    tests/sif/file_exclude_all.tau ARGS --tau_main_setup_parse_level=${level})
+    tests/sif/file_exclude_all.tau ARGS --tau_excluded_main_setup=${level})
 endforeach()
-_salt_add_clang_error_test(parse_error_always_c parse_error_always.inst.c
-  "lang:C" clang_error.c ARGS --tau_main_setup_parse_level=always
+_salt_add_clang_error_test(parse_error_file_c parse_error_file.inst.c
+  "lang:C" clang_error.c ARGS --tau_excluded_main_setup=file
   --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau
   LOG "undeclared identifier 'undeclared_name'")
 # The `#line` lines and the timer names of C and C++ output escape `\`
@@ -2252,7 +2252,7 @@ function(_salt_add_line_escape_test name ext src)
       -P ${CMAKE_SOURCE_DIR}/tests/check_line_escape.cmake)
   _salt_lang_to_label(${ext} lang_label)
   set_tests_properties(line_escape_${name} PROPERTIES
-    ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}"
+    ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
     LABELS "${lang_label};phase:run")
   _salt_in_test_output(instrument line_escape_${name})
 endfunction()
@@ -2271,29 +2271,30 @@ _salt_add_line_escape_test(chars_cpp cpp line_escape_chars.cpp
 _salt_add_line_escape_test(string_cpp cpp line_escape_string.cpp
   -DSTD=c++20 [[-DEXPECT=int g(T<"a\"b">) ]])
 if(TEST_FORTRAN)
-  foreach(level never function)
+  foreach(level none routine)
     add_sif_test_no_output(parse_error_${level}_fortran fortran
       tests/fortran/compile_error.f90 tests/sif/file_exclude_all.tau
-      ARGS --tau_main_setup_parse_level=${level})
+      ARGS --tau_excluded_main_setup=${level})
   endforeach()
-  _salt_add_clang_error_test(parse_error_always_fortran
-    parse_error_always.inst.F90 "lang:Fortran" fortran/compile_error.f90
-    ARGS --tau_main_setup_parse_level=always
+  _salt_add_clang_error_test(parse_error_file_fortran
+    parse_error_file.inst.F90 "lang:Fortran" fortran/compile_error.f90
+    ARGS --tau_excluded_main_setup=file
     --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau
     LOG "undeclared_name")
-  set_tests_properties(parse_error_always_fortran PROPERTIES
-    ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}")
+  set_tests_properties(parse_error_file_fortran PROPERTIES
+    ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}")
 endif()
 
-# At the `never` and `function` levels, the main program of a source that
-# the file lists exclude gets no setup code, and saltfm warns about it.
+# Unless --tau_excluded_main_setup=file, the main program of a source
+# that the file lists exclude gets no setup code, and saltfm warns about
+# it.
 set(_excluded_main_warning
-  "WARNING: [^\n]*/sif_excl[.](c|cpp|f90) seems to hold the main program")
+  "WARNING: [^\n]*/sif_excl[.](c|cpp|f90) seems to contain the main program")
 foreach(lang IN LISTS _sif_langs)
-  foreach(level never function)
+  foreach(level none routine)
     add_sif_test_no_output(file_exclude_main_${level}_${lang} ${lang}
       ${_sif_src_${lang}} tests/sif/${_sif_file_exclude_${lang}}.tau
-      ARGS --tau_main_setup_parse_level=${level})
+      ARGS --tau_excluded_main_setup=${level})
     set_tests_properties(instrument_sif_file_exclude_main_${level}_${lang}
       PROPERTIES PASS_REGULAR_EXPRESSION "${_excluded_main_warning}")
   endforeach()
@@ -2301,36 +2302,36 @@ foreach(lang IN LISTS _sif_langs)
     APPEND PROPERTY FAIL_REGULAR_EXPRESSION "${_excluded_main_warning}")
 endforeach()
 set_property(TEST instrument_sif_file_exclude_nomain_c
-  APPEND PROPERTY FAIL_REGULAR_EXPRESSION "seems to hold the main program")
+  APPEND PROPERTY FAIL_REGULAR_EXPRESSION "seems to contain the main program")
 # A `main(` in a comment or a string literal is not a main program.
 foreach(lang c cpp)
   add_sif_test_no_output(file_exclude_main_text_${lang} ${lang}
     tests/sif_main_text.${lang} tests/sif/file_exclude_all.tau)
   set_property(TEST instrument_sif_file_exclude_main_text_${lang}
-    APPEND PROPERTY FAIL_REGULAR_EXPRESSION "seems to hold the main program")
+    APPEND PROPERTY FAIL_REGULAR_EXPRESSION "seems to contain the main program")
 endforeach()
 
-# At `never`, a main program that the routine lists leave out gets no
-# setup code, and saltfm does not warn about the include list; at
-# `always`, it gets the setup code, as at `function`.
+# With `none`, a main program that the routine lists leave out gets no
+# setup code, and saltfm does not warn about the include list; with
+# `file`, it gets the setup code, as with `routine`.
 foreach(lang IN LISTS _sif_langs)
-  foreach(level never always)
+  foreach(level none file)
     add_sif_test(main_excluded_${level}_${lang} ${lang} ${_sif_src_${lang}}
-      tests/sif/exclude_main.tau ARGS --tau_main_setup_parse_level=${level})
+      tests/sif/exclude_main.tau ARGS --tau_excluded_main_setup=${level})
     set_tests_properties(check_sif_main_excluded_${level}_${lang}
       PROPERTIES FAIL_REGULAR_EXPRESSION "${_sif_main_timer_${lang}}")
   endforeach()
-  set_property(TEST check_sif_main_excluded_never_${lang}
+  set_property(TEST check_sif_main_excluded_none_${lang}
     APPEND PROPERTY FAIL_REGULAR_EXPRESSION "TAU_PROFILE_SET_NODE")
-  set_tests_properties(check_sif_main_excluded_always_${lang}
+  set_tests_properties(check_sif_main_excluded_file_${lang}
     PROPERTIES PASS_REGULAR_EXPRESSION "TAU_PROFILE_SET_NODE")
-  add_sif_test(include_list_never_${lang} ${lang} ${_sif_src_${lang}}
-    tests/sif/include_list.tau ARGS --tau_main_setup_parse_level=never)
-  set_tests_properties(check_sif_include_list_never_${lang}
+  add_sif_test(include_list_none_${lang} ${lang} ${_sif_src_${lang}}
+    tests/sif/include_list.tau ARGS --tau_excluded_main_setup=none)
+  set_tests_properties(check_sif_include_list_none_${lang}
     PROPERTIES
     PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_${lang}}"
     FAIL_REGULAR_EXPRESSION "TAU_PROFILE_SET_NODE")
-  set_property(TEST warn_sif_include_list_never_${lang}
+  set_property(TEST warn_sif_include_list_none_${lang}
     APPEND PROPERTY FAIL_REGULAR_EXPRESSION "${_sif_main_warning}")
 endforeach()
 
@@ -3291,14 +3292,14 @@ if(TEST_FORTRAN)
   _salt_add_user_mod_test(use-user-iso-fortran-env.f90 -J)
   _salt_add_user_mod_test(use-mixed-nature.f90 -I)
 
-  # At the `never` and `function` levels, fparse-llvm parses a Fortran
+  # Unless --tau_excluded_main_setup=file, fparse-llvm parses a Fortran
   # source that the file lists exclude only when it seems to define a
   # module (or, with submodules-and-modules, a submodule), or holds an
   # INCLUDE line or an `#include`, so that Flang writes the module files,
   # and the plugin copies it (#88).
   # These are the texts of its warnings.
   set(_excluded_dir ${SALT_TEST_OUTPUT_DIR}/excluded)
-  set(_excluded_main_warning_text "seems to hold the main program")
+  set(_excluded_main_warning_text "seems to contain the main program")
   set(_excluded_parse_text "for its module files")
   set(_excluded_flang_error_text "WARNING: Flang could not parse")
   set(_excluded_off_text "WARNING: not parsing")
@@ -3345,19 +3346,19 @@ if(TEST_FORTRAN)
     set_tests_properties(excluded_${name} PROPERTIES
       REQUIRED_FILES "${src}"
       ENVIRONMENT_MODIFICATION
-        "SALT_MAIN_SETUP_PARSE_LEVEL=unset:;SALT_PARSE_EXCLUDED_MODULES=unset:"
+        "SALT_EXCLUDED_MAIN_SETUP=unset:;SALT_PARSE_EXCLUDED_MODULES=unset:"
       LABELS "lang:Fortran;phase:instrument")
   endfunction()
   # The module files of an excluded module source let another source use
-  # the module; only the `never` level warns about the parse. So do those
+  # the module; only `none` warns about the parse. So do those
   # of a source whose module comes from an INCLUDE line or an `#include`.
-  set(_excluded_mod_never excluded_mod.f90
-    ARGS --tau_main_setup_parse_level=never LOG "${_excluded_parse_text}")
-  set(_excluded_mod_function excluded_mod.f90
-    ARGS --tau_main_setup_parse_level=function NOT_LOG "${_excluded_parse_text}")
+  set(_excluded_mod_none excluded_mod.f90
+    ARGS --tau_excluded_main_setup=none LOG "${_excluded_parse_text}")
+  set(_excluded_mod_routine excluded_mod.f90
+    ARGS --tau_excluded_main_setup=routine NOT_LOG "${_excluded_parse_text}")
   set(_excluded_mod_include excluded_mod_include.f90)
   set(_excluded_mod_cpp_include excluded_mod_cpp_include.F90)
-  foreach(case never function include cpp_include)
+  foreach(case none routine include cpp_include)
     _salt_add_excluded_test(mod_${case} ${_excluded_mod_${case}}
       MOD excluded_mod)
     set_tests_properties(excluded_mod_${case} PROPERTIES
@@ -3428,7 +3429,7 @@ if(TEST_FORTRAN)
     ARGS --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau
     LOG "ERROR: Could not open input file")
   set_tests_properties(excluded_missing_input PROPERTIES REQUIRED_FILES ""
-    ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}")
+    ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}")
   # When salt-selectfile cannot read the selective instrumentation file
   # (status 2), fparse-llvm gives no warning and runs Flang, and the
   # plugin reports the error.
@@ -3441,7 +3442,7 @@ if(TEST_FORTRAN)
     PASS_REGULAR_EXPRESSION
       "Running: .*ERROR: Unable to read selective instrumentation file"
     FAIL_REGULAR_EXPRESSION "salt-selectfile failed"
-    ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}"
+    ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
     LABELS "lang:Fortran;phase:instrument")
   _salt_in_test_output(instrument fparse_sif_unreadable)
   # Fortran output keeps the file name of its `#line` lines as written,
@@ -3456,7 +3457,7 @@ if(TEST_FORTRAN)
         -DNAME=fortran_names_${name} ${ARGN}
         -P ${CMAKE_SOURCE_DIR}/tests/check_fortran_names.cmake)
     set_tests_properties(fortran_names_${name} PROPERTIES
-      ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}"
+      ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
       LABELS "lang:Fortran;phase:check")
     _salt_in_test_output(instrument fortran_names_${name})
   endfunction()
@@ -3511,9 +3512,9 @@ if(TEST_FORTRAN)
     set_property(TEST excluded_${test} APPEND PROPERTY
       ENVIRONMENT_MODIFICATION "SALT_PARSE_EXCLUDED_MODULES=set:OFF")
   endforeach()
-  # At `always`, the option has no effect: Flang parses the source.
-  _salt_add_excluded_test(mod_always_off excluded_mod.f90 MOD excluded_mod
-    ARGS --tau_main_setup_parse_level=always --tau_parse_excluded_modules=off
+  # With `file`, the option has no effect: Flang parses the source.
+  _salt_add_excluded_test(mod_file_off excluded_mod.f90 MOD excluded_mod
+    ARGS --tau_excluded_main_setup=file --tau_parse_excluded_modules=off
     LOG "Running:" NOT_LOG "${_excluded_off_text}")
   # saltfm passes each value, in any case, as written in lower case.
   foreach(value OFF Modules-Only SUBMODULES-AND-MODULES)
@@ -3525,10 +3526,10 @@ if(TEST_FORTRAN)
     set_tests_properties(saltfm_modules_value_${value} PROPERTIES
       PASS_REGULAR_EXPRESSION
         "fparse-llvm --show --tau_parse_excluded_modules=${canonical} .*\ncmd: "
-      ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}"
+      ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
       LABELS "lang:Fortran;phase:smoke")
   endforeach()
-  # The option has no synonyms, unlike the levels.
+  # The option has no synonyms.
   foreach(value always on false)
     add_test(NAME saltfm_modules_unknown_${value}
       COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
@@ -3538,7 +3539,7 @@ if(TEST_FORTRAN)
       PASS_REGULAR_EXPRESSION
         "ERROR: unknown value '${value}' for --tau_parse_excluded_modules\n.*USAGE:"
       FAIL_REGULAR_EXPRESSION "cmd: "
-      ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}"
+      ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
       LABELS "lang:Fortran;phase:smoke")
   endforeach()
   # fparse-llvm takes only the canonical values.
@@ -3574,7 +3575,7 @@ if(TEST_FORTRAN)
       "WARNING: --tau_parse_excluded_modules needs a value. using modules-only\n.*\ncmd: ")
   set_tests_properties(fparse_modules_canonical_only
     fparse_modules_next saltfm_modules_no_value fparse_modules_no_value
-    PROPERTIES ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}"
+    PROPERTIES ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
     LABELS "lang:Fortran;phase:smoke")
 
   # The module and main program checks, with the parse off so that
@@ -3869,7 +3870,7 @@ if(HAVE_TAU)
         PROPERTIES
         ENVIRONMENT TAU_MAKEFILE=${TAU_${dir}_MAKEFILE}
         ENVIRONMENT_MODIFICATION
-          "PATH=path_list_prepend:${TAU_BIN_DIR};${_salt_unset_level_env}"
+          "PATH=path_list_prepend:${TAU_BIN_DIR};${_salt_unset_option_env}"
         FIXTURES_REQUIRED ${prof_fix}
         FIXTURES_SETUP compile_${comp}_${name}
         LABELS "${lang_label};${tc_label};phase:compile"
@@ -3938,8 +3939,8 @@ if(HAVE_TAU)
   endforeach()
   # A source with main that the file lists exclude compiles without an
   # error, from SALT-FM's copy, whose #line 1 keeps __FILE__ the name of
-  # the source. At the `always` level, which the test sets in
-  # SALT_MAIN_SETUP_PARSE_LEVEL in the environment of TAU's compiler
+  # the source. With `file`, which the test sets in
+  # SALT_EXCLUDED_MAIN_SETUP in the environment of TAU's compiler
   # wrapper, its main has no timer but sets the node, so the program,
   # with the timer of keep_routine in sif_nomain.c, writes profile.0.0.0.
   foreach(ext c cpp)
@@ -3950,10 +3951,10 @@ if(HAVE_TAU)
       ${CMAKE_SOURCE_DIR}/tests/sif_nomain.c)
     foreach(comp IN LISTS SALT_COMPILERS_TO_TEST)
       set_property(TEST compile_${comp}_sif_file_exclude_main_${ext}
-        APPEND PROPERTY ENVIRONMENT_MODIFICATION "SALT_MAIN_SETUP_PARSE_LEVEL=set:always")
+        APPEND PROPERTY ENVIRONMENT_MODIFICATION "SALT_EXCLUDED_MAIN_SETUP=set:file")
     endforeach()
   endforeach()
-  # At the default level, its main gets no setup code, so the program
+  # By default, its main gets no setup code, so the program
   # sets no node and writes profile.-1.0.0.
   _salt_add_tau_main_test(sif_file_exclude_main_default_c
     tests/sif_file_name.c tests/sif/file_exclude_file_name.tau
@@ -3966,7 +3967,7 @@ if(HAVE_TAU)
       ${CMAKE_SOURCE_DIR}/tests/fortran/sif_keep.f90)
     foreach(comp IN LISTS SALT_FORTRAN_COMPILERS_TO_TEST)
       set_property(TEST compile_${comp}_sif_file_exclude_main_fortran
-        APPEND PROPERTY ENVIRONMENT_MODIFICATION "SALT_MAIN_SETUP_PARSE_LEVEL=set:always")
+        APPEND PROPERTY ENVIRONMENT_MODIFICATION "SALT_EXCLUDED_MAIN_SETUP=set:file")
     endforeach()
   endif()
 endif()
