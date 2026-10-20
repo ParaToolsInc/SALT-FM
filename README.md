@@ -353,19 +353,19 @@ and an unknown value stops `saltfm` with an error:
 A main program that the selective instrumentation file includes gets
 its setup code and its timer at all levels.
 
-Below the `always` level, SALT-FM still parses an excluded Fortran
-source that seems to define a module or submodule (a line that starts,
-after blanks and a statement label, with `module` or `submodule`), so
-that Flang writes the module files that other sources need; the output
-is still a copy, and at `never` SALT-FM warns about the parse. If Flang
-fails, SALT-FM warns that it does not write the module files, writes
-the copy, and exits with status 0. `--tau_parse_excluded_modules=off`,
-or `SALT_PARSE_EXCLUDED_MODULES` set to a value of the `never` level,
-skips this parse, with a warning that sources that use the modules can
-fail; use it when Flang cannot finish the parse of an excluded source,
-for example when it takes too long. `on`, the default, takes the
-values of the `function` level. At `always`, SALT-FM parses all sources
-and this option has no effect.
+At the `never` and `function` levels, SALT-FM still parses an excluded
+Fortran source that seems to define a module or submodule (a line that
+starts, after blanks and a statement label, with `module` or
+`submodule`), so that Flang writes the module files that other sources
+need; the output is still a copy, and at `never` SALT-FM warns about
+the parse. If Flang fails, SALT-FM warns that it does not write the
+module files, writes the copy, and exits with status 0.
+`--tau_parse_excluded_modules=off`, or `SALT_PARSE_EXCLUDED_MODULES`
+set to a value of the `never` level, skips this parse, with a warning
+that sources that use the modules can fail; use it when Flang cannot
+finish the parse of an excluded source, for example when it takes too
+long. `on`, the default, takes the values of the `function` level. At
+`always`, SALT-FM parses all sources and this option has no effect.
 
 ## Notes for package maintainers
 

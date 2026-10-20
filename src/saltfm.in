@@ -63,8 +63,8 @@ TAU instrumentor options:
                                   (default: \$SALT_MAIN_SETUP_PARSE_LEVEL, else function)
   --tau_parse_excluded_modules=<on|off>
                                 - Fortran only: parse a source that the file lists exclude when it
-                                  seems to define a module, for its module files, below the always
-                                  level (default: \$SALT_PARSE_EXCLUDED_MODULES, else on)
+                                  seems to define a module, for its module files, at the never and
+                                  function levels (default: \$SALT_PARSE_EXCLUDED_MODULES, else on)
   --tau_output=<filename>       - Specify name of output instrumented file
   --tau_select_file=<filename>  - Provide a selective instrumentation specification file
   --tau_use_cxx_api             - Use TAU's C++ instrumentation API
