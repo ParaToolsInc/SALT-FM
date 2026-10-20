@@ -106,22 +106,20 @@ bool instrumentRoutine(const std::string &name, bool ignoreCase = false);
 /* True if the file lists select file `path`, as instrumentRoutine(). */
 bool instrumentFile(const std::string &path);
 
-/* Returns `name` with a `\` before each `\` and `"`, for a C or C++
-   string literal such as the file name of a `#line` line. */
-std::string escapeCString(const std::string &name);
-
 /* Returns `str` with each `phrase` replaced by `to_replace`, as written.
    The search resumes after the inserted text, so a `to_replace` that
    holds `phrase` is not replaced again. */
 std::string ReplacePhrase(std::string str, const std::string &phrase,
                           const std::string &to_replace);
 
-/* Writes a `#line 1 "<source>"` line and then `source` to `output`, so
+/* Writes a `#line 1 "<line_name>"` line and then `source` to `output`, so
    that compiler messages, __FILE__, and debug information name the
-   source. With `escape`, for C and C++, the name is escapeCString(source);
-   Flang and ifx read the name of a Fortran `#line` line as written.
+   source. `line_name` is `source` as the language reads it: escaped for
+   a C or C++ string literal, or as written for Fortran, since Flang and
+   ifx read the name of a Fortran `#line` line as written.
    Returns false after an error message that names the file. */
-bool copySource(const std::string &source, const std::string &output, bool escape);
+bool copySource(const std::string &source, const std::string &output,
+                const std::string &line_name);
 
 /* Warns that main program `name` still gets its setup code when the
    include list is not empty, does not match it, and the exclude list

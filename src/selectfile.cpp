@@ -913,18 +913,6 @@ static bool ioFailed(bool failed, const char *what, const std::string &file)
   return failed;
 }
 
-std::string escapeCString(const std::string &name)
-{
-  std::string escaped;
-  for (const char c : name) {
-    if (c == '\\' || c == '"') {
-      escaped += '\\';
-    }
-    escaped += c;
-  }
-  return escaped;
-}
-
 std::string ReplacePhrase(std::string str, const std::string &phrase,
                           const std::string &to_replace)
 {
@@ -935,7 +923,8 @@ std::string ReplacePhrase(std::string str, const std::string &phrase,
   return str;
 }
 
-bool copySource(const std::string &source, const std::string &output, bool escape)
+bool copySource(const std::string &source, const std::string &output,
+                const std::string &line_name)
 {
   /* Open the input first, so a missing one leaves no output file */
   std::ifstream in(source);
@@ -946,7 +935,7 @@ bool copySource(const std::string &source, const std::string &output, bool escap
   if (ioFailed(!out.is_open(), "open output file", output)) {
     return false;
   }
-  out << "#line 1 \"" << (escape ? escapeCString(source) : source) << "\"\n";
+  out << "#line 1 \"" << line_name << "\"\n";
   /* Copying an empty rdbuf() sets failbit, so copy only a non-empty file */
   if (in.peek() != std::ifstream::traits_type::eof()) {
     out << in.rdbuf();

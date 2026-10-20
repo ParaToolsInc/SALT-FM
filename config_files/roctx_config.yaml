@@ -1,6 +1,6 @@
 # Config variables:
-#   ${full_timer_name}: "function_name [file_path {start}-{end}]",
-#   escaped for a "..." string literal
+#   ${full_timer_name}: "function_name [file_path {start}-{end}]".
+#   Put it only inside a "..." string literal: SALT-FM escapes it for one.
 
 instrumentation: ROCTX
 include:
