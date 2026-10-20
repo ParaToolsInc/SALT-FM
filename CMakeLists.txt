@@ -3284,8 +3284,9 @@ if(TEST_FORTRAN)
 
   # At the `never` and `function` levels, fparse-llvm parses a Fortran
   # source that the file lists exclude only when it seems to define a
-  # module or submodule, so that Flang writes the module files, and the
-  # plugin copies it (#88). These are the texts of its warnings.
+  # module or submodule, or holds an INCLUDE line or an `#include`, so
+  # that Flang writes the module files, and the plugin copies it (#88).
+  # These are the texts of its warnings.
   set(_excluded_dir ${SALT_TEST_OUTPUT_DIR}/excluded)
   set(_excluded_main_warning_text "seems to hold the main program")
   set(_excluded_parse_text "for its module files")
@@ -3338,25 +3339,30 @@ if(TEST_FORTRAN)
       LABELS "lang:Fortran;phase:instrument")
   endfunction()
   # The module files of an excluded module source let another source use
-  # the module; only the `never` level warns about the parse.
-  set(_excluded_mod_never LOG "${_excluded_parse_text}")
-  set(_excluded_mod_function NOT_LOG "${_excluded_parse_text}")
-  foreach(level never function)
-    _salt_add_excluded_test(mod_${level} excluded_mod.f90 MOD excluded_mod
-      ARGS --tau_main_setup_parse_level=${level} ${_excluded_mod_${level}})
-    set_tests_properties(excluded_mod_${level} PROPERTIES
-      FIXTURES_SETUP excluded_mod_${level})
-    add_test(NAME instrument_use_excluded_mod_${level}
+  # the module; only the `never` level warns about the parse. So do those
+  # of a source whose module comes from an INCLUDE line or an `#include`.
+  set(_excluded_mod_never excluded_mod.f90
+    ARGS --tau_main_setup_parse_level=never LOG "${_excluded_parse_text}")
+  set(_excluded_mod_function excluded_mod.f90
+    ARGS --tau_main_setup_parse_level=function NOT_LOG "${_excluded_parse_text}")
+  set(_excluded_mod_include excluded_mod_include.f90)
+  set(_excluded_mod_cpp_include excluded_mod_cpp_include.F90)
+  foreach(case never function include cpp_include)
+    _salt_add_excluded_test(mod_${case} ${_excluded_mod_${case}}
+      MOD excluded_mod)
+    set_tests_properties(excluded_mod_${case} PROPERTIES
+      FIXTURES_SETUP excluded_mod_${case})
+    add_test(NAME instrument_use_excluded_mod_${case}
       COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
-              -I${_excluded_dir}/mod_${level}
-              --tau_output=use-excluded-mod_${level}.inst.F90
+              -I${_excluded_dir}/mod_${case}
+              --tau_output=use-excluded-mod_${case}.inst.F90
               ${CMAKE_SOURCE_DIR}/tests/fortran/use-excluded-mod.f90)
-    set_tests_properties(instrument_use_excluded_mod_${level} PROPERTIES
-      FIXTURES_REQUIRED excluded_mod_${level}
+    set_tests_properties(instrument_use_excluded_mod_${case} PROPERTIES
+      FIXTURES_REQUIRED excluded_mod_${case}
       ENVIRONMENT "SALT_FORTRAN_VERBOSE=1"
       LABELS "lang:Fortran;phase:instrument"
       PASS_REGULAR_EXPRESSION "SALT Instrumentor Plugin finished")
-    _salt_in_test_output(instrument instrument_use_excluded_mod_${level})
+    _salt_in_test_output(instrument instrument_use_excluded_mod_${case})
   endforeach()
   # When Flang cannot parse the module source, saltfm warns and copies it.
   _salt_add_excluded_test(mod_error excluded_mod_error.f90
@@ -3534,6 +3540,16 @@ if(TEST_FORTRAN)
   _salt_add_module_check(trailing_comment_module 0 0 "x = 1 ! module m\n")
   _salt_add_module_check(string_module 0 0 "print *, 'module m'\n")
   _salt_add_module_check(empty_file 0 0 "")
+  # An INCLUDE line or an `#include` can bring in a module
+  _salt_add_module_check(include_line 1 0 "include 'm.inc'\n")
+  _salt_add_module_check(include_fixed 1 0 "      INCLUDE \"m.inc\"\n")
+  _salt_add_module_check(include_noblank 1 0 "include'm.inc'\n")
+  _salt_add_module_check(cpp_include 1 0 "#include \"m.inc\"\n")
+  _salt_add_module_check(cpp_include_blank 1 0 "  #  include <m.inc>\n")
+  _salt_add_module_check(include_comment 0 0 "! include 'm.inc'\nx = 1\n")
+  _salt_add_module_check(include_fixed_comment 0 0
+    "C     INCLUDE 'm.inc'\n      X = 1\n")
+  _salt_add_module_check(include_variable 0 0 "include_x = 1\n")
   # A UTF-8 byte order mark before the first line, which Flang accepts
   string(ASCII 239 187 191 _bom)
   _salt_add_module_check(bom_module 1 0 "${_bom}module m\nend module m\n")

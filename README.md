@@ -361,10 +361,16 @@ its setup code and its timer at all levels.
 At the `never` and `function` levels, SALT-FM still parses an excluded
 Fortran source that seems to define a module or submodule (a line that
 starts, after blanks and a statement label, with `module` or
-`submodule`), so that Flang writes the module files that other sources
+`submodule`), or that holds an INCLUDE line or an `#include`, which can
+bring one in, so that Flang writes the module files that other sources
 need; the output is still a copy, and at `never` SALT-FM warns about
-the parse. If Flang fails, SALT-FM warns that it does not write the
-module files, writes the copy, and exits with status 0.
+the parse. A fixed-form `module` statement with no blank before the
+name, such as `MODULEFOO`, is not found. For such a source, use
+`--tau_main_setup_parse_level=always`, which parses it but still adds
+no timers to it, or do not exclude the file and leave out its
+routines with the routine exclude list instead. If Flang fails,
+SALT-FM warns that it does not write the module files, writes the
+copy, and exits with status 0.
 `--tau_parse_excluded_modules=off`, or `SALT_PARSE_EXCLUDED_MODULES`
 set to a value of the `never` level, skips this parse, with a warning
 that sources that use the modules can fail; use it when Flang cannot

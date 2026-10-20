@@ -63,8 +63,8 @@ TAU instrumentor options:
                                  the main program its setup code without a timer (default: function)
   --tau_parse_excluded_modules=<on|off>
                                - At the never and function levels, parse a source that the file
-                                 lists exclude when it seems to define a module, for its module files
-                                 (default: on)
+                                 lists exclude when it seems to define or include a module, for its
+                                 module files (default: on)
   --tau_output=<filename>      - Specify name of output instrumented file
   --tau_select_file=<filename> - Provide a selective instrumentation specification file
   --show                       - Print the command line that would be executed by the wrapper script
@@ -469,7 +469,8 @@ function content_matches {
 
 # At the `never` and `function` levels, copy a source that the file lists
 # exclude without a parse, unless it seems to define a module, whose
-# module files other sources need. The plugin repeats the SIF warnings
+# module files other sources need, or holds an INCLUDE line or an
+# `#include`, whose text can. The plugin repeats the SIF warnings
 # when Flang runs.
 sif_status=0
 if [[ -n ${select_file:-} && ${main_setup_level} != always ]]; then
@@ -483,6 +484,7 @@ if [[ ${sif_status} -eq 1 ]]; then
     # lines do not.
     nl=$'\n'
     module_re="${nl}[[:blank:]]*([0-9]+[[:blank:]]+)?(sub)?module([^[:alnum:]_]|\$)"
+    include_re="${nl}[[:blank:]]*(#[[:blank:]]*)?include[[:blank:]]*[\"'<]"
     program_re="${nl}[[:blank:]]*([0-9]+[[:blank:]]+)?program[[:blank:]]+[[:alpha:]]"
     if [[ ! -r ${input_file} ]]; then
         echo "ERROR: Could not open input file ${input_file}" >&2
@@ -498,7 +500,7 @@ if [[ ${sif_status} -eq 1 ]]; then
         echo "  selective instrumentation file lists exclude it, so main gets no setup" >&2
         echo "  code; use --tau_main_setup_parse_level=always to add it" >&2
     fi
-    if content_matches "${module_re}"; then
+    if content_matches "${module_re}" || content_matches "${include_re}"; then
         has_module=true
     fi
     shopt -u nocasematch
