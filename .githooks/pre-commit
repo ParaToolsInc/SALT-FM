@@ -45,7 +45,7 @@ fi
 # Collect staged paths (Added/Copied/Modified/Renamed) into per-linter arrays.
 mapfile -t _staged < <(git diff --cached --name-only --diff-filter=ACMR)
 
-shell_files=()
+mapfile -t shell_files < <(.githooks/shell-scripts "${_staged[@]}")
 cmake_files=()
 yaml_files=()
 workflow_files=()
@@ -53,10 +53,6 @@ workflow_files=()
 for f in "${_staged[@]}"; do
   [[ -f "${f}" ]] || continue
   case "${f}" in
-    *.sh|*.bash|.githooks/*)
-      shell_files+=("${f}") ;;
-    src/*.in)
-      shell_files+=("${f}") ;;
     *.cmake|CMakeLists.txt|*/CMakeLists.txt)
       cmake_files+=("${f}") ;;
   esac
@@ -75,9 +71,9 @@ warn_missing() {
 }
 
 if [[ ${#shell_files[@]} -gt 0 ]]; then
-  # Run shellcheck on staged shell scripts (treat .in templates as bash).
+  # Run shellcheck on staged shell scripts, each for the shell of its first line.
   if command -v shellcheck >/dev/null 2>&1; then
-    if ! shellcheck --shell=bash "${shell_files[@]}"; then
+    if ! shellcheck "${shell_files[@]}"; then
       fail=1
     fi
   else
