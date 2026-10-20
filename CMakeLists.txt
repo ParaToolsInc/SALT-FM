@@ -442,11 +442,22 @@ endforeach()
 set(CPARSE_LLVM_SRCS
   frontend.cpp
   instrumentor.cpp
-  selectfile.cpp
   sema_fabricator.cpp
 )
 
 list(TRANSFORM CPARSE_LLVM_SRCS PREPEND "${CMAKE_SOURCE_DIR}/src/")
+
+# selectfile.cpp, compiled once for cparse-llvm, the Flang plugin (thus
+# position independent), salt-selectfile, and sif_check
+add_library(salt_selectfile_obj OBJECT src/selectfile.cpp)
+target_include_directories(salt_selectfile_obj PRIVATE
+  ${CMAKE_SOURCE_DIR}/include ${LLVM_INCLUDE_DIRS})
+target_compile_definitions(salt_selectfile_obj PRIVATE ${LLVM_DEFINITIONS_LIST})
+target_compile_features(salt_selectfile_obj PRIVATE cxx_std_17)
+target_compile_options(salt_selectfile_obj PRIVATE
+  ${USE_RTTI} -Wall -Wpedantic -Wno-unused-variable ${SALT_WERROR})
+set_target_properties(salt_selectfile_obj PROPERTIES
+  POSITION_INDEPENDENT_CODE ON)
 
 #---------------------
 # Add the main targets
@@ -467,6 +478,7 @@ target_include_directories(cparse-llvm PUBLIC
 target_compile_features(cparse-llvm PUBLIC cxx_std_17)
 # Inherit definitions, compile features, etc.
 target_link_libraries(cparse-llvm PUBLIC SALT_LLVM_TOOLING)
+target_link_libraries(cparse-llvm PRIVATE salt_selectfile_obj)
 # You can try adding -static. The --as-needed/--no-allow-shlib-undefined/
 # --no-undefined flags are GNU ld extensions; Apple ld doesn't recognize
 # them, so gate on linker family.
@@ -604,7 +616,6 @@ if(MLIR_FOUND AND Flang_FOUND)
 
   set(SALT_FLANG_PLUGIN_SRCS
     dprint.cpp
-    selectfile.cpp
     flang_source_location.cpp
     flang_instrumentation_point.cpp
     flang_salt_instrument_plugin.cpp
@@ -622,6 +633,7 @@ if(MLIR_FOUND AND Flang_FOUND)
     "${CMAKE_SOURCE_DIR}/include" "${CMAKE_BINARY_DIR}/include")
   target_compile_features(salt-flang-plugin PUBLIC cxx_std_17)
   target_link_libraries(salt-flang-plugin PUBLIC SALT_FLANG_FRONTEND)
+  target_link_libraries(salt-flang-plugin PRIVATE salt_selectfile_obj)
   # Apple ld uses `-undefined dynamic_lookup`; GNU ld uses --as-needed and
   # rejects -undefined dynamic_lookup. Pick per linker.
   target_link_options(salt-flang-plugin PUBLIC
@@ -636,7 +648,8 @@ if(MLIR_FOUND AND Flang_FOUND)
 
   # Tells fparse-llvm, before Flang runs, whether the file lists exclude a
   # source, and copies a source
-  add_executable(salt-selectfile src/selectfile_main.cpp src/selectfile.cpp)
+  add_executable(salt-selectfile src/selectfile_main.cpp)
+  target_link_libraries(salt-selectfile PRIVATE salt_selectfile_obj)
   target_include_directories(salt-selectfile PRIVATE
     ${CMAKE_SOURCE_DIR}/include ${LLVM_INCLUDE_DIRS})
   target_compile_definitions(salt-selectfile PRIVATE ${LLVM_DEFINITIONS_LIST})
@@ -2263,7 +2276,8 @@ endforeach()
 # TAU's selective instrumentation reference cases (tests/sif/tau/):
 # sif_check reads each case's SIF with SALT-FM's parser and checks the
 # routine and file names of its .expect file with SALT-FM's matcher.
-add_executable(sif_check tests/sif_check.cpp src/selectfile.cpp)
+add_executable(sif_check tests/sif_check.cpp)
+target_link_libraries(sif_check PRIVATE salt_selectfile_obj)
 target_include_directories(sif_check PRIVATE
   ${CMAKE_SOURCE_DIR}/include ${LLVM_INCLUDE_DIRS})
 target_compile_definitions(sif_check PRIVATE ${LLVM_DEFINITIONS_LIST})
