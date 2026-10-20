@@ -3393,6 +3393,9 @@ if(TEST_FORTRAN)
   _salt_add_module_check(trailing_comment_module 0 0 "x = 1 ! module m\n")
   _salt_add_module_check(string_module 0 0 "print *, 'module m'\n")
   _salt_add_module_check(empty_file 0 0 "")
+  # A UTF-8 byte order mark before the first line, which Flang accepts
+  string(ASCII 239 187 191 _bom)
+  _salt_add_module_check(bom_module 1 0 "${_bom}module m\nend module m\n")
   _salt_add_module_check(free_program 0 1
     "program hello\nprint *, 'hi'\nend program hello\n")
   _salt_add_module_check(free_program_upper 0 1 "PROGRAM HELLO\nEND\n")
