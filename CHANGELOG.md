@@ -130,15 +130,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - When a selective instrumentation file excludes the main program, an
   include list leaves it out, or, with
   `--tau_excluded_main_setup=file`, the file lists exclude its file,
-  SALT-FM removes only main's timer and keeps its setup code, which for
-  TAU is `TAU_INIT` and `TAU_PROFILE_SET_NODE(0)`, or `TAU_PROFILE_INIT`
-  and `TAU_PROFILE_SET_NODE(0)` in Fortran, and for perfstubs and ITT
+  SALT-FM removes only main's timer and, unless
+  `--tau_excluded_main_setup=none`, keeps its setup code, which for TAU
+  is `TAU_INIT` and `TAU_PROFILE_SET_NODE(0)`, or `TAU_PROFILE_INIT` and
+  `TAU_PROFILE_SET_NODE(0)` in Fortran, and for perfstubs and ITT
   `PERFSTUBS_INITIALIZE()`. Before, C and C++ removed the setup code
   too, so a program run without MPI or `tau_exec` wrote
   `profile.-1.0.0` and a threaded program could fail with timer errors;
   Fortran ignored the routine lists for the main program. SALT-FM warns
   when an include list that is not empty leaves out the main program
-  and no exclude list entry names it
+  and no exclude list entry names it, unless
+  `--tau_excluded_main_setup=none`
   ([#71](https://github.com/ParaToolsInc/SALT-FM/issues/71)).
 - Configuration files give main's setup code apart from its timer: the
   new optional `main_setup_insert` is written at the start of `main`
@@ -181,8 +183,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   SALT-FM cannot parse. The main program in such a source gets no
   setup code, so a program run without MPI or `tau_exec` writes
   `profile.-1.0.0`; SALT-FM warns when an excluded source seems to
-  contain the main program. The new option
-  `--tau_excluded_main_setup=<none|routine|file>` (or
+  contain the main program (in Fortran, a `program` statement). The
+  new option `--tau_excluded_main_setup=<none|routine|file>` (or
   `SALT_EXCLUDED_MAIN_SETUP`; default `routine`) selects which excluded
   main programs get setup code: `file` parses all sources and gives
   such a main its setup code, and `none` also gives no setup code to a
@@ -223,6 +225,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a regex format escape, and in C and C++ a `${full_timer_name}` in
   the path or signature made `saltfm` hang
   ([#88](https://github.com/ParaToolsInc/SALT-FM/issues/88)).
+- `saltfm` and `fparse-llvm` take their options only from their
+  arguments and the documented `SALT_*` environment variables. Before,
+  an environment variable with the name of one of their shell
+  variables, such as `show`, `tool`, or `output_file`, changed what
+  they did; with `output_file` and no `--tau_output`, `fparse-llvm`
+  removed and overwrote the file that it named. Without an input file,
+  `fparse-llvm` now stops with `ERROR: no input file`, and `--show`
+  prints the command; before, both stopped on an unset shell variable.
 
 ## [0.5.0] - 2026-10-09
 

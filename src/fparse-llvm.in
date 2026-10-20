@@ -80,8 +80,9 @@ TAU instrumentor options:
                                  the modules. It adds no timers to the excluded files.
                                    off:          SALT-FM parses no excluded file.
                                    modules-only: SALT-FM parses an excluded file that
-                                                 defines or includes a module. This
-                                                 is the default.
+                                                 defines a module, or has an INCLUDE
+                                                 line or #include. This is the
+                                                 default.
                                    submodules-and-modules:
                                                  SALT-FM also parses an excluded file
                                                  that has only submodules. Only the
@@ -214,7 +215,8 @@ expecting_select_file=false
 expecting_flang_exe=false
 expecting_excluded_main_setup=false
 expecting_parse_excluded_modules=false
-unset flang_exe
+# Only the arguments set these, not environment variables of the same names
+unset flang_exe input_file output_file select_file
 excluded_main_setup=routine
 parse_excluded_modules=modules-only
 show=false
@@ -449,7 +451,7 @@ if [[ -z "${output_file:-}" ]]; then
         output_file="${input_file%.*}.inst${file_ext//f/F}"
         output_file="$(pwd)/${output_file##*/}"
     else
-        output_file="$(pwd)/${input_file%.*}.inst${file_ext//f/F}"
+        output_file="$(pwd)/${input_file:+${input_file%.*}}.inst${file_ext//f/F}"
     fi
 
 fi
@@ -466,7 +468,7 @@ cmd=("${flang_exe}"
     # Flang 23+ resolves `use, intrinsic` only from intrinsic module paths;
     # on Flang 19-22 the plugin adds these directories to them
     -fintrinsic-modules-path "${_SALT_INC_DIR}"
-    "${input_file}"
+    "${input_file:-}"
     -o "${output_file}"
     ${args[@]+"${args[@]}"})
 echo "SALT_FORTRAN_CONFIG_FILE=\"${FORTRAN_CONFIG_FILE}\""
@@ -475,6 +477,11 @@ echo "SALT_FORTRAN_EXCLUDED_MAIN_SETUP=${excluded_main_setup}"
 if $show; then
     echo "cmd: ${cmd[*]}"
     exit 0
+fi
+# With no input file, Flang would read stdin
+if [[ -z ${input_file+set} ]]; then
+    echo "ERROR: no input file" >&2
+    exit 1
 fi
 
 # Runs Flang with the plugin
@@ -523,7 +530,8 @@ if [[ ${sif_status} -eq 1 ]]; then
     content="$(<"${input_file}")"
     # Flang accepts a UTF-8 byte order mark before the first line
     content="${nl}${content#$'\xef\xbb\xbf'}"
-    # module, submodule, or empty for neither
+    # module, include (an include line but no module), submodule, or empty
+    # for none of them
     kind=
     shopt -s nocasematch
     if content_matches "${program_re}"; then
@@ -531,25 +539,32 @@ if [[ ${sif_status} -eq 1 ]]; then
         echo "  exclude this file, so the main program gets no setup code. To add the" >&2
         echo "  setup code, use --tau_excluded_main_setup=file." >&2
     fi
-    if content_matches "${module_re}" || content_matches "${include_re}"; then
+    if content_matches "${module_re}"; then
         kind=module
+    elif content_matches "${include_re}"; then
+        kind=include
     elif content_matches "${submodule_re}"; then
         kind=submodule
     fi
     shopt -u nocasematch
     case ${parse_excluded_modules}:${kind} in
-        modules-only:module | submodules-and-modules:?*) parse=true ;;
+        modules-only:module | modules-only:include | submodules-and-modules:?*) parse=true ;;
         *) parse=false ;;
     esac
-    # Nothing can `use` a submodule; only its child submodules need it
+    mod_files="its module files"
     can_fail="sources that use its modules can fail"
-    if [[ ${kind} == submodule ]]; then
+    if [[ ${kind} == include ]]; then
+        # The included text may define no module
+        mod_files="any module files it defines"
+        can_fail="sources that use them can fail"
+    elif [[ ${kind} == submodule ]]; then
+        # Nothing can `use` a submodule; only its child submodules need it
         can_fail="child submodules of its submodules can fail"
     fi
     if $parse; then
         if [[ ${excluded_main_setup} == none ]]; then
             echo "WARNING: parsing ${input_file}, which the selective instrumentation" >&2
-            echo "  file lists exclude, for its module files" >&2
+            echo "  file lists exclude, for ${mod_files}" >&2
             echo "  (--tau_parse_excluded_modules=off skips the parse)" >&2
         fi
         if run_flang; then
@@ -561,18 +576,20 @@ if [[ ${sif_status} -eq 1 ]]; then
         fi
         echo "WARNING: Flang could not parse ${input_file}, which the selective" >&2
         echo "  instrumentation file lists exclude; SALT-FM copies it but does not" >&2
-        echo "  write its module files, so ${can_fail}" >&2
+        echo "  write ${mod_files}, so ${can_fail}" >&2
     else
         if [[ -n ${sif_log} ]]; then
             echo "${sif_log}" >&2
         fi
         if [[ -n ${kind} && ${parse_excluded_modules} == off ]]; then
             echo "WARNING: not parsing ${input_file}, which the selective instrumentation" >&2
-            echo "  file lists exclude; SALT-FM does not write its module files, so" >&2
+            echo "  file lists exclude; SALT-FM does not write ${mod_files}, so" >&2
             echo "  ${can_fail}" >&2
         fi
     fi
-    # The copy is exact, unlike $(<file), which drops the newlines at the end
+    # This copy is exact, unlike $(<file), which drops the newlines at the
+    # end; the plugin's copy, after a parse, adds a newline at the end when
+    # the source has none
     "${_SCRIPT_DIR}/salt-selectfile" --copy "${input_file}" "${output_file}"
     exit 0
 fi
