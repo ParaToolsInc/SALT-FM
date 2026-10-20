@@ -482,6 +482,10 @@ if [[ ${sif_status} -eq 1 ]]; then
     nl=$'\n'
     module_re="${nl}[[:blank:]]*([0-9]+[[:blank:]]+)?(sub)?module([^[:alnum:]_]|\$)"
     program_re="${nl}[[:blank:]]*([0-9]+[[:blank:]]+)?program[[:blank:]]+[[:alpha:]]"
+    if [[ ! -r ${input_file} ]]; then
+        echo "ERROR: Could not open input file ${input_file}" >&2
+        exit 1
+    fi
     content="$(<"${input_file}")"
     # Flang accepts a UTF-8 byte order mark before the first line
     content="${nl}${content#$'\xef\xbb\xbf'}"
