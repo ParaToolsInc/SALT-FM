@@ -1400,6 +1400,11 @@ function(_sif_set_warning_checks test warnings fail)
   endif()
 endfunction()
 
+# The SIF tests expect the default level unless their ARGS set one, so a
+# level in the developer's environment must not reach saltfm.
+set(_salt_unset_level_env
+  "SALT_MAIN_SETUP_PARSE_LEVEL=unset:;SALT_PARSE_EXCLUDED_MODULES=unset:")
+
 # Standard SIF test: instrumented output IS produced and inspected by
 # check_sif_<test_name>. The caller is responsible for setting
 # PASS_REGULAR_EXPRESSION / FAIL_REGULAR_EXPRESSION on the check test.
@@ -1450,6 +1455,7 @@ function(add_sif_test test_name lang src sif)
     PROPERTIES
     REQUIRED_FILES "${CMAKE_SOURCE_DIR}/${src};${sif_path}"
     ENVIRONMENT "SALT_FORTRAN_VERBOSE=1"
+    ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}"
     FIXTURES_REQUIRED ${name}_output
     FIXTURES_SETUP ${name}_inst
     LABELS "${_lang_label};phase:instrument;sif"
@@ -1508,6 +1514,7 @@ function(add_sif_test_no_output test_name lang src sif)
   set_tests_properties(instrument_${name}
     PROPERTIES
     REQUIRED_FILES "${CMAKE_SOURCE_DIR}/${src};${CMAKE_SOURCE_DIR}/${sif}"
+    ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}"
     FIXTURES_REQUIRED ${name}_output
     FIXTURES_SETUP ${name}_inst
     LABELS "${_lang_label};phase:instrument;sif"
@@ -3618,7 +3625,8 @@ if(HAVE_TAU)
       set_tests_properties(compile_${comp}_${name}
         PROPERTIES
         ENVIRONMENT TAU_MAKEFILE=${TAU_${dir}_MAKEFILE}
-        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${TAU_BIN_DIR}"
+        ENVIRONMENT_MODIFICATION
+          "PATH=path_list_prepend:${TAU_BIN_DIR};${_salt_unset_level_env}"
         FIXTURES_REQUIRED ${prof_fix}
         FIXTURES_SETUP compile_${comp}_${name}
         LABELS "${lang_label};${tc_label};phase:compile"
@@ -3699,7 +3707,7 @@ if(HAVE_TAU)
       ${CMAKE_SOURCE_DIR}/tests/sif_nomain.c)
     foreach(comp IN LISTS SALT_COMPILERS_TO_TEST)
       set_property(TEST compile_${comp}_sif_file_exclude_main_${ext}
-        APPEND PROPERTY ENVIRONMENT SALT_MAIN_SETUP_PARSE_LEVEL=always)
+        APPEND PROPERTY ENVIRONMENT_MODIFICATION "SALT_MAIN_SETUP_PARSE_LEVEL=set:always")
     endforeach()
   endforeach()
   # At the default level, its main gets no setup code, so the program
@@ -3708,10 +3716,6 @@ if(HAVE_TAU)
     tests/sif_file_name.c tests/sif/file_exclude_file_name.tau
     keep_routine "int main[(]" PROFILE profile.-1.0.0
     ${CMAKE_SOURCE_DIR}/tests/sif_nomain.c)
-  foreach(comp IN LISTS SALT_COMPILERS_TO_TEST)
-    set_property(TEST compile_${comp}_sif_file_exclude_main_default_c
-      APPEND PROPERTY ENVIRONMENT_MODIFICATION "SALT_MAIN_SETUP_PARSE_LEVEL=unset:")
-  endforeach()
   if(TEST_FORTRAN)
     _salt_add_tau_main_test(sif_file_exclude_main_fortran
       tests/fortran/sif_file_name.f90 tests/sif/file_exclude_file_name.tau
@@ -3719,7 +3723,7 @@ if(HAVE_TAU)
       ${CMAKE_SOURCE_DIR}/tests/fortran/sif_keep.f90)
     foreach(comp IN LISTS SALT_FORTRAN_COMPILERS_TO_TEST)
       set_property(TEST compile_${comp}_sif_file_exclude_main_fortran
-        APPEND PROPERTY ENVIRONMENT SALT_MAIN_SETUP_PARSE_LEVEL=always)
+        APPEND PROPERTY ENVIRONMENT_MODIFICATION "SALT_MAIN_SETUP_PARSE_LEVEL=set:always")
     endforeach()
   endif()
 endif()
