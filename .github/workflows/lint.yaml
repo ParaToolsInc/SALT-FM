@@ -16,14 +16,17 @@ jobs:
       - uses: astral-sh/setup-uv@v8.1.0
       - name: Install cmake-lint
         run: uv tool install cmakelang --with pyyaml
+      # Every tracked file whose first line runs sh or bash, as the
+      # pre-commit hook selects them
       - name: shellcheck
         run: |
-          shellcheck --shell=bash \
-            activate-salt-fm-env.sh \
-            build_and_test.sh \
-            .githooks/pre-commit \
-            .githooks/pre-push \
-            src/fparse-llvm.in \
-            src/saltfm.in
+          mapfile -t scripts < <(git ls-files -z | xargs -0 .githooks/shell-scripts)
+          printf '%s\n' "${scripts[@]}"
+          shellcheck "${scripts[@]}"
       - name: cmake-lint
         run: cmake-lint CMakeLists.txt cmake/modules/*.cmake
+      # The download script at the commit of the v1.7.12 tag
+      - name: actionlint
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/914e7df21a07ef503a81201c76d2b11c789d3fca/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -color

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#
+# shell-scripts -- Print each named file whose first line runs sh or bash.
+#
+# The pre-commit hook passes the staged files and CI (lint.yaml) the
+# tracked ones, so both shellcheck the same scripts, a new one included.
+# The `.in` templates of the shell scripts start with such a line too.
+#
+# Usage: .githooks/shell-scripts <file>...
+
+set -uo pipefail
+
+for f in "$@"; do
+  # Skip an unreadable file, whose first line `read` cannot set
+  [[ -f "${f}" && -r "${f}" ]] || continue
+  # `read` fails on a first line without a newline, but still sets `line`
+  IFS= read -r line < "${f}" || true
+  if [[ "${line}" =~ ^#!(.*[/[:space:]])?(ba)?sh([[:space:]]|$) ]]; then
+    printf '%s\n' "${f}"
+  fi
+done
