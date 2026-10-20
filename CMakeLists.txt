@@ -3299,6 +3299,13 @@ if(TEST_FORTRAN)
   _salt_add_excluded_test(mod_error_sif_warning excluded_mod_error.f90
     SIF tests/sif/file_include_quoted.tau
     LOG "file include list entry at selective instrumentation file line 4")
+  # A missing excluded source gives an error, and no output.
+  _salt_add_clang_error_test(excluded_missing_input
+    excluded_missing_input.inst.F90 "lang:Fortran" fortran/no_such_source.f90
+    ARGS --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau
+    LOG "ERROR: Could not open input file")
+  set_tests_properties(excluded_missing_input PROPERTIES REQUIRED_FILES ""
+    ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}")
   # A byte that is not valid in the locale's encoding, here Latin-1 in
   # UTF-8, does not hide the module.
   _salt_add_excluded_test(mod_latin1 excluded_mod_latin1.f90
