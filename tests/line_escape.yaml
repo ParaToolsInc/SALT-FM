@@ -1,14 +1,23 @@
-# A configuration file whose code needs no TAU header and names no
-# timer, so that the output compiles alone and only its `#line` lines
-# name the source.
+# A configuration file whose code needs no TAU header and prints each
+# timer name, so that the output compiles alone and its run shows the
+# names as the compiler read them.
 instrumentation: TAU
 include:
   - <stdio.h>
 main_setup_insert:
   - "    (void)0;"
 main_insert:
-  - "    (void)0;"
+  - "    printf(\"%s\\n\", \"${full_timer_name}\");"
 function_begin_insert:
-  - "    (void)0;"
+  - "    printf(\"%s\\n\", \"${full_timer_name}\");"
 function_end_insert:
   - "(void)0;"
+
+Fortran:
+  program_insert:
+    - "      write (*, '(a)') \"${full_timer_name}&"
+    - "     &\""
+  procedure_begin_insert:
+    - "      continue"
+  procedure_end_insert:
+    - "      continue"

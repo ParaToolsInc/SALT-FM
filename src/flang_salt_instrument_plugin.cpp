@@ -551,11 +551,20 @@ namespace salt::fortran {
 
                     // Split the timerName string so that it will fit between Fortran 77's 72-character limit,
                     // and use character string line continuation syntax compatible with Fortran 77 and modern
-                    // Fortran.
+                    // Fortran. Each `"` is doubled for the `"`-delimited literal, and a piece never ends
+                    // between the two, which would close the literal; a `\` stays as written.
                     std::stringstream ss2;
-                    for (size_t i = 0; i < timerName.size(); i += SALT_F77_LINE_LENGTH) {
-                        ss2 << SALT_FORTRAN_STRING_SPLITTER;
-                        ss2 << timerName.substr(i, SALT_F77_LINE_LENGTH);
+                    std::string piece;
+                    for (const char c : timerName) {
+                        const std::string text = c == '"' ? "\"\"" : std::string(1, c);
+                        if (piece.size() + text.size() > SALT_F77_LINE_LENGTH) {
+                            ss2 << SALT_FORTRAN_STRING_SPLITTER << piece;
+                            piece.clear();
+                        }
+                        piece += text;
+                    }
+                    if (!piece.empty()) {
+                        ss2 << SALT_FORTRAN_STRING_SPLITTER << piece;
                     }
 
                     const std::string splitTimerName{ss2.str()};

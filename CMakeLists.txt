@@ -2218,36 +2218,58 @@ _salt_add_clang_error_test(parse_error_always_c parse_error_always.inst.c
   "lang:C" clang_error.c ARGS --tau_main_setup_parse_level=always
   --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau
   LOG "undeclared identifier 'undeclared_name'")
-# The `#line` lines of C and C++ output escape `\` and `"` in the file
-# name, in an instrumented source and in the copy of an excluded one.
-foreach(ext c cpp)
-  set(_compiler ${CMAKE_C_COMPILER})
+# The `#line` lines and the timer names of C and C++ output escape `\`
+# and `"`, of the file name and of the signature; a `${full_timer_name}`
+# in the file name stays as written. Adds test
+# line_escape_<name>: tests/check_line_escape.cmake on `src` (relative
+# to tests/) as a .`ext` file, compiled and run with
+# tests/line_escape.yaml, or with TAU, checked as text with the default
+# configuration file. With EXCLUDED, the file lists exclude it. ARGN are
+# more -D options of the script.
+function(_salt_add_line_escape_test name ext src)
+  cmake_parse_arguments(PARSE_ARGV 3 ARG "TAU;EXCLUDED" "" "")
+  set(compiler ${CMAKE_C_COMPILER})
   if(ext STREQUAL "cpp")
-    set(_compiler ${CMAKE_CXX_COMPILER})
+    set(compiler ${CMAKE_CXX_COMPILER})
   endif()
-  _salt_lang_to_label(${ext} _lang_label)
-  foreach(mode instrumented excluded)
-    set(_args "")
-    if(mode STREQUAL "excluded")
-      set(_args -DSIF=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau)
-    elseif(LLVM_VERSION_MAJOR LESS 23)
-      # Clang's tooling before LLVM 23 turns each `\` of a source path
-      # into `/`, so it cannot open the source
-      set(_args -DNO_BACKSLASH=ON)
-    endif()
-    add_test(NAME line_escape_${mode}_${ext}
-      COMMAND ${CMAKE_COMMAND}
-        -DSALTFM=${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
-        -DCONFIG=${CMAKE_SOURCE_DIR}/tests/line_escape.yaml
-        -DCOMPILER=${_compiler} -DSRC=${CMAKE_SOURCE_DIR}/tests/line_escape.c
-        -DEXT=${ext} -DNAME=line_escape_${mode}_${ext} ${_args}
-        -P ${CMAKE_SOURCE_DIR}/tests/check_line_escape.cmake)
-    set_tests_properties(line_escape_${mode}_${ext} PROPERTIES
-      ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}"
-      LABELS "${_lang_label};phase:run")
-    _salt_in_test_output(instrument line_escape_${mode}_${ext})
-  endforeach()
+  set(args -DCOMPILER=${compiler}
+    -DCONFIG=${CMAKE_SOURCE_DIR}/tests/line_escape.yaml)
+  if(ARG_TAU)
+    set(args "")
+  endif()
+  if(ARG_EXCLUDED)
+    list(APPEND args -DSIF=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau)
+  elseif(LLVM_VERSION_MAJOR LESS 23)
+    # Clang's tooling before LLVM 23 turns each `\` of a source path
+    # into `/`, so it cannot open the source
+    list(APPEND args -DNO_BACKSLASH=ON)
+  endif()
+  add_test(NAME line_escape_${name}
+    COMMAND ${CMAKE_COMMAND}
+      -DSALTFM=${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+      -DSRC=${CMAKE_SOURCE_DIR}/tests/${src} -DEXT=${ext}
+      -DNAME=line_escape_${name} ${args} ${ARG_UNPARSED_ARGUMENTS}
+      -P ${CMAKE_SOURCE_DIR}/tests/check_line_escape.cmake)
+  _salt_lang_to_label(${ext} lang_label)
+  set_tests_properties(line_escape_${name} PROPERTIES
+    ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}"
+    LABELS "${lang_label};phase:run")
+  _salt_in_test_output(instrument line_escape_${name})
+endfunction()
+foreach(ext c cpp)
+  _salt_add_line_escape_test(instrumented_${ext} ${ext} line_escape.c)
+  _salt_add_line_escape_test(excluded_${ext} ${ext} line_escape.c EXCLUDED)
+  _salt_add_line_escape_test(tau_${ext} ${ext} line_escape.c TAU)
 endforeach()
+# A `"` or `\` in the signature, as Clang prints it: a C++ user-defined
+# literal operator, char template arguments, and a C++20 string literal
+# template argument
+_salt_add_line_escape_test(udl_cpp cpp line_escape_udl.cpp
+  [[-DEXPECT=operator""_km(]])
+_salt_add_line_escape_test(chars_cpp cpp line_escape_chars.cpp
+  [[-DEXPECT=int f(S<'"'>, S<'\\'>, S<'\n'>) ]])
+_salt_add_line_escape_test(string_cpp cpp line_escape_string.cpp
+  -DSTD=c++20 [[-DEXPECT=int g(T<"a\"b">) ]])
 if(TEST_FORTRAN)
   foreach(level never function)
     add_sif_test_no_output(parse_error_${level}_fortran fortran
@@ -3369,6 +3391,31 @@ if(TEST_FORTRAN)
   _salt_add_fortran_names_test(line_instrumented -DMODE=line)
   _salt_add_fortran_names_test(line_excluded -DMODE=line
     -DSIF=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau)
+  # A `"` in a Fortran timer name is doubled, and the split name keeps
+  # the pair on one line; a `'`, a `\` and a `$` stay as written. Flang
+  # cannot compile the output, as it rejects the `"` in the `#line` line
+  # (#97), so gfortran does, if found; else the tests check the output
+  # as text.
+  # An implicit main program takes its name from the file name; its
+  # -DSRC follows, so it replaces, the one of the function.
+  find_program(SALT_GFORTRAN NAMES gfortran gfortran-15 gfortran-14
+    gfortran-13 gfortran-12)
+  set(_names_args -DCONFIG=${CMAKE_SOURCE_DIR}/tests/line_escape.yaml)
+  if(SALT_GFORTRAN)
+    list(APPEND _names_args -DCOMPILER=${SALT_GFORTRAN})
+  else()
+    message(STATUS "gfortran not found -- Fortran timer name tests "
+      "check the output as text only")
+  endif()
+  _salt_add_fortran_names_test(timer -DMODE=timer ${_names_args})
+  _salt_add_fortran_names_test(dollar -DMODE=dollar ${_names_args})
+  set(_implicit -DSRC=${CMAKE_SOURCE_DIR}/tests/fortran/implicit_hi.f90
+    -DMODE=implicit ${_names_args})
+  _salt_add_fortran_names_test(implicit_quote ${_implicit} [[-DSTEM=a"b]])
+  _salt_add_fortran_names_test(implicit_split ${_implicit} [[-DSTEM="b]]
+    -DPAD=63)
+  _salt_add_fortran_names_test(implicit_apostrophe ${_implicit}
+    "-DSTEM=a'b")
   # A byte that is not valid in the locale's encoding, here Latin-1 in
   # UTF-8, does not hide the module.
   _salt_add_excluded_test(mod_latin1 excluded_mod_latin1.f90

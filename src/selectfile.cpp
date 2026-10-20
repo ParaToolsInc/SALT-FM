@@ -925,6 +925,16 @@ std::string escapeCString(const std::string &name)
   return escaped;
 }
 
+std::string ReplacePhrase(std::string str, const std::string &phrase,
+                          const std::string &to_replace)
+{
+  for (auto pos = str.find(phrase); pos != std::string::npos;
+       pos = str.find(phrase, pos + to_replace.length())) {
+    str.replace(pos, phrase.length(), to_replace);
+  }
+  return str;
+}
+
 bool copySource(const std::string &source, const std::string &output, bool escape)
 {
   /* Open the input first, so a missing one leaves no output file */

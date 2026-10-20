@@ -38,7 +38,7 @@ limitations under the License.
 #define SALT_FORTRAN_PROCEDURE_END_KEY "procedure_end_insert"
 
 // Configuration file template replacement strings
-#define SALT_FORTRAN_TIMER_NAME_TEMPLATE R"(\$\{full_timer_name\})"
+#define SALT_FORTRAN_TIMER_NAME_TEMPLATE "${full_timer_name}"
 
 // Fortran line splitting
 #define SALT_FORTRAN_STRING_SPLITTER "&\n     &"
