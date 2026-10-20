@@ -1,9 +1,7 @@
-#define RYML_SINGLE_HDR_DEFINE_NOW
-#define RYML_SHARED
-
 #include <sstream>
 
 #include <ryml_all.hpp>
+#include "config_file.hpp"
 #include "instrumentor.hpp"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContext.h"
@@ -76,6 +74,29 @@ static void exit_if_io_failed(bool failed, const char *what, const std::string &
         llvm::errs() << "ERROR: Could not " << what << " " << file << ": " << std::strerror(err) << "\n";
         std::exit(EXIT_FAILURE);
     }
+}
+
+// The parsed configuration file. Exits with an error when it cannot be
+// read or parsed, or lacks a key that the instrumentation uses.
+static ryml::Tree read_config()
+{
+    ryml::Tree tree = read_config_file(configfile);
+    std::vector<const char *> keys{"instrumentation", "include"};
+    if (use_cxx_api)
+    {
+        keys.insert(keys.end(), {"main_insert_scope", "function_begin_insert_scope"});
+    }
+    else
+    {
+        keys.insert(keys.end(), {"main_insert", "function_begin_insert", "function_end_insert"});
+    }
+    for (const char *key : keys)
+    {
+        check_config_key(tree.crootref(), key, configfile);
+    }
+    check_config_key(tree.crootref(), "main_setup_insert", configfile, nullptr, true);
+    check_config_key(tree.crootref(), "main_setup_insert_noargs", configfile, nullptr, true);
+    return tree;
 }
 
 // only works for inst_locs that are in the same file
@@ -1133,6 +1154,17 @@ void instrumentor::instrument()
     // its setup code there
     std::vector<std::string> files = files_to_go;
     files.insert(files.end(), files_skipped.begin(), files_skipped.end());
+
+    // check for cxxparse executable name. If so, force cxx api usage
+    if (strstr(exec_name, "cxxparse") != nullptr)
+    {
+        use_cxx_api = true;
+        DPRINT("%s: Forcing TAU CXX API\n", exec_name);
+        fflush(stdout);
+    }
+    // Read before the first source that needs it; a copy does not
+    std::optional<ryml::Tree> yaml_tree;
+
     for (size_t i = 0; i < files.size(); i++)
     {
         const std::string &fname = files[i];
@@ -1198,57 +1230,18 @@ void instrumentor::instrument()
             continue;
         }
 
+        if (!yaml_tree)
+        {
+            yaml_tree = read_config();
+        }
         // Open the input first, so a missing one leaves no output file
         og_file.open(fname);
         exit_if_io_failed(!og_file.is_open(), "open input file", fname);
         inst_file.open(newname);
         exit_if_io_failed(!inst_file.is_open(), "open output file", newname);
 
-        // check for cxxparse executable name. If so, force cxx api usage
-        if (strstr(exec_name, "cxxparse") != nullptr)
-        {
-            use_cxx_api = true;
-            DPRINT("%s: Forcing TAU CXX API\n", exec_name);
-            fflush(stdout);
-        }
-
-        // Read config.yaml
-        ryml::Tree yaml_tree;
-        if (FILE *config_file = fopen(configfile.c_str(), "r"))
-        {
-            std::ifstream inputStream{configfile.c_str()};
-            if (!inputStream) {
-                llvm::errs() << "ERROR: Could not open configuration file " << configfile.c_str() << "\n";
-                std::exit(-3);
-            }
-            std::stringstream configStream;
-            configStream << inputStream.rdbuf();
-            yaml_tree = ryml::parse_in_arena(ryml::to_csubstr(configStream.str()));
-
-            fclose(config_file);
-        }
-        else
-        {
-            llvm::outs() << "No config file found\n";
-            remove(newname.c_str());
-            exit(1);
-        }
-
-        // If using C++ API, check that config file contains code for scoped instrumentation
-        if (use_cxx_api) {
-            if (ryml::ConstNodeRef mainInsertScope = yaml_tree["main_insert_scope"]; mainInsertScope.invalid()) {
-               llvm::errs() << "Using C++ Instrumentation API requires `main_insert_scope` in config file.\n";
-                exit(2);
-            }
-            if (ryml::ConstNodeRef functionBeginScope = yaml_tree["function_begin_insert_scope"]; functionBeginScope.
-                invalid()) {
-                llvm::errs() << "Using C++ Instrumentation API requires `function_begin_insert_scope` in config file.\n";
-                exit(2);
-            }
-        }
-
-        llvm::outs() << "Instrumentation: " << yaml_tree["instrumentation"].val() << "\n";
-        instrument_file(og_file, inst_file, fname, inst_locations, use_cxx_api, yaml_tree);
+        llvm::outs() << "Instrumentation: " << (*yaml_tree)["instrumentation"].val() << "\n";
+        instrument_file(og_file, inst_file, fname, inst_locations, use_cxx_api, *yaml_tree);
         exit_if_io_failed(!inst_file, "write output file", newname);
         og_file.close();
         inst_file.close();

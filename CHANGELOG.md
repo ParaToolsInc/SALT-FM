@@ -233,6 +233,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   removed and overwrote the file that it named. Without an input file,
   `fparse-llvm` now stops with `ERROR: no input file`, and `--show`
   prints the command; before, both stopped on an unset shell variable.
+- For C, C++, and Fortran, `saltfm` stops with an error, exit status 1,
+  and no output when the configuration file is missing, cannot be read,
+  does not parse, lacks a key that the run needs, or has a value of the
+  wrong type. The error names the key or the parse error position.
+  Before, `saltfm` crashed, or wrote broken output and exited with
+  status 0. Fortran exited with status 253 for these errors and 252
+  for an unreadable selective instrumentation file
+  ([#51](https://github.com/ParaToolsInc/SALT-FM/issues/51),
+  [#54](https://github.com/ParaToolsInc/SALT-FM/issues/54),
+  [#83](https://github.com/ParaToolsInc/SALT-FM/issues/83),
+  [#90](https://github.com/ParaToolsInc/SALT-FM/issues/90)).
+- The configuration file can use YAML aliases, such as `include: *x`.
+- Without `--config_file`, Fortran also reads the configuration file
+  that `SALT_CONFIG_FILE` names, as C and C++ do. Before, Fortran
+  ignored it and read the installed `config.yaml`. An empty
+  `SALT_CONFIG_FILE` selects the installed file, as an unset one does;
+  before, C and C++ stopped with an error.
+- SALT-FM copies a Fortran source that the file lists exclude without
+  reading the configuration file, so a bad one does not stop the copy
+  ([#90](https://github.com/ParaToolsInc/SALT-FM/issues/90)).
+- For C and C++, `saltfm` stops with an error and writes no output when
+  it cannot read the selective instrumentation file. Before, it
+  instrumented every routine and exited with status 0.
 
 ## [0.5.0] - 2026-10-09
 
