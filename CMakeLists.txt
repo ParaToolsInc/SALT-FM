@@ -2128,6 +2128,10 @@ _salt_add_level_test(unknown never
 _salt_add_level_test(unknown_env sometimes
   "ERROR: unknown value 'sometimes' for SALT_MAIN_SETUP_PARSE_LEVEL\n.*USAGE:"
   "${_level_shown}")
+# saltfm checks the Fortran-only SALT_PARSE_EXCLUDED_MODULES only for Fortran.
+_salt_add_level_test(modules_env_c unset "${_level_shown}function " "ERROR")
+set_property(TEST saltfm_level_modules_env_c APPEND
+  PROPERTY ENVIRONMENT_MODIFICATION "SALT_PARSE_EXCLUDED_MODULES=set:bogus")
 # cparse-llvm takes only the canonical names.
 add_test(NAME cparse_level_canonical_only
   COMMAND $<TARGET_FILE:cparse-llvm> --tau_main_setup_parse_level=yes

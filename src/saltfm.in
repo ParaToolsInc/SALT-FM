@@ -204,10 +204,10 @@ canonical_level --tau_main_setup_parse_level main_setup_level SALT_MAIN_SETUP_PA
     "never function always"
 # Before the arguments, which can end with `--` and compiler options
 args=("--tau_main_setup_parse_level=${level}" ${args[@]+"${args[@]}"})
-# The values of the `function` level turn it on, and those of `never` off
-canonical_level --tau_parse_excluded_modules parse_excluded_modules SALT_PARSE_EXCLUDED_MODULES \
-    "never function"
 if [[ ${tool} == fparse-llvm ]]; then
+    # The values of the `function` level turn it on, and those of `never` off
+    canonical_level --tau_parse_excluded_modules parse_excluded_modules SALT_PARSE_EXCLUDED_MODULES \
+        "never function"
     modules=on
     if [[ ${level} == never ]]; then
         modules=off
