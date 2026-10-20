@@ -256,7 +256,12 @@ instrumentation file exclude, so its errors do not stop `saltfm` (see
 The YAML configuration file (`--config_file`; `config_files/` has one
 for TAU, perfstubs, ITT, NVTX, and ROCTX) holds all the code that
 SALT-FM inserts. `${full_timer_name}` in an entry stands for the timer
-name.
+name, written for a `"`-delimited string literal: in C and C++, with a
+`\` before each `\` and `"`; in Fortran, with each `"` doubled, and
+split into pieces of at most 64 characters, each on a continuation
+line, so a Fortran entry follows `${full_timer_name}` with `&` and
+closes the literal on the next line, as `config_files/tau_config.yaml`
+does.
 
 - `include`: lines written at the top of an instrumented C or C++ file.
 - `main_setup_insert` (optional): setup code at the start of `main`,

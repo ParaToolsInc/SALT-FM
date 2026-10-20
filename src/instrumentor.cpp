@@ -158,15 +158,6 @@ void dump_all_locs(bool (*filter)(inst_loc *))
     }
 }
 
-std::string ReplacePhrase(std::string str, std::string phrase, std::string to_replace)
-{
-    while (str.find(phrase) != std::string::npos)
-    {
-        str.replace(str.find(phrase), phrase.length(), to_replace);
-    }
-    return str;
-}
-
 // Appends the main code lines `lines` to `code`
 static void append_main_code(ryml::ConstNodeRef lines, inst_loc *loc, std::string &code)
 {
@@ -174,7 +165,7 @@ static void append_main_code(ryml::ConstNodeRef lines, inst_loc *loc, std::strin
     {
         std::stringstream ss;
         ss << child.val();
-        code += ReplacePhrase(ss.str(), "${full_timer_name}", loc->full_timer_name) + "\n";
+        code += ReplacePhrase(ss.str(), "${full_timer_name}", escapeCString(loc->full_timer_name)) + "\n";
     }
 }
 
@@ -216,7 +207,7 @@ void make_begin_func_code(inst_loc *loc, std::string &code, ryml::Tree yaml_tree
                 std::stringstream ss;
                 ss << child.val();
                 std::string updated_str;
-                updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", loc->full_timer_name);
+                updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", escapeCString(loc->full_timer_name));
                 code += updated_str + "\n";
             }
         }
@@ -244,7 +235,7 @@ void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, rym
                 std::stringstream ss;
                 ss << child.val();
                 std::string updated_str;
-                updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", loc->full_timer_name);
+                updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", escapeCString(loc->full_timer_name));
                 code += "\t" + updated_str + "\n";
             }
             return;
@@ -264,7 +255,7 @@ void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, rym
                 std::stringstream ss;
                 ss << child.val();
                 std::string updated_str;
-                updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", loc->full_timer_name);
+                updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", escapeCString(loc->full_timer_name));
                 code += "\t{" + updated_str + " ";
             }
             code += "return;}\n";
@@ -286,7 +277,7 @@ void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, rym
                     std::stringstream ss;
                     ss << child.val();
                     std::string updated_str;
-                    updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", loc->full_timer_name);
+                    updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", escapeCString(loc->full_timer_name));
                     code += " " + updated_str + " ";
                 }
                 code += "return; }\n";
@@ -309,7 +300,7 @@ void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, rym
                     std::stringstream ss;
                     ss << child.val();
                     std::string updated_str;
-                    updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", loc->full_timer_name);
+                    updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", escapeCString(loc->full_timer_name));
                     code += " " + updated_str + " ";
                 }
                 code += "return inst_ret_val; }\n";
@@ -331,7 +322,7 @@ void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, rym
                     std::stringstream ss;
                     ss << child.val();
                     std::string updated_str;
-                    updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", loc->full_timer_name);
+                    updated_str  = ReplacePhrase(ss.str(), "${full_timer_name}", escapeCString(loc->full_timer_name));
                     code += " " + updated_str + " ";
                 }
                 code += "return inst_ret_val; }\n";

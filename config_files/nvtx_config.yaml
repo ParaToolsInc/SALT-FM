@@ -1,5 +1,6 @@
 # Config variables:
-#   ${full_timer_name}: "function_name [file_path {start}-{end}]"
+#   ${full_timer_name}: "function_name [file_path {start}-{end}]",
+#   escaped for a "..." string literal
 
 instrumentation: NVTX
 include:
@@ -13,4 +14,3 @@ function_begin_insert:
 
 function_end_insert:
   - "nvtxRangePop();"
-

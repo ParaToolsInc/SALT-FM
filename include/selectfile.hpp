@@ -110,6 +110,12 @@ bool instrumentFile(const std::string &path);
    string literal such as the file name of a `#line` line. */
 std::string escapeCString(const std::string &name);
 
+/* Returns `str` with each `phrase` replaced by `to_replace`, as written.
+   The search resumes after the inserted text, so a `to_replace` that
+   holds `phrase` is not replaced again. */
+std::string ReplacePhrase(std::string str, const std::string &phrase,
+                          const std::string &to_replace);
+
 /* Writes a `#line 1 "<source>"` line and then `source` to `output`, so
    that compiler messages, __FILE__, and debug information name the
    source. With `escape`, for C and C++, the name is escapeCString(source);

@@ -1,5 +1,6 @@
 # Config variables:
-#   ${full_timer_name}: "function_name [file_path {start}-{end}]"
+#   ${full_timer_name}: "function_name [file_path {start}-{end}]",
+#   escaped for a "..." string literal
 
 instrumentation: TAU
 include:
@@ -46,7 +47,9 @@ function_end_insert:
 
 Fortran:
 # Config variables:
-#   ${full_timer_name}: "procedure_name [file_path {start}-{end}]"
+#   ${full_timer_name}: "procedure_name [file_path {start}-{end}]",
+#   with each " doubled for a "..." string literal, split into
+#   continuation lines
   instrumentation: tauFortran
   # Setup code at the start of the main program, inserted even when the
   # selective instrumentation file removes its timer. It declares the

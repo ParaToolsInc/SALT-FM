@@ -17,13 +17,13 @@ limitations under the License.
 #include <string>
 #include <sstream>
 #include <iomanip>
-#include <regex>
 
 #include "flang/Common/idioms.h"
 
 #include "dprint.hpp"
 #include "flang_instrumentation_point.hpp"
 #include "flang_instrumentation_constants.hpp"
+#include "selectfile.hpp"
 
 
 using namespace std::string_literals;
@@ -83,9 +83,8 @@ std::string salt::fortran::ProgramBeginInstrumentationPoint::toString() const {
 
 std::string salt::fortran::ProgramBeginInstrumentationPoint::instrumentationString(
     const InstrumentationMap &instMap, [[maybe_unused]] const std::string &lineText) const {
-    static std::regex timerNameRegex{SALT_FORTRAN_TIMER_NAME_TEMPLATE};
-    const std::string instTemplate{InstrumentationPoint::instrumentationString(instMap, lineText)};
-    return std::regex_replace(instTemplate, timerNameRegex, timerName());
+    return ReplacePhrase(InstrumentationPoint::instrumentationString(instMap, lineText),
+                         SALT_FORTRAN_TIMER_NAME_TEMPLATE, timerName());
 }
 
 std::string salt::fortran::ProcedureBeginInstrumentationPoint::toString() const {
@@ -97,9 +96,8 @@ std::string salt::fortran::ProcedureBeginInstrumentationPoint::toString() const 
 
 std::string salt::fortran::ProcedureBeginInstrumentationPoint::instrumentationString(
     const InstrumentationMap &instMap, [[maybe_unused]] const std::string &lineText) const {
-    static std::regex timerNameRegex{SALT_FORTRAN_TIMER_NAME_TEMPLATE};
-    const std::string instTemplate{InstrumentationPoint::instrumentationString(instMap, lineText)};
-    return std::regex_replace(instTemplate, timerNameRegex, timerName());
+    return ReplacePhrase(InstrumentationPoint::instrumentationString(instMap, lineText),
+                         SALT_FORTRAN_TIMER_NAME_TEMPLATE, timerName());
 }
 
 std::string salt::fortran::IfReturnStmtInstrumentationPoint::toString() const {

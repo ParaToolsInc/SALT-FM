@@ -208,6 +208,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   way; gfortran reads escapes, and Flang rejects a `"`
   ([#88](https://github.com/ParaToolsInc/SALT-FM/issues/88),
   [#97](https://github.com/ParaToolsInc/SALT-FM/issues/97)).
+- `${full_timer_name}` is written for its string literal. In C and C++,
+  a `\` comes before each `\` and `"` of the file path and the
+  signature, such as `operator""_km` or `S<'\n'>`. In Fortran, each `"`
+  is doubled, and the split name never breaks the pair across lines.
+  Before, such a path or signature broke the inserted code or changed
+  the timer name, in Fortran a `$&` or `$1` in the path was replaced as
+  a regex format escape, and in C and C++ a `${full_timer_name}` in
+  the path or signature made `saltfm` hang
+  ([#88](https://github.com/ParaToolsInc/SALT-FM/issues/88)).
 
 ## [0.5.0] - 2026-10-09
 
