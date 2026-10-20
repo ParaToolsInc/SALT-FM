@@ -79,8 +79,9 @@ TAU instrumentor options:
                                   the modules. It adds no timers to the excluded files.
                                     off:          SALT-FM parses no excluded file.
                                     modules-only: SALT-FM parses an excluded file that
-                                                  defines or includes a module. This
-                                                  is the default.
+                                                  defines a module, or has an INCLUDE
+                                                  line or #include. This is the
+                                                  default.
                                     submodules-and-modules:
                                                   SALT-FM also parses an excluded file
                                                   that has only submodules. Only the
@@ -148,6 +149,13 @@ fi
 args=()
 # The variable that takes the next argument, the value of an option
 expecting_value_of=
+# Only the arguments set these, not environment variables of the same
+# names; canonical_value reads an unset option variable as not given
+tool=
+force_lang=
+version=false
+show=false
+unset excluded_main_setup parse_excluded_modules
 for arg in "$@"; do
     #echo "working on arg: $arg"
     if [[ -n ${expecting_value_of} ]]; then

@@ -264,8 +264,9 @@ as `config_files/tau_config.yaml` does.
 - `include`: lines written at the top of an instrumented C or C++ file.
 - `main_setup_insert` (optional): setup code at the start of `main`,
   written even when the selective instrumentation lists leave out
-  main's timer, except as `--tau_excluded_main_setup` under
-  [Selective instrumentation](#selective-instrumentation) describe.
+  main's timer, except as
+  [Selective instrumentation](#selective-instrumentation) describes for
+  `--tau_excluded_main_setup`.
   `main_setup_insert_noargs` (optional) replaces it for a `main`
   without parameters.
 - `main_insert`, or `main_insert_scope` with `--tau_use_cxx_api`: main's
@@ -337,8 +338,10 @@ information name the source. A parse error in such a source does not
 stop `saltfm`, so excluding a file works around a source that SALT-FM
 cannot parse. A main program in such a source gets no setup code, so a
 program run without MPI or `tau_exec` writes `profile.-1.0.0`; SALT-FM
-warns when an excluded source seems to contain the main program. Use
-`--tau_excluded_main_setup=file` to give it its setup code.
+warns when an excluded source seems to contain the main program. In
+Fortran, it looks only for a `program` statement, so a main program
+without one gets no warning. Use `--tau_excluded_main_setup=file` to
+give it its setup code.
 
 `--tau_excluded_main_setup=<none|routine|file>`, or the environment
 variable `SALT_EXCLUDED_MAIN_SETUP`, selects which excluded main
@@ -355,12 +358,13 @@ A main program that the selective instrumentation file includes gets
 its setup code and its timer with all values.
 
 Unless `--tau_excluded_main_setup=file`, SALT-FM still parses an
-excluded Fortran source that seems to define or include a module, so
-that Flang writes its module files and other sources can `use` its
-modules. The output is still a copy, and with `none` SALT-FM warns
-about the parse.
+excluded Fortran source that seems to define a module, or has an
+INCLUDE line or `#include`, so that Flang writes any module files it
+defines and other sources can `use` those modules. The output is still
+a copy, and with `none` SALT-FM warns about the parse.
 If Flang cannot parse the source, SALT-FM warns, copies it, and does
-not write its module files, so sources that use its modules can fail.
+not write any module files it defines, so sources that use them can
+fail.
 A fixed-form `module` statement with no blank before the name, such as
 `MODULEFOO`, or with sequence numbers in columns 73-80, is not found;
 for such a source, use

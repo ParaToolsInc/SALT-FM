@@ -654,6 +654,8 @@ if(MLIR_FOUND AND Flang_FOUND)
     ${CMAKE_SOURCE_DIR}/include ${LLVM_INCLUDE_DIRS})
   target_compile_definitions(salt-selectfile PRIVATE ${LLVM_DEFINITIONS_LIST})
   target_compile_features(salt-selectfile PRIVATE cxx_std_17)
+  target_compile_options(salt-selectfile PRIVATE
+    ${USE_RTTI} -Wall -Wpedantic -Wno-unused-variable ${SALT_WERROR})
   set_target_properties(salt-selectfile PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
   install(TARGETS salt-selectfile DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -2200,8 +2202,80 @@ if(TEST_FORTRAN)
     ".*\nSALT_FORTRAN_EXCLUDED_MAIN_SETUP=routine\ncmd: ")
   set_tests_properties(fparse_main_setup_no_value PROPERTIES
     PASS_REGULAR_EXPRESSION "${_main_setup_no_value}")
+  # saltfm and fparse-llvm read their options only from their arguments,
+  # not from environment variables named like their shell variables.
+  set(_shell_var_tests "")
+  string(CONCAT _shell_var_shown "^fparse-llvm --show "
+    "--tau_parse_excluded_modules=modules-only --tau_excluded_main_setup=routine ")
+  foreach(var excluded_main_setup=none parse_excluded_modules=off
+      tool=cparse-llvm version=true)
+    string(REGEX REPLACE "=.*" "" name "${var}")
+    add_test(NAME saltfm_shell_var_${name}
+      COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
+              ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+    set_tests_properties(saltfm_shell_var_${name} PROPERTIES
+      ENVIRONMENT "${var}"
+      PASS_REGULAR_EXPRESSION "${_shell_var_shown}")
+    list(APPEND _shell_var_tests saltfm_shell_var_${name})
+  endforeach()
+  # Without --show, saltfm runs the instrumentor.
+  add_test(NAME saltfm_shell_var_show
+    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+            --tau_output=shell_var_show.inst.F90
+            ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+  set_tests_properties(saltfm_shell_var_show PROPERTIES
+    ENVIRONMENT "show=true;SALT_FORTRAN_VERBOSE=1"
+    PASS_REGULAR_EXPRESSION "SALT Instrumentor Plugin finished")
+  _salt_in_test_output(instrument saltfm_shell_var_show)
+  # Without --lang, --help gives the saltfm usage.
+  add_test(NAME saltfm_shell_var_force_lang
+    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --help)
+  set_tests_properties(saltfm_shell_var_force_lang PROPERTIES
+    ENVIRONMENT "force_lang=c"
+    PASS_REGULAR_EXPRESSION "USAGE: [^\n]*/saltfm \\[options\\]")
+  # Without an input file argument, fparse-llvm names none.
+  add_test(NAME fparse_shell_var_input_file
+    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show)
+  set_tests_properties(fparse_shell_var_input_file PROPERTIES
+    ENVIRONMENT "input_file=shell_var.f90"
+    PASS_REGULAR_EXPRESSION "(^|\n)input file: \"<None given>\" \n"
+    FAIL_REGULAR_EXPRESSION "unbound variable")
+  # Without --show, fparse-llvm stops with an error and does not run Flang.
+  add_test(NAME fparse_no_input
+    COMMAND sh -c "\"$0\" \"$@\" > fparse_no_input.log 2>&1; rc=$?
+      cat fparse_no_input.log
+      [ $rc -ge 1 ] && [ $rc -le 127 ] ||
+        { echo \"Expected an exit status from 1 to 127, got $rc\"; exit 1; }
+      grep -qF 'ERROR: no input file' fparse_no_input.log ||
+        { echo 'Expected ERROR: no input file'; exit 1; }
+      ! grep -qE 'Running:|unbound variable' fparse_no_input.log ||
+        { echo 'Did not expect Running: or unbound variable'; exit 1; }"
+      ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm
+      --tau_excluded_main_setup=routine)
+  _salt_in_test_output(instrument fparse_no_input)
+  # Without --tau_output, fparse-llvm must neither remove nor write the
+  # file that an exported output_file names.
+  add_test(NAME fparse_shell_var_output_file
+    COMMAND sh -c "mkdir -p shell_var && cd shell_var || exit 1
+      rm -f keep.txt hello.inst.F90 && echo keep > keep.txt || exit 1
+      output_file=keep.txt \"$0\" \"$@\" || exit 1
+      grep -qx keep keep.txt || { echo 'keep.txt was removed or changed'; exit 1; }
+      [ -s hello.inst.F90 ] || { echo 'Expected hello.inst.F90'; exit 1; }"
+      ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm
+      ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+  _salt_in_test_output(instrument fparse_shell_var_output_file)
+  add_test(NAME fparse_shell_var_select_file
+    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show
+            ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+  set_tests_properties(fparse_shell_var_select_file PROPERTIES
+    ENVIRONMENT "select_file=shell_var.tau"
+    PASS_REGULAR_EXPRESSION "\nSALT_FORTRAN_SELECT_FILE=\"\"\n")
+  list(APPEND _shell_var_tests saltfm_shell_var_show saltfm_shell_var_force_lang
+    fparse_shell_var_input_file fparse_shell_var_output_file
+    fparse_shell_var_select_file fparse_no_input)
   set_tests_properties(saltfm_main_setup_fortran fparse_main_setup_canonical_only
     saltfm_main_setup_fortran_next fparse_main_setup_next fparse_main_setup_no_value
+    ${_shell_var_tests}
     PROPERTIES
     ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
     LABELS "lang:Fortran;phase:smoke")
@@ -3419,6 +3493,11 @@ if(TEST_FORTRAN)
   # When Flang cannot parse the module source, saltfm warns and copies it.
   _salt_add_excluded_test(mod_error excluded_mod_error.f90
     LOG "${_excluded_flang_error_text}")
+  # With only an INCLUDE line, the warning does not say it has modules.
+  _salt_add_excluded_test(include_error excluded_include_error.f90
+    LOG "${_excluded_flang_error_text}"
+    "write any module files it defines, so sources that use them can fail"
+    NOT_LOG "its module")
   # It also gives the SIF warnings, which the plugin gives when Flang can.
   _salt_add_excluded_test(mod_error_sif_warning excluded_mod_error.f90
     SIF tests/sif/file_include_quoted.tau
