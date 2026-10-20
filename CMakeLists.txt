@@ -2905,6 +2905,13 @@ if(TEST_FORTRAN)
   set_tests_properties(saltfm_bare_name PROPERTIES
     WORKING_DIRECTORY ${_fx_bin}
     ENVIRONMENT "PATH=${_fx_dir}/nodriver")
+  # Without salt-selectfile beside it, fparse-llvm warns and runs Flang.
+  _salt_configure_fparse_llvm(${_fx_dir}/noselect/fparse-llvm
+    ${_fx_dir}/match/flang)
+  _salt_add_flang_exe_test(fparse_selectfile_missing
+    "WARNING: salt-selectfile failed with status 127.*stub driver must not run" "ERROR"
+    ${_fx_dir}/noselect/fparse-llvm --tau_output=noselect.inst.F90
+    --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau ${_fx_src})
 
   # A driver configure did not find is not recorded: no warning.
   _salt_add_flang_exe_test(fparse_flang_exe_no_record
