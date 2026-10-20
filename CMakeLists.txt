@@ -2207,9 +2207,9 @@ if(TEST_FORTRAN)
     LABELS "lang:Fortran;phase:smoke")
 endif()
 
-# Below the `always` level, saltfm does not parse a source that the file
-# lists exclude: a Clang error in it does not stop saltfm, and saltfm
-# copies it. At `always`, the error does.
+# At the `never` and `function` levels, saltfm does not parse a source
+# that the file lists exclude: a Clang error in it does not stop saltfm,
+# and saltfm copies it. At `always`, the error does.
 foreach(level never function)
   add_sif_test_no_output(parse_error_${level}_c c tests/clang_error.c
     tests/sif/file_exclude_all.tau ARGS --tau_main_setup_parse_level=${level})
@@ -2261,8 +2261,8 @@ if(TEST_FORTRAN)
     LOG "undeclared_name")
 endif()
 
-# Below the `always` level, the main program of a source that the file
-# lists exclude gets no setup code, and saltfm warns about it.
+# At the `never` and `function` levels, the main program of a source that
+# the file lists exclude gets no setup code, and saltfm warns about it.
 set(_excluded_main_warning
   "WARNING: [^\n]*/sif_excl[.](c|cpp|f90) seems to hold the main program")
 foreach(lang IN LISTS _sif_langs)
@@ -3260,10 +3260,10 @@ if(TEST_FORTRAN)
   _salt_add_user_mod_test(use-user-iso-fortran-env.f90 -J)
   _salt_add_user_mod_test(use-mixed-nature.f90 -I)
 
-  # Below the `always` level, fparse-llvm parses a Fortran source that the
-  # file lists exclude only when it seems to define a module or
-  # submodule, so that Flang writes the module files, and the plugin
-  # copies it (#88). These are the texts of its warnings.
+  # At the `never` and `function` levels, fparse-llvm parses a Fortran
+  # source that the file lists exclude only when it seems to define a
+  # module or submodule, so that Flang writes the module files, and the
+  # plugin copies it (#88). These are the texts of its warnings.
   set(_excluded_dir ${SALT_TEST_OUTPUT_DIR}/excluded)
   set(_excluded_main_warning_text "seems to hold the main program")
   set(_excluded_parse_text "for its module files")

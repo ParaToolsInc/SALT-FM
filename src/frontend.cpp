@@ -123,11 +123,13 @@ llvm::cl::opt<MainSetupLevel> main_setup_level(
                    "setup code without a timer"),
     llvm::cl::values(
         clEnumValN(MainSetupLevel::never, "never",
-                   "Parse no excluded source; no setup code for an excluded main"),
+                   "Parse no source that the file lists exclude; no setup code for a main "
+                   "that the SIF excludes"),
         clEnumValN(MainSetupLevel::function, "function",
-                   "Parse no excluded source; setup code for a main that the routine lists exclude"),
+                   "Parse no source that the file lists exclude; setup code for a main that "
+                   "the routine lists exclude"),
         clEnumValN(MainSetupLevel::always, "always",
-                   "Parse all sources; setup code for each excluded main")),
+                   "Parse all sources; setup code for each main that the SIF excludes")),
     llvm::cl::init(MainSetupLevel::function), llvm::cl::cat(MyToolCategory));
 
 #include "clang_header_includes.h"
@@ -289,7 +291,7 @@ int main(int argc, const char **argv)
 
     findFiles(OptionsParser.getSourcePathList()); //Locate source files and mark for instrumentation/skipping
 
-    // Below the `always` level, parse only the sources that the file lists include
+    // At the `never` and `function` levels, parse only the sources that the file lists include
     std::vector<std::string> sources = OptionsParser.getSourcePathList();
     if (main_setup_level != MainSetupLevel::always)
     {

@@ -62,8 +62,9 @@ TAU instrumentor options:
                                - When to parse a source that the file lists exclude and to give
                                  the main program its setup code without a timer (default: function)
   --tau_parse_excluded_modules=<on|off>
-                               - Below the always level, parse a source that the file lists exclude
-                                 when it seems to define a module, for its module files (default: on)
+                               - At the never and function levels, parse a source that the file
+                                 lists exclude when it seems to define a module, for its module files
+                                 (default: on)
   --tau_output=<filename>      - Specify name of output instrumented file
   --tau_select_file=<filename> - Provide a selective instrumentation specification file
   --show                       - Print the command line that would be executed by the wrapper script
@@ -466,9 +467,10 @@ function content_matches {
     [[ ${content} =~ $1 ]]
 }
 
-# Below the `always` level, copy a source that the file lists exclude
-# without a parse, unless it seems to define a module, whose module files
-# other sources need. The plugin repeats the SIF warnings when Flang runs.
+# At the `never` and `function` levels, copy a source that the file lists
+# exclude without a parse, unless it seems to define a module, whose
+# module files other sources need. The plugin repeats the SIF warnings
+# when Flang runs.
 sif_status=0
 if [[ -n ${select_file:-} && ${main_setup_level} != always ]]; then
     sif_log="$("${_SCRIPT_DIR}/salt-selectfile" "${select_file}" "${input_file}" 2>&1)" ||
