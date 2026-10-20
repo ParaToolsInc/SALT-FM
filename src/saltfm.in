@@ -61,11 +61,11 @@ TAU instrumentor options:
                                 - never, function, or always: when to parse a source that the file
                                   lists exclude and to give main its setup code without a timer
                                   (default: \$SALT_MAIN_SETUP_PARSE_LEVEL, else function)
-  --tau_parse_excluded_modules=<on|off>
+  --tau_parse_excluded_modules=<off|modules-only|submodules-and-modules>
                                 - Fortran only: parse a source that the file lists exclude when it
-                                  seems to define or include a module, for its module files, at the
-                                  never and function levels (default: \$SALT_PARSE_EXCLUDED_MODULES,
-                                  else on)
+                                  seems to define or include a module, or with submodules-and-modules
+                                  also a submodule, for its module files, at the never and function
+                                  levels (default: \$SALT_PARSE_EXCLUDED_MODULES, else modules-only)
   --tau_output=<filename>       - Specify name of output instrumented file
   --tau_select_file=<filename>  - Provide a selective instrumentation specification file
   --tau_use_cxx_api             - Use TAU's C++ instrumentation API
@@ -77,9 +77,11 @@ function usage {
 }
 
 # Sets `level` to the canonical level of option `$1`, whose value is in
-# variable `$2` if it is set, else in environment variable `$3`: never,
-# function (also for an empty value), or always, in any case. Stops with
-# an error and the usage for any other value, or a level not in `$4`.
+# variable `$2` if it is set, else in environment variable `$3`, in any
+# case: for --tau_parse_excluded_modules, off, modules-only (also for an
+# empty value), or submodules-and-modules; else never, function (also
+# for an empty value), or always, or a synonym. Stops with an error and
+# the usage for any other value.
 # Warns when the option ends the arguments without its value.
 function canonical_level {
     local name="$1"
@@ -97,14 +99,23 @@ function canonical_level {
         echo "  ${from}" >&2
     fi
     shopt -s nocasematch
-    case ${value} in
-        never | no | off | false | 0) level=never ;;
-        '' | function | procedure | default | medium | yes | on | true | 1) level=function ;;
-        always | file | force | all) level=always ;;
-        *) level= ;;
-    esac
+    if [[ $1 == --tau_parse_excluded_modules ]]; then
+        case ${value} in
+            off) level=off ;;
+            '' | modules-only) level=modules-only ;;
+            submodules-and-modules) level=submodules-and-modules ;;
+            *) level= ;;
+        esac
+    else
+        case ${value} in
+            never | no | off | false | 0) level=never ;;
+            '' | function | procedure | default | medium | yes | on | true | 1) level=function ;;
+            always | file | force | all) level=always ;;
+            *) level= ;;
+        esac
+    fi
     shopt -u nocasematch
-    if [[ " $4 " != *" ${level} "* ]]; then
+    if [[ -z ${level} ]]; then
         echo "ERROR: unknown value '${value}' for ${name}" >&2
         usage
         exit 1
@@ -201,19 +212,12 @@ if [[ -z "${tool:-}" ]]; then
     exit 1
 fi
 
-canonical_level --tau_main_setup_parse_level main_setup_level SALT_MAIN_SETUP_PARSE_LEVEL \
-    "never function always"
+canonical_level --tau_main_setup_parse_level main_setup_level SALT_MAIN_SETUP_PARSE_LEVEL
 # Before the arguments, which can end with `--` and compiler options
 args=("--tau_main_setup_parse_level=${level}" ${args[@]+"${args[@]}"})
 if [[ ${tool} == fparse-llvm ]]; then
-    # The values of the `function` level turn it on, and those of `never` off
-    canonical_level --tau_parse_excluded_modules parse_excluded_modules SALT_PARSE_EXCLUDED_MODULES \
-        "never function"
-    modules=on
-    if [[ ${level} == never ]]; then
-        modules=off
-    fi
-    args=("--tau_parse_excluded_modules=${modules}" "${args[@]}")
+    canonical_level --tau_parse_excluded_modules parse_excluded_modules SALT_PARSE_EXCLUDED_MODULES
+    args=("--tau_parse_excluded_modules=${level}" "${args[@]}")
 fi
 
 # Check if the tool exists

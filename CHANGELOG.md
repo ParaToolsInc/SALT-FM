@@ -188,12 +188,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   gives no setup code to a main that the routine lists leave out
   ([#88](https://github.com/ParaToolsInc/SALT-FM/issues/88)).
 - At the `never` and `function` levels, SALT-FM still parses an
-  excluded Fortran source that seems to define a module or submodule,
-  or that holds an INCLUDE line or an `#include`, which can bring one
-  in, so that Flang writes the module files that other sources need; if
-  Flang fails, it warns and copies the source. The new option
-  `--tau_parse_excluded_modules=<on|off>` (or
-  `SALT_PARSE_EXCLUDED_MODULES`) turns this parse off. SALT-FM installs
+  excluded Fortran source that seems to define a module, or that holds
+  an INCLUDE line or an `#include`, which can bring one in, so that
+  Flang writes the module files that other sources need; if Flang
+  fails, it warns and copies the source. The new option
+  `--tau_parse_excluded_modules=<off|modules-only|submodules-and-modules>`
+  (or `SALT_PARSE_EXCLUDED_MODULES`; default `modules-only`) turns this
+  parse off, or also parses a source that seems to define a submodule,
+  whose module file only its own child submodules need. SALT-FM installs
   a new helper program, `salt-selectfile`, that `fparse-llvm` runs to
   apply the file lists before Flang runs
   ([#88](https://github.com/ParaToolsInc/SALT-FM/issues/88)).

@@ -3293,8 +3293,9 @@ if(TEST_FORTRAN)
 
   # At the `never` and `function` levels, fparse-llvm parses a Fortran
   # source that the file lists exclude only when it seems to define a
-  # module or submodule, or holds an INCLUDE line or an `#include`, so
-  # that Flang writes the module files, and the plugin copies it (#88).
+  # module (or, with submodules-and-modules, a submodule), or holds an
+  # INCLUDE line or an `#include`, so that Flang writes the module files,
+  # and the plugin copies it (#88).
   # These are the texts of its warnings.
   set(_excluded_dir ${SALT_TEST_OUTPUT_DIR}/excluded)
   set(_excluded_main_warning_text "seems to hold the main program")
@@ -3373,6 +3374,47 @@ if(TEST_FORTRAN)
       PASS_REGULAR_EXPRESSION "SALT Instrumentor Plugin finished")
     _salt_in_test_output(instrument instrument_use_excluded_mod_${case})
   endforeach()
+  # Only its child submodules need the module file of a submodule, so by
+  # default an excluded source with a submodule and no module is copied
+  # without a parse or a warning; with submodules-and-modules, Flang
+  # writes <module>-<submodule>.saltmod, which a child submodule reads.
+  _salt_add_excluded_test(smod_parent excluded_smod_parent.f90 MOD smod_m)
+  _salt_add_excluded_test(smod_default excluded_smod.f90
+    NOT_LOG "Running:" "WARNING:")
+  # A source with a module and a submodule is a module source.
+  _salt_add_excluded_test(mod_smod excluded_mod_smod.f90 MOD mod_smod_m
+    LOG "Running:")
+  _salt_add_excluded_test(smod_parse excluded_smod.f90 MOD smod_m-smod_s
+    ARGS -I${_excluded_dir}/smod_parent
+    --tau_parse_excluded_modules=submodules-and-modules
+    LOG "Running:" NOT_LOG "WARNING:")
+  # Without its module files, only the child submodules can fail, at
+  # `off` and when Flang cannot parse it (here, without the parent's).
+  set(_smod_fail_text "child submodules of its submodules can fail")
+  _salt_add_excluded_test(smod_off excluded_smod.f90
+    ARGS --tau_parse_excluded_modules=off
+    LOG "${_excluded_off_text}" "${_smod_fail_text}"
+    NOT_LOG "Running:" "sources that use")
+  _salt_add_excluded_test(smod_parse_error excluded_smod.f90
+    ARGS --tau_parse_excluded_modules=submodules-and-modules
+    LOG "${_excluded_flang_error_text}" "${_smod_fail_text}"
+    NOT_LOG "sources that use")
+  set_tests_properties(excluded_smod_parent PROPERTIES
+    FIXTURES_SETUP excluded_smod_parent)
+  set_tests_properties(excluded_smod_parse PROPERTIES
+    FIXTURES_REQUIRED excluded_smod_parent
+    FIXTURES_SETUP excluded_smod_parse)
+  add_test(NAME instrument_use_excluded_smod
+    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+            -I${_excluded_dir}/smod_parent -I${_excluded_dir}/smod_parse
+            --tau_output=use-excluded-smod.inst.F90
+            ${CMAKE_SOURCE_DIR}/tests/fortran/use-excluded-smod.f90)
+  set_tests_properties(instrument_use_excluded_smod PROPERTIES
+    FIXTURES_REQUIRED "excluded_smod_parent;excluded_smod_parse"
+    ENVIRONMENT "SALT_FORTRAN_VERBOSE=1"
+    LABELS "lang:Fortran;phase:instrument"
+    PASS_REGULAR_EXPRESSION "SALT Instrumentor Plugin finished")
+  _salt_in_test_output(instrument instrument_use_excluded_smod)
   # When Flang cannot parse the module source, saltfm warns and copies it.
   _salt_add_excluded_test(mod_error excluded_mod_error.f90
     LOG "${_excluded_flang_error_text}")
@@ -3463,26 +3505,43 @@ if(TEST_FORTRAN)
   _salt_add_excluded_test(mod_env_off excluded_mod.f90
     LOG "${_excluded_off_text}" NOT_LOG "Running:")
   _salt_add_excluded_test(mod_option_over_env excluded_mod.f90
-    MOD excluded_mod ARGS --tau_parse_excluded_modules=YES
+    MOD excluded_mod ARGS --tau_parse_excluded_modules=Modules-Only
     NOT_LOG "${_excluded_off_text}")
   foreach(test mod_env_off mod_option_over_env)
     set_property(TEST excluded_${test} APPEND PROPERTY
-      ENVIRONMENT_MODIFICATION "SALT_PARSE_EXCLUDED_MODULES=set:Off")
+      ENVIRONMENT_MODIFICATION "SALT_PARSE_EXCLUDED_MODULES=set:OFF")
   endforeach()
   # At `always`, the option has no effect: Flang parses the source.
   _salt_add_excluded_test(mod_always_off excluded_mod.f90 MOD excluded_mod
     ARGS --tau_main_setup_parse_level=always --tau_parse_excluded_modules=off
     LOG "Running:" NOT_LOG "${_excluded_off_text}")
-  # The values of the `never` (off) and `function` (on) levels only.
-  add_test(NAME saltfm_modules_always
-    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
-            --tau_parse_excluded_modules=always
-            ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
-  set_tests_properties(saltfm_modules_always PROPERTIES
-    PASS_REGULAR_EXPRESSION
-      "ERROR: unknown value 'always' for --tau_parse_excluded_modules\n.*USAGE:"
-    FAIL_REGULAR_EXPRESSION "cmd: ")
-  # fparse-llvm takes only on and off.
+  # saltfm passes each value, in any case, as written in lower case.
+  foreach(value OFF Modules-Only SUBMODULES-AND-MODULES)
+    string(TOLOWER ${value} canonical)
+    add_test(NAME saltfm_modules_value_${value}
+      COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
+              --tau_parse_excluded_modules=${value}
+              ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+    set_tests_properties(saltfm_modules_value_${value} PROPERTIES
+      PASS_REGULAR_EXPRESSION
+        "fparse-llvm --show --tau_parse_excluded_modules=${canonical} .*\ncmd: "
+      ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}"
+      LABELS "lang:Fortran;phase:smoke")
+  endforeach()
+  # The option has no synonyms, unlike the levels.
+  foreach(value always on false)
+    add_test(NAME saltfm_modules_unknown_${value}
+      COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
+              --tau_parse_excluded_modules=${value}
+              ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+    set_tests_properties(saltfm_modules_unknown_${value} PROPERTIES
+      PASS_REGULAR_EXPRESSION
+        "ERROR: unknown value '${value}' for --tau_parse_excluded_modules\n.*USAGE:"
+      FAIL_REGULAR_EXPRESSION "cmd: "
+      ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}"
+      LABELS "lang:Fortran;phase:smoke")
+  endforeach()
+  # fparse-llvm takes only the canonical values.
   add_test(NAME fparse_modules_canonical_only
     COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show
             --tau_parse_excluded_modules=no
@@ -3504,7 +3563,7 @@ if(TEST_FORTRAN)
             ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90 --tau_parse_excluded_modules)
   string(CONCAT _modules_no_value
     "WARNING: --tau_parse_excluded_modules needs a value. using\n  the default\n"
-    ".*fparse-llvm --show --tau_parse_excluded_modules=on ")
+    ".*fparse-llvm --show --tau_parse_excluded_modules=modules-only ")
   set_tests_properties(saltfm_modules_no_value PROPERTIES
     PASS_REGULAR_EXPRESSION "${_modules_no_value}")
   add_test(NAME fparse_modules_no_value
@@ -3512,8 +3571,8 @@ if(TEST_FORTRAN)
             ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90 --tau_parse_excluded_modules)
   set_tests_properties(fparse_modules_no_value PROPERTIES
     PASS_REGULAR_EXPRESSION
-      "WARNING: --tau_parse_excluded_modules needs a value. using on\n.*\ncmd: ")
-  set_tests_properties(saltfm_modules_always fparse_modules_canonical_only
+      "WARNING: --tau_parse_excluded_modules needs a value. using modules-only\n.*\ncmd: ")
+  set_tests_properties(fparse_modules_canonical_only
     fparse_modules_next saltfm_modules_no_value fparse_modules_no_value
     PROPERTIES ENVIRONMENT_MODIFICATION "${_salt_unset_level_env}"
     LABELS "lang:Fortran;phase:smoke")
@@ -3553,7 +3612,9 @@ if(TEST_FORTRAN)
   _salt_add_module_check(free_label 1 0 "10 module m\nend module\n")
   _salt_add_module_check(first_line_no_newline 1 0 "module m")
   _salt_add_module_check(crlf_module 1 0 "module m\r\nend module m\r\n")
-  _salt_add_module_check(crlf_bare_module 1 0 "module\r\n")
+  _salt_add_module_check(crlf_blank_module 1 0 "module m \r\n")
+  # A module statement has a name
+  _salt_add_module_check(bare_module 0 0 "module\n")
   _salt_add_module_check(free_comment 0 0 "! module m\nx = 1\n")
   _salt_add_module_check(free_comment_indented 0 0 "   ! module m\nx = 1\n")
   _salt_add_module_check(fixed_comment_upper_c 0 0 "C     MODULE M\n      X = 1\n")
@@ -3567,6 +3628,14 @@ if(TEST_FORTRAN)
   _salt_add_module_check(variable_modules 0 0 "modules = 1\n")
   _salt_add_module_check(trailing_comment_module 0 0 "x = 1 ! module m\n")
   _salt_add_module_check(string_module 0 0 "print *, 'module m'\n")
+  # A separate module procedure or a module procedure statement has more
+  # after the word that follows `module`, so it is not a module.
+  _salt_add_module_check(module_subroutine 0 0
+    "interface\n  module subroutine work(x)\n  end subroutine\nend interface\n")
+  _salt_add_module_check(module_procedure 0 0
+    "interface g\n  module procedure f\nend interface g\n")
+  _salt_add_module_check(module_comment 1 0 "module m ! the module\nend module\n")
+  _salt_add_module_check(module_semicolon 1 0 "module m; end module\n")
   _salt_add_module_check(empty_file 0 0 "")
   # An INCLUDE line or an `#include` can bring in a module
   _salt_add_module_check(include_line 1 0 "include 'm.inc'\n")

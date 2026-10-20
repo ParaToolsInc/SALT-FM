@@ -61,10 +61,11 @@ TAU instrumentor options:
   --tau_main_setup_parse_level=<never|function|always>
                                - When to parse a source that the file lists exclude and to give
                                  the main program its setup code without a timer (default: function)
-  --tau_parse_excluded_modules=<on|off>
+  --tau_parse_excluded_modules=<off|modules-only|submodules-and-modules>
                                - At the never and function levels, parse a source that the file
-                                 lists exclude when it seems to define or include a module, for its
-                                 module files (default: on)
+                                 lists exclude when it seems to define or include a module, or with
+                                 submodules-and-modules also a submodule, for its module files
+                                 (default: modules-only)
   --tau_output=<filename>      - Specify name of output instrumented file
   --tau_select_file=<filename> - Provide a selective instrumentation specification file
   --show                       - Print the command line that would be executed by the wrapper script
@@ -191,7 +192,7 @@ expecting_main_setup_level=false
 expecting_parse_excluded_modules=false
 unset flang_exe
 main_setup_level=function
-parse_excluded_modules=on
+parse_excluded_modules=modules-only
 show=false
 version=false
 for arg in "$@"; do
@@ -348,7 +349,7 @@ case ${main_setup_level} in
         ;;
 esac
 case ${parse_excluded_modules} in
-    on | off) ;;
+    off | modules-only | submodules-and-modules) ;;
     *)
         echo "ERROR: unknown value '${parse_excluded_modules}' for --tau_parse_excluded_modules" >&2
         exit 1
@@ -470,8 +471,9 @@ function content_matches {
 # At the `never` and `function` levels, copy a source that the file lists
 # exclude without a parse, unless it seems to define a module, whose
 # module files other sources need, or holds an INCLUDE line or an
-# `#include`, whose text can. The plugin repeats the SIF warnings
-# when Flang runs.
+# `#include`, whose text can; with submodules-and-modules, also unless it
+# seems to define a submodule, whose module file only its child
+# submodules need. The plugin repeats the SIF warnings when Flang runs.
 sif_status=0
 if [[ -n ${select_file:-} && ${main_setup_level} != always ]]; then
     sif_log="$("${_SCRIPT_DIR}/salt-selectfile" "${select_file}" "${input_file}" 2>&1)" ||
@@ -481,9 +483,13 @@ if [[ ${sif_status} -eq 1 ]]; then
     # One match on the whole text, with a newline in place of `^`, since a
     # loop with `read` on each line is ten times slower. A line matches
     # after blanks (a space or a tab) and a statement label, so comment
-    # lines do not.
+    # lines do not. A module statement ends after the name, so a separate
+    # module procedure or a module procedure statement does not match.
     nl=$'\n'
-    module_re="${nl}[[:blank:]]*([0-9]+[[:blank:]]+)?(sub)?module([^[:alnum:]_]|\$)"
+    cr=$'\r'
+    module_re="${nl}[[:blank:]]*([0-9]+[[:blank:]]+)?module[[:blank:]]+[[:alpha:]][[:alnum:]_]*"
+    module_re+="[[:blank:]${cr}]*(${nl}|[!;]|\$)"
+    submodule_re="${nl}[[:blank:]]*([0-9]+[[:blank:]]+)?submodule[[:blank:]]*\("
     include_re="${nl}[[:blank:]]*(#[[:blank:]]*)?include[[:blank:]]*[\"'<]"
     program_re="${nl}[[:blank:]]*([0-9]+[[:blank:]]+)?program[[:blank:]]+[[:alpha:]]"
     if [[ ! -r ${input_file} ]]; then
@@ -493,7 +499,8 @@ if [[ ${sif_status} -eq 1 ]]; then
     content="$(<"${input_file}")"
     # Flang accepts a UTF-8 byte order mark before the first line
     content="${nl}${content#$'\xef\xbb\xbf'}"
-    has_module=false
+    # module, submodule, or empty for neither
+    kind=
     shopt -s nocasematch
     if content_matches "${program_re}"; then
         echo "WARNING: ${input_file} seems to hold the main program, but the" >&2
@@ -501,10 +508,21 @@ if [[ ${sif_status} -eq 1 ]]; then
         echo "  code; use --tau_main_setup_parse_level=always to add it" >&2
     fi
     if content_matches "${module_re}" || content_matches "${include_re}"; then
-        has_module=true
+        kind=module
+    elif content_matches "${submodule_re}"; then
+        kind=submodule
     fi
     shopt -u nocasematch
-    if $has_module && [[ ${parse_excluded_modules} == on ]]; then
+    case ${parse_excluded_modules}:${kind} in
+        modules-only:module | submodules-and-modules:?*) parse=true ;;
+        *) parse=false ;;
+    esac
+    # Nothing can `use` a submodule; only its child submodules need it
+    can_fail="sources that use its modules can fail"
+    if [[ ${kind} == submodule ]]; then
+        can_fail="child submodules of its submodules can fail"
+    fi
+    if $parse; then
         if [[ ${main_setup_level} == never ]]; then
             echo "WARNING: parsing ${input_file}, which the selective instrumentation" >&2
             echo "  file lists exclude, for its module files" >&2
@@ -519,15 +537,15 @@ if [[ ${sif_status} -eq 1 ]]; then
         fi
         echo "WARNING: Flang could not parse ${input_file}, which the selective" >&2
         echo "  instrumentation file lists exclude; SALT-FM copies it but does not" >&2
-        echo "  write its module files, so sources that use its modules can fail" >&2
+        echo "  write its module files, so ${can_fail}" >&2
     else
         if [[ -n ${sif_log} ]]; then
             echo "${sif_log}" >&2
         fi
-        if $has_module; then
+        if [[ -n ${kind} && ${parse_excluded_modules} == off ]]; then
             echo "WARNING: not parsing ${input_file}, which the selective instrumentation" >&2
             echo "  file lists exclude; SALT-FM does not write its module files, so" >&2
-            echo "  sources that use its modules can fail" >&2
+            echo "  ${can_fail}" >&2
         fi
     fi
     # The copy is exact, unlike $(<file), which drops the newlines at the end
