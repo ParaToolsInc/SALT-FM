@@ -1396,26 +1396,44 @@ set(_config_errors ${CMAKE_BINARY_DIR}/config_errors)
 set(_tau_config_path ${CMAKE_SOURCE_DIR}/config_files/tau_config.yaml)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_tau_config_path})
 file(READ ${_tau_config_path} _tau_config)
+# Sets `out` to `input` with `from` replaced by `to`, with
+# string(REGEX REPLACE) when `mode` is REGEX, else string(REPLACE). Stops
+# when nothing matched, so a change to tau_config.yaml cannot leave a
+# fixture that tests nothing.
+function(_salt_config_edit mode from to input out)
+  if(mode STREQUAL "REGEX")
+    string(REGEX REPLACE "${from}" "${to}" result "${input}")
+  else()
+    string(REPLACE "${from}" "${to}" result "${input}")
+  endif()
+  if(result STREQUAL input)
+    message(FATAL_ERROR "No match in ${_tau_config_path} for:\n${from}")
+  endif()
+  set(${out} "${result}" PARENT_SCOPE)
+endfunction()
 foreach(key instrumentation include main_insert main_insert_scope
     function_begin_insert function_begin_insert_scope function_end_insert)
-  string(REGEX REPLACE "\n${key}:[^\n]*(\n  [^\n]*)*" "" _config "${_tau_config}")
+  _salt_config_edit(REGEX "\n${key}:[^\n]*(\n  [^\n]*)*" "" "${_tau_config}" _config)
   file(WRITE ${_config_errors}/no_${key}.yaml "${_config}")
 endforeach()
-string(REGEX REPLACE "\nFortran:.*" "\n" _config "${_tau_config}")
+_salt_config_edit(REGEX "\nFortran:.*" "\n" "${_tau_config}" _config)
 file(WRITE ${_config_errors}/no_Fortran.yaml "${_config}")
 file(WRITE ${_config_errors}/scalar_Fortran.yaml "${_config}Fortran: x\n")
 foreach(key program_insert procedure_begin_insert procedure_end_insert)
-  string(REGEX REPLACE "\n  ${key}:[^\n]*(\n    [^\n]*)*" "" _config "${_tau_config}")
+  _salt_config_edit(REGEX "\n  ${key}:[^\n]*(\n    [^\n]*)*" "" "${_tau_config}" _config)
   file(WRITE ${_config_errors}/no_${key}.yaml "${_config}")
 endforeach()
 # config_errors/cxx_api.yaml has only the keys that --tau_use_cxx_api
 # uses, and fortran.yaml only `Fortran`.
 set(_config "${_tau_config}")
 foreach(key main_insert function_begin_insert function_end_insert)
-  string(REGEX REPLACE "\n${key}:[^\n]*(\n  [^\n]*)*" "" _config "${_config}")
+  _salt_config_edit(REGEX "\n${key}:[^\n]*(\n  [^\n]*)*" "" "${_config}" _config)
 endforeach()
 file(WRITE ${_config_errors}/cxx_api.yaml "${_config}")
 string(REGEX MATCH "Fortran:.*" _config "${_tau_config}")
+if(_config STREQUAL "")
+  message(FATAL_ERROR "'Fortran:' not found in ${_tau_config_path}")
+endif()
 file(WRITE ${_config_errors}/fortran.yaml "${_config}")
 # config_errors/<name>.yaml is the TAU configuration file with one value
 # changed: from `_from_<name>` to `_to_<name>`.
@@ -1441,7 +1459,7 @@ set(_to_map_program_setup_insert "program_setup_insert:\n    - setup: ")
 foreach(name scalar_include empty_include null_include alias_include
     undefined_alias_include list_instrumentation map_function_end_insert
     scalar_procedure_end_insert map_program_setup_insert)
-  string(REPLACE "${_from_${name}}" "${_to_${name}}" _config "${_tau_config}")
+  _salt_config_edit(STRING "${_from_${name}}" "${_to_${name}}" "${_tau_config}" _config)
   file(WRITE ${_config_errors}/${name}.yaml "${_config}")
 endforeach()
 # A configuration file that does not parse: line 4 is a key in a list.
@@ -4349,3 +4367,15 @@ if(HAVE_TAU)
     endforeach()
   endif()
 endif()
+
+# A SALT_CONFIG_FILE in the developer's environment must not reach a test
+# that does not set it.
+get_property(_salt_tests DIRECTORY PROPERTY TESTS)
+foreach(test IN LISTS _salt_tests)
+  get_test_property(${test} ENVIRONMENT _env)
+  get_test_property(${test} ENVIRONMENT_MODIFICATION _env_mod)
+  if(NOT "${_env};${_env_mod}" MATCHES "SALT_CONFIG_FILE=")
+    set_property(TEST ${test} APPEND
+      PROPERTY ENVIRONMENT_MODIFICATION "SALT_CONFIG_FILE=unset:")
+  endif()
+endforeach()
