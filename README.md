@@ -211,6 +211,11 @@ setting `TAU_MAKEFILE=/usr/local/x86_64/lib/Makefile.tau-pthread` will allow you
 to compile `hello.inst.c` with `tau_cc.sh -optLinkOnly -D... hello.inst.c -o hello`.
 Running `tau_exec ./hello` should then produce a `profile.0.0.0` file.
 
+`saltfm` reads a source as Fortran if its extension is `.f`, `.for`,
+`.ftn`, `.f77`, `.fpp`, `.f90`, `.f95`, `.f03`, `.f08`, or `.f18`, in
+lowercase or uppercase (but not `.F77`). For another extension, give
+`--lang=fortran`.
+
 For Fortran, `fparse-llvm` (which `saltfm` runs for Fortran sources)
 runs the Flang driver that SALT-FM was configured with, even if another
 `flang` or `flang-new` comes first on `PATH`. To run a different driver,

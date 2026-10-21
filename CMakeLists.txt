@@ -1225,7 +1225,7 @@ add_test(NAME make_clang_error_outputs
     rm -f missing_header_fails.inst.c missing_header.inst.c &&
     rm -f allow_parse_errors_missing_input.inst.c &&
     rm -f allow_parse_errors_c.inst.c allow_parse_errors_env.inst.c &&
-    rm -f allow_parse_errors_cxx.inst.cpp &&
+    rm -f allow_parse_errors_cxx.inst.cpp fortran_default_output_* &&
     cp ${_tests}/missing_header.c missing_header.c &&
     rm -rf clang_error_dir.inst.c fortran_error_dir.inst.F90 &&
     mkdir clang_error_dir.inst.c fortran_error_dir.inst.F90 &&
@@ -1239,7 +1239,7 @@ add_test(NAME make_clang_error_outputs
     chmod a-w clang_error_ro.inst.c fortran_error_ro.inst.F90 &&
     cp ${_tests}/clang_error.c clang_error_self.c &&
     cp ${_tests}/fortran/compile_error.f90 fortran_error_self.f90 &&
-    cp ${_tests}/fortran/compile_error.f90 fortran_error_self.f95 &&
+    cp ${_tests}/fortran/compile_error.f90 fortran_error_self.inc &&
     cp ${_tests}/hello.c clang_hello_self.c &&
     cp ${_tests}/setup_timer_name.yaml clang_config_self.yaml &&
     cp ${_tests}/sif/exclude_c.tau clang_sif_self.tau &&
@@ -1249,7 +1249,7 @@ add_test(NAME make_clang_error_outputs
     cp ${_tests}/fortran/hello.f90 fortran_hello_self.f90 &&
     cp ${_tests}/fortran/hello.f90 fortran_select_value_self.f90 &&
     cp ${_tests}/fortran/hello.f90 fortran_dash_x_name_self.f90 &&
-    cp ${_tests}/fortran/hello.f90 fortran_other-x.f95 &&
+    cp ${_tests}/fortran/hello.f90 fortran_other-x.inc &&
     rm -f config_unreadable.yaml &&
     cp ${_tests}/setup_timer_name.yaml config_unreadable.yaml &&
     chmod a-r config_unreadable.yaml &&
@@ -2425,22 +2425,71 @@ if(TEST_FORTRAN)
   add_test(NAME fparse_shell_var_input_file
     COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show)
   set_tests_properties(fparse_shell_var_input_file PROPERTIES
-    ENVIRONMENT "input_file=shell_var.f90"
+    ENVIRONMENT "input_file=shell_var.f90;other_input=shell_var.f90"
     PASS_REGULAR_EXPRESSION "(^|\n)input file: \"<None given>\" \n"
     FAIL_REGULAR_EXPRESSION "unbound variable")
-  # Without --show, fparse-llvm stops with an error and does not run Flang.
-  add_test(NAME fparse_no_input
-    COMMAND sh -c "\"$0\" \"$@\" > fparse_no_input.log 2>&1; rc=$?
-      cat fparse_no_input.log
-      [ $rc -ge 1 ] && [ $rc -le 127 ] ||
-        { echo \"Expected an exit status from 1 to 127, got $rc\"; exit 1; }
-      grep -qF 'ERROR: no input file' fparse_no_input.log ||
-        { echo 'Expected ERROR: no input file'; exit 1; }
-      ! grep -qE 'Running:|unbound variable' fparse_no_input.log ||
-        { echo 'Did not expect Running: or unbound variable'; exit 1; }"
-      ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm
-      --tau_excluded_main_setup=routine)
-  _salt_in_test_output(instrument fparse_no_input)
+  # Without --show, fparse-llvm stops with an error and does not run Flang,
+  # also when it has a flag, which is not an input file (#102).
+  foreach(name IN ITEMS no_input no_input_flag)
+    set(_arg --tau_excluded_main_setup=routine)
+    if(name STREQUAL "no_input_flag")
+      set(_arg -fopenmp)
+    endif()
+    add_test(NAME fparse_${name}
+      COMMAND sh -c "\"$0\" \"$@\" > fparse_${name}.log 2>&1; rc=$?
+        cat fparse_${name}.log
+        [ $rc -ge 1 ] && [ $rc -le 127 ] ||
+          { echo \"Expected an exit status from 1 to 127, got $rc\"; exit 1; }
+        grep -qF 'ERROR: no input file' fparse_${name}.log ||
+          { echo 'Expected ERROR: no input file'; exit 1; }
+        ! grep -qE 'Running:|unbound variable' fparse_${name}.log ||
+          { echo 'Did not expect Running: or unbound variable'; exit 1; }"
+        ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm ${_arg})
+    _salt_in_test_output(instrument fparse_${name})
+  endforeach()
+  # fparse-llvm takes a Fortran source after a flag as the input file,
+  # and without one, the first argument that is not a flag (#102).
+  add_test(NAME fparse_input_after_flag
+    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show
+            -fopenmp foo.f08)
+  string(CONCAT _input_after_flag "(^|\n)input file: foo\\.f08\n.*\n"
+    "cmd: [^\n]* foo\\.f08 -o [^\n]*/foo\\.inst\\.F90 -fopenmp\n")
+  set_tests_properties(fparse_input_after_flag PROPERTIES
+    PASS_REGULAR_EXPRESSION "${_input_after_flag}")
+  add_test(NAME fparse_input_not_flag
+    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show
+            -fopenmp foo.inc)
+  set_tests_properties(fparse_input_not_flag PROPERTIES
+    PASS_REGULAR_EXPRESSION "(^|\n)input file: foo\\.inc\n")
+  # fparse-llvm reports each argument that is not a flag and that it does
+  # not take as the input file.
+  add_test(NAME fparse_unused_args
+    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show
+            first.inc foo.f08 second.inc)
+  string(CONCAT _unused_args "(^|\n)Removed unknown flag: first\\.inc\n"
+    "Removed unknown flag: second\\.inc\ninput file: foo\\.f08\n")
+  set_tests_properties(fparse_unused_args PROPERTIES
+    PASS_REGULAR_EXPRESSION "${_unused_args}")
+  add_test(NAME fparse_unused_args_not_flag
+    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show
+            first.inc second.inc)
+  set_tests_properties(fparse_unused_args_not_flag PROPERTIES
+    PASS_REGULAR_EXPRESSION
+      "(^|\n)Removed unknown flag: second\\.inc\ninput file: first\\.inc\n"
+    FAIL_REGULAR_EXPRESSION "Removed unknown flag: first")
+  # saltfm gives fparse-llvm a source with each extension that Flang or
+  # gfortran reads as Fortran, and fparse-llvm takes it as the input
+  # file, not the argument before it (#102).
+  set(_ext_tests "")
+  foreach(ext f F for FOR ftn FTN f77 fpp FPP f90 F90 f95 F95 f03 F03
+      f08 F08 f18 F18)
+    add_test(NAME saltfm_ext_${ext}
+      COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
+              other x.${ext})
+    set_tests_properties(saltfm_ext_${ext} PROPERTIES
+      PASS_REGULAR_EXPRESSION "\ninput file: x\\.${ext}\n")
+    list(APPEND _ext_tests saltfm_ext_${ext})
+  endforeach()
   # Without --tau_output, fparse-llvm must neither remove nor write the
   # file that an exported output_file names.
   add_test(NAME fparse_shell_var_output_file
@@ -2460,7 +2509,9 @@ if(TEST_FORTRAN)
     PASS_REGULAR_EXPRESSION "\nSALT_FORTRAN_SELECT_FILE=\"\"\n")
   list(APPEND _shell_var_tests saltfm_shell_var_show saltfm_shell_var_force_lang
     fparse_shell_var_input_file fparse_shell_var_output_file
-    fparse_shell_var_select_file fparse_no_input)
+    fparse_shell_var_select_file fparse_no_input fparse_no_input_flag
+    fparse_input_after_flag fparse_input_not_flag fparse_unused_args
+    fparse_unused_args_not_flag ${_ext_tests})
   set_tests_properties(saltfm_main_setup_fortran fparse_main_setup_canonical_only
     saltfm_main_setup_fortran_next fparse_main_setup_next fparse_main_setup_no_value
     ${_shell_var_tests}
@@ -3287,15 +3338,13 @@ if(TEST_FORTRAN)
   # which contains `-W`, is forwarded.
   set(_fx_flags "-fopenmp -Werror -Ifoo -Iinc-Wave -DBAR=1 -Jdir -std=f2018")
   string(CONCAT _fx_pass
-    "Removed unknown flag: fortran_decoy-Stuff\\.f95\n"
-    "Removed unknown flag: fortran_decoy-Wstuff\\.f95\n.*"
     "Remaining Arguments: ${_fx_flags}\n.*"
     "${_fx_match_cmd}[^\n]* ${_fx_flags}\n")
   _salt_add_flang_exe_test(fparse_whole_flag_names
     "${_fx_pass}" "cmd:[^\n]*decoy-"
     ${_fx_bin}/fparse-llvm --show --flang_exe=${_fx_dir}/match/flang
     -fopenmp -Werror -Wall -Ifoo -Iinc-Wave -DBAR=1 -Jdir -std=f2018
-    -Wl,-rpath,x fortran_decoy-Stuff.f95 fortran_decoy-Wstuff.f95 ${_fx_src})
+    -Wl,-rpath,x fortran_decoy-Stuff.inc fortran_decoy-Wstuff.inc ${_fx_src})
   # --flang_exe without a path stops.
   _salt_add_flang_exe_test(fparse_flang_exe_flag_no_path
     "ERROR: --flang_exe needs a path" "cmd:"
@@ -3972,10 +4021,10 @@ if(TEST_FORTRAN)
   _salt_add_clang_error_test(fortran_sif_self_output fortran_sif_self.tau
     "lang:Fortran" fortran/hello.f90 COPY_OF sif/exclude_f90.tau
     ARGS --tau_select_file=fortran_sif_self.tau)
-  # The wrapper does not recognize a `.f95` source, but must refuse it too.
-  _salt_add_clang_error_test(fortran_error_self_f95_output
-    fortran_error_self.f95 "lang:Fortran"
-    ${SALT_TEST_OUTPUT_DIR}/output_error/fortran_error_self.f95
+  # The wrapper does not recognize a `.inc` source, but must refuse it too.
+  _salt_add_clang_error_test(fortran_error_self_inc_output
+    fortran_error_self.inc "lang:Fortran"
+    ${SALT_TEST_OUTPUT_DIR}/output_error/fortran_error_self.inc
     COPY_OF fortran/compile_error.f90 ARGS --lang=fortran)
   _salt_add_clang_error_test(fortran_error_ro_output
     fortran_error_ro.inst.F90 "lang:Fortran" fortran/hello.f90 NOT_ROOT
@@ -4008,7 +4057,7 @@ if(TEST_FORTRAN)
     ${SALT_TEST_OUTPUT_DIR}/output_error/fortran_dash_x_name_self.f90
     DEFAULT_OUTPUT COPY_OF fortran/hello.f90
     ARGS --tau_output=fortran_dash_x_name_self.f90
-    --flang_exe=/nonexistent/flang fortran_other-x.f95)
+    --flang_exe=/nonexistent/flang fortran_other-x.inc)
   _salt_add_config_read_error_tests(fortran "lang:Fortran" fortran/hello.f90)
   _salt_add_config_error_test(no_Fortran_fortran "lang:Fortran"
     fortran/hello.f90 ${_config_errors}/no_Fortran.yaml
@@ -4032,6 +4081,41 @@ if(TEST_FORTRAN)
     "lang:Fortran" fortran/hello.f90 EXIT_ZERO CHECK "-s config_ok_fortran.out"
     ARGS --config_file=${_config_errors}/fortran.yaml
     OUT "call TAU_PROFILE_START(tauProfileTimer)")
+  # Flang -fc1 reads neither .ftn nor .FTN as fixed form, nor
+  # preprocesses .FTN, so fparse-llvm asks it to (#102).
+  configure_file(tests/fortran/myhi.f ${CMAKE_BINARY_DIR}/fortran_ext/myhi.ftn
+    COPYONLY)
+  configure_file(tests/fortran/fixed_cpp.F
+    ${CMAKE_BINARY_DIR}/fortran_ext/fixed_cpp.FTN COPYONLY)
+  foreach(src myhi.ftn fixed_cpp.FTN)
+    string(REPLACE "." "_" _name ${src})
+    _salt_add_clang_error_test(fortran_ext_${_name} fortran_ext_${_name}.out
+      "lang:Fortran" ${CMAKE_BINARY_DIR}/fortran_ext/${src} EXIT_ZERO
+      CHECK "-s fortran_ext_${_name}.out" OUT "TAU_PROFILE_START")
+  endforeach()
+  # Without --tau_output, the output of a fixed-form source ends in .F,
+  # and that of a free-form source in .F90, which gfortran and Flang
+  # read as preprocessed sources of the same form.
+  foreach(ext f for ftn f77 fpp FOR f90 f95 f03 f08 f18 F08)
+    set(_src ${CMAKE_SOURCE_DIR}/tests/fortran/myhi.f)
+    set(_out_ext F)
+    if(ext MATCHES "^[fF](90|95|03|08|18)$")
+      set(_src ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+      set(_out_ext F90)
+    endif()
+    # Names differ in more than case, for case-insensitive file systems
+    string(TOLOWER ${ext} _name)
+    if(NOT ext STREQUAL _name)
+      string(APPEND _name _upper)
+    endif()
+    set(_name fortran_default_output_${_name})
+    configure_file(${_src} ${CMAKE_BINARY_DIR}/fortran_ext/${_name}.${ext}
+      COPYONLY)
+    _salt_add_clang_error_test(${_name} ${_name}.inst.${_out_ext}
+      "lang:Fortran" ${CMAKE_BINARY_DIR}/fortran_ext/${_name}.${ext}
+      DEFAULT_OUTPUT EXIT_ZERO CHECK "-s ${_name}.inst.${_out_ext}"
+      OUT "TAU_PROFILE_START")
+  endforeach()
 
   set(SALT_FORTRAN_COMPILERS_TO_TEST gfortran flang-new)
 

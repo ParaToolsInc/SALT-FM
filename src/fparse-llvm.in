@@ -208,6 +208,8 @@ _WHITELISTED_OPT_ARG_REGEX="^(${_WHITELISTED_OPT_ARG_REGEX})$"
 # The arguments that can name an input: all but the output file and the
 # values forwarded after a flag
 inputs=()
+# The arguments that are not flags and have no Fortran extension
+others=()
 args=()
 expecting_arg_to_forward=false
 expecting_output_file=false
@@ -300,7 +302,8 @@ for arg in "$@"; do
         select_file="${arg#--tau_select_file=}"
         shift || true
         #echo "args remaining: $*"
-    elif [[ $arg == *.[Ff]90 || $arg == *.[Ff] || $arg == *.[Ff]03 ]]; then
+    # The Fortran extensions that Flang or gfortran read, as saltfm
+    elif [[ $arg =~ \.(f|F|for|FOR|ftn|FTN|f77|fpp|FPP|[fF](90|95|03|08|18))$ ]]; then
         input_file="$arg"
         shift || true
         #echo "args remaining: $*"
@@ -337,6 +340,11 @@ for arg in "$@"; do
         expecting_arg_to_forward=true
         shift || true
         #echo "Added whitelisted flag with argument: $arg"
+    elif [[ $arg != -* ]]; then
+        # The first one is the input file if no argument has a Fortran
+        # extension
+        others+=("$arg")
+        shift || true
     else
         echo "Removed unknown flag: $arg"
         shift || true
@@ -430,14 +438,19 @@ fi
 
 #echo "args: \"${args[*]}\""
 # print the argument list
-if [[ -z "${input_file:-}" ]]; then
-    if [[ ${#args[@]} -gt 0 ]]; then
-        # An input file has not been recognized.
-        # Try to take the first argument as the input file
-        input_file="${args[0]}"
-        args=("${args[@]:1}")
-    fi
+if [[ -z "${input_file:-}" && ${#others[@]} -gt 0 ]]; then
+    input_file="${others[0]}"
+    others=("${others[@]:1}")
 fi
+for arg in ${others[@]+"${others[@]}"}; do
+    echo "Removed unknown flag: $arg"
+done
+# Flang -fc1 reads .ftn and .FTN as free form, unlike gfortran, and does not
+# preprocess .FTN; a later flag in the arguments overrides these
+case ${input_file:-} in
+    *.ftn) args=(-ffixed-form ${args[@]+"${args[@]}"}) ;;
+    *.FTN) args=(-ffixed-form -cpp ${args[@]+"${args[@]}"}) ;;
+esac
 
 echo "input file: ${input_file:-\"<None given>\" }"
 
@@ -448,11 +461,18 @@ if [[ -z "${output_file:-}" ]]; then
     else
         file_ext=""
     fi
+    # The output has preprocessor directives, so give it the extension of a
+    # preprocessed source of the same form that gfortran and Flang read
+    case ${file_ext} in
+        .[fF]90 | .[fF]95 | .[fF]03 | .[fF]08 | .[fF]18) file_ext=.F90 ;;
+        .f | .F | .for | .FOR | .ftn | .FTN | .f77 | .fpp | .FPP) file_ext=.F ;;
+        *) file_ext="${file_ext//f/F}" ;;
+    esac
     if [[ "${input_file:-none}" == */* ]]; then
-        output_file="${input_file%.*}.inst${file_ext//f/F}"
+        output_file="${input_file%.*}.inst${file_ext}"
         output_file="$(pwd)/${output_file##*/}"
     else
-        output_file="$(pwd)/${input_file:+${input_file%.*}}.inst${file_ext//f/F}"
+        output_file="$(pwd)/${input_file:+${input_file%.*}}.inst${file_ext}"
     fi
 
 fi
