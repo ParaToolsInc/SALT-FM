@@ -251,9 +251,9 @@ line, as `config_files/tau_config.yaml` does.
   put the declarations for the main program's timer in
   `program_setup_insert`, as `tau_config.yaml` does.
 
-If the configuration file is missing, cannot be read, does not parse,
-or lacks a key the run needs, `saltfm` stops with an error that names
-the key or the parse error position, and writes no output.
+When a source needs the configuration file, `saltfm` checks it. If the
+file has a problem, `saltfm` stops with an error and writes no output.
+The error names the file, and the bad key or the parse error position.
 
 ### Selective instrumentation
 

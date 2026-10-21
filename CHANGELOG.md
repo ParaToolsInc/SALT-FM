@@ -234,12 +234,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `fparse-llvm` now stops with `ERROR: no input file`, and `--show`
   prints the command; before, both stopped on an unset shell variable.
 - For C, C++, and Fortran, `saltfm` stops with an error, exit status 1,
-  and no output when the configuration file is missing, cannot be read,
-  does not parse, lacks a key that the run needs, or has a value of the
-  wrong type. The error names the key or the parse error position.
-  Before, `saltfm` crashed, or wrote broken output and exited with
-  status 0. Fortran exited with status 253 for these errors and 252
-  for an unreadable selective instrumentation file
+  and no output when a source needs the configuration file, and the
+  file is missing, cannot be read, does not parse, lacks a key that the
+  run needs, or has a value of the wrong type. The error names the
+  file, and the bad key or the parse error position. Before, `saltfm`
+  crashed, or wrote broken output and exited with status 0. Fortran
+  exited with status 253 for a missing file or key, and 252 for an
+  unreadable selective instrumentation file
   ([#51](https://github.com/ParaToolsInc/SALT-FM/issues/51),
   [#54](https://github.com/ParaToolsInc/SALT-FM/issues/54),
   [#83](https://github.com/ParaToolsInc/SALT-FM/issues/83),
@@ -271,10 +272,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.f08`, or `.f18`, in lowercase or uppercase (but not `.F77`). Before,
   they knew only `.f`, `.f90`, and `.f03`, and their uppercase forms.
   Without such a source, `fparse-llvm` takes the first argument that is
-  not a flag as the input file; before, it could take a flag
+  not a flag as the input file; before, it could take a flag. Without
+  `--tau_output`, the output name of a fixed-form source ends in
+  `.inst.F`, and that of a free-form source in `.inst.F90`
   ([#102](https://github.com/ParaToolsInc/SALT-FM/issues/102)).
-  Without `--tau_output`, the output name of a fixed-form source ends in
-  `.inst.F`, and that of a free-form source in `.inst.F90`.
 - `saltfm` takes the language only from a source, not from an option
   value such as `--tau_output=out.inst.F90` or
   `--tau_output out.inst.F90`.
