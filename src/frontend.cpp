@@ -109,7 +109,8 @@ static bool getEnvBool(const char *name) {
 }
 
 llvm::cl::opt<bool> fabricate_unknown_types("tau_fabricate_unknown_types",
-                                            llvm::cl::desc("Fabricate declarations for unknown qualified C++ names."),
+                                            llvm::cl::desc("Fabricate declarations for unknown qualified C++ names "
+                                                           "(default: $SALT_FABRICATE_UNKNOWN_TYPES, else false)"),
                                             llvm::cl::init(getEnvBool("SALT_FABRICATE_UNKNOWN_TYPES")),
                                             llvm::cl::cat(MyToolCategory));
 
