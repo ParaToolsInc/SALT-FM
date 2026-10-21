@@ -1479,9 +1479,10 @@ function(_salt_add_config_error_test name labels src config log)
 endfunction()
 # Adds the config_error_<name>_<lang> tests for a missing, an unreadable,
 # and an unparsable configuration file, one with an undefined YAML alias,
-# and one with two YAML documents; config_ok_doc_start_<lang> for one
-# document after `---`; and config_env_<lang>, config_env_option_<lang>,
-# and config_env_empty_<lang>: without --config_file, SALT_CONFIG_FILE
+# one with two YAML documents, and an empty or missing --config_file
+# value; config_ok_doc_start_<lang> for one document after `---`; and
+# config_env_<lang>, config_env_option_<lang>, and
+# config_env_empty_<lang>: without --config_file, SALT_CONFIG_FILE
 # selects the file unless it is empty, and --config_file has priority
 # over it.
 function(_salt_add_config_read_error_tests lang labels src)
@@ -1501,6 +1502,16 @@ function(_salt_add_config_read_error_tests lang labels src)
     CHECK "-s config_env_empty_${lang}.out")
   set_property(TEST config_env_empty_${lang} APPEND
     PROPERTY ENVIRONMENT "SALT_CONFIG_FILE=")
+  _salt_add_config_error_test(empty_option_${lang} "${labels}" ${src} ""
+    "ERROR: --config_file needs a path")
+  # LLVM's option parser reports a missing value for C and C++
+  set(no_value "ERROR: --config_file needs a path")
+  if(lang STREQUAL "c")
+    set(no_value "for the --config_file option: requires a value")
+  endif()
+  _salt_add_clang_error_test(config_error_no_value_${lang}
+    config_error_no_value_${lang}.out "${labels}" ${src} TAIL --config_file
+    LOG "${no_value}")
   _salt_add_clang_error_test(config_ok_doc_start_${lang}
     config_ok_doc_start_${lang}.out "${labels}" ${src} EXIT_ZERO
     CHECK "-s config_ok_doc_start_${lang}.out"
@@ -2455,9 +2466,18 @@ if(TEST_FORTRAN)
   add_test(NAME fparse_shell_var_input_file
     COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show)
   set_tests_properties(fparse_shell_var_input_file PROPERTIES
-    ENVIRONMENT "input_file=shell_var.f90;other_input=shell_var.f90"
+    ENVIRONMENT "input_file=shell_var.f90"
     PASS_REGULAR_EXPRESSION "(^|\n)input file: \"<None given>\" \n"
     FAIL_REGULAR_EXPRESSION "unbound variable")
+  # Without --config_file, fparse-llvm reads the default file.
+  add_test(NAME fparse_shell_var_config_file
+    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show
+            ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+  string(CONCAT _shell_var_config "\nSALT_FORTRAN_CONFIG_FILE=\"[^\n]*/"
+    "${CMAKE_INSTALL_DATADIR}/${CMAKE_PROJECT_NAME}/config_files/config\\.yaml\"\n")
+  set_tests_properties(fparse_shell_var_config_file PROPERTIES
+    ENVIRONMENT "FORTRAN_CONFIG_FILE=/env/leak.yaml"
+    PASS_REGULAR_EXPRESSION "${_shell_var_config}")
   # Without --show, fparse-llvm stops with an error and does not run Flang,
   # also when it has a flag, which is not an input file (#102).
   foreach(name IN ITEMS no_input no_input_flag)
@@ -2538,10 +2558,10 @@ if(TEST_FORTRAN)
     ENVIRONMENT "select_file=shell_var.tau"
     PASS_REGULAR_EXPRESSION "\nSALT_FORTRAN_SELECT_FILE=\"\"\n")
   list(APPEND _shell_var_tests saltfm_shell_var_show saltfm_shell_var_force_lang
-    fparse_shell_var_input_file fparse_shell_var_output_file
-    fparse_shell_var_select_file fparse_no_input fparse_no_input_flag
-    fparse_input_after_flag fparse_input_not_flag fparse_unused_args
-    fparse_unused_args_not_flag ${_ext_tests})
+    fparse_shell_var_input_file fparse_shell_var_config_file
+    fparse_shell_var_output_file fparse_shell_var_select_file fparse_no_input
+    fparse_no_input_flag fparse_input_after_flag fparse_input_not_flag
+    fparse_unused_args fparse_unused_args_not_flag ${_ext_tests})
   set_tests_properties(saltfm_main_setup_fortran fparse_main_setup_canonical_only
     saltfm_main_setup_fortran_next fparse_main_setup_next fparse_main_setup_no_value
     ${_shell_var_tests}

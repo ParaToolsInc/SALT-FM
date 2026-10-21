@@ -39,8 +39,6 @@ readonly _SCRIPT_DIR
 readonly _SALT_INC_DIR="${_SCRIPT_DIR}/../@SALT_INC_DIR@"
 
 SALT_PLUGIN_SO="${_SCRIPT_DIR}/../@CMAKE_INSTALL_LIBDIR@/${_SALTFM_PLUGIN_SO}"
-# --config_file, then SALT_CONFIG_FILE, then the installed one
-FORTRAN_CONFIG_FILE="${SALT_CONFIG_FILE:-${_SCRIPT_DIR}/../@CMAKE_INSTALL_DATADIR@/@CMAKE_PROJECT_NAME@/config_files/config.yaml}"
 
 read -r -d '' _USAGE <<EOF || true
 OVERVIEW: Tool for adding TAU instrumentation to source files.
@@ -219,7 +217,7 @@ expecting_flang_exe=false
 expecting_excluded_main_setup=false
 expecting_parse_excluded_modules=false
 # Only the arguments set these, not environment variables of the same names
-unset flang_exe input_file output_file select_file
+unset FORTRAN_CONFIG_FILE flang_exe input_file output_file select_file
 excluded_main_setup=routine
 parse_excluded_modules=modules-only
 show=false
@@ -352,6 +350,10 @@ for arg in "$@"; do
     inputs+=("$arg")
 done
 
+# --config_file, then SALT_CONFIG_FILE unless it is empty, then the installed
+# one
+FORTRAN_CONFIG_FILE="${FORTRAN_CONFIG_FILE-${SALT_CONFIG_FILE:-${_SCRIPT_DIR}/../@CMAKE_INSTALL_DATADIR@/@CMAKE_PROJECT_NAME@/config_files/config.yaml}}"
+
 # Opening the output would empty an input it names, such as an argument or the
 # config or selective instrumentation file, so refuse it before anything is
 # written; the loop above sets the roles, so argument order cannot skip one
@@ -392,6 +394,10 @@ case ${parse_excluded_modules} in
 esac
 if $expecting_flang_exe || [[ -n ${flang_exe+set} && -z ${flang_exe} ]]; then
     echo "ERROR: --flang_exe needs a path" >&2
+    exit 1
+fi
+if $expecting_config_file || [[ -z ${FORTRAN_CONFIG_FILE} ]]; then
+    echo "ERROR: --config_file needs a path" >&2
     exit 1
 fi
 # Select the Flang driver: --flang_exe, then SALT_FLANG_EXE, then the

@@ -301,6 +301,12 @@ int main(int argc, const char **argv)
             return EXIT_FAILURE;
         }
     }
+    // An empty value is not a file; SALT_CONFIG_FILE and the default never give one
+    if (configfile.empty())
+    {
+        llvm::errs() << "ERROR: --config_file needs a path\n";
+        return EXIT_FAILURE;
+    }
     // processInstrumentationRequests() reports a file that it cannot read
     if (!selectfile.empty() && !processInstrumentationRequests(selectfile.c_str()))
     {
