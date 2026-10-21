@@ -459,7 +459,8 @@ for arg in ${others[@]+"${others[@]}"}; do
     echo "Removed unknown flag: $arg"
 done
 # Flang -fc1 reads .ftn and .FTN as free form, unlike gfortran, and does not
-# preprocess .FTN; a later flag in the arguments overrides these
+# predefine macros such as __flang__ for .FTN; a later flag in the arguments
+# overrides these
 case ${input_file:-} in
     *.ftn) args=(-ffixed-form ${args[@]+"${args[@]}"}) ;;
     *.FTN) args=(-ffixed-form -cpp ${args[@]+"${args[@]}"}) ;;

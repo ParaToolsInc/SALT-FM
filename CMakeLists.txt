@@ -4250,7 +4250,8 @@ if(TEST_FORTRAN)
     ARGS --config_file=${_config_errors}/fortran.yaml
     OUT "call TAU_PROFILE_START(tauProfileTimer)")
   # Flang -fc1 reads neither .ftn nor .FTN as fixed form, nor
-  # preprocesses .FTN, so fparse-llvm asks it to (#102).
+  # predefines macros such as __flang__ for .FTN, so fparse-llvm asks it
+  # to (#102).
   configure_file(tests/fortran/myhi.f ${CMAKE_BINARY_DIR}/fortran_ext/myhi.ftn
     COPYONLY)
   configure_file(tests/fortran/fixed_cpp.F
