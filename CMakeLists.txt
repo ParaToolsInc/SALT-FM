@@ -2452,6 +2452,49 @@ add_test(NAME cparse_main_setup_canonical_only
 set_tests_properties(cparse_main_setup_canonical_only PROPERTIES
   PASS_REGULAR_EXPRESSION "Cannot find option named 'File'"
   LABELS "lang:C;phase:smoke")
+# saltfm takes the language from a source, not from an option value
+# such as an output file name, also when the value is the next
+# argument, which saltfm passes on after the option, or the option has
+# one dash, as LLVM's option parser allows.
+set(_option_langs c)
+if(TEST_FORTRAN)
+  list(APPEND _option_langs fortran)
+endif()
+foreach(lang IN LISTS _option_langs)
+  set(_src ${CMAKE_SOURCE_DIR}/tests/hello.c)
+  set(_out out.inst.f08)
+  set(_tool cparse-llvm)
+  set(_label C)
+  if(lang STREQUAL "fortran")
+    set(_src ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+    set(_out out.inst.c)
+    set(_tool fparse-llvm)
+    set(_label Fortran)
+  endif()
+  string(REPLACE "." "[.]" _out_re "${_out}")
+  foreach(dash IN ITEMS -- -)
+    set(_name ${lang})
+    if(dash STREQUAL "-")
+      set(_name dash_${lang})
+    endif()
+    add_test(NAME saltfm_option_value_${_name}
+      COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
+              ${dash}tau_output=${_out} ${_src})
+    set_tests_properties(saltfm_option_value_${_name} PROPERTIES
+      PASS_REGULAR_EXPRESSION "^${_tool} "
+      ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
+      LABELS "lang:${_label};phase:smoke")
+    foreach(opt config_file flang_exe tau_output tau_select_file)
+      add_test(NAME saltfm_option_next_${opt}_${_name}
+        COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
+                ${dash}${opt} ${_out} ${_src})
+      set_tests_properties(saltfm_option_next_${opt}_${_name} PROPERTIES
+        PASS_REGULAR_EXPRESSION "^${_tool} [^\n]* ${dash}${opt} ${_out_re} "
+        ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
+        LABELS "lang:${_label};phase:smoke")
+    endforeach()
+  endforeach()
+endforeach()
 if(TEST_FORTRAN)
   # saltfm gives fparse-llvm the canonical value, which fparse-llvm gives
   # the plugin; fparse-llvm takes only the canonical names.
