@@ -280,6 +280,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `saltfm` takes the language only from a source, not from an option
   value such as `--tau_output=out.inst.F90` or
   `--tau_output out.inst.F90`.
+- C and C++ ignore `--flang_exe`; before, they stopped with an
+  unknown-argument error.
 - The README instructions work again: the example runs
   `build/bin/saltfm` and TAU's compiler wrappers, and the TAU
   configuration uses `-dwarf=download`. Before, the example used a
