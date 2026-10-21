@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#
+# check-install -- Install SALT-FM and check the installed saltfm.
+#
+# The tests run the tools in the build tree, so this checks that an
+# installed saltfm finds its libraries, plugin, and default configuration
+# file: it instruments a C and a Fortran source without --config_file,
+# and each output must have a timer. Run it from the source directory.
+#
+# Usage: .github/scripts/check-install <build dir> <install prefix>
+
+set -euo pipefail
+
+build="$1"
+prefix="$2"
+cmake --install "${build}" --prefix "${prefix}" > /dev/null
+salt="${prefix}/bin/saltfm"
+"${salt}" tests/hello.c --tau_output="${prefix}/hello.inst.c"
+grep -q TAU_PROFILE_START "${prefix}/hello.inst.c"
+"${salt}" tests/fortran/hello.f90 --tau_output="${prefix}/hello.inst.F90"
+grep -q TAU_PROFILE_START "${prefix}/hello.inst.F90"
