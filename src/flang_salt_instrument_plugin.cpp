@@ -866,12 +866,10 @@ namespace salt::fortran {
         }
 
         [[nodiscard]] static std::string getConfigPath() {
-            // If config path env var is set and non-empty, use that;
-            // otherwise use default.
+            // fparse-llvm always sets the config path env var; the default
+            // is only for a Flang run without it
             if (const char *val = getenv(SALT_FORTRAN_CONFIG_FILE_VAR)) {
-                if (const std::string configPath{val}; !configPath.empty()) {
-                    return configPath;
-                }
+                return val;
             }
             return SALT_FORTRAN_CONFIG_DEFAULT_PATH;
         }

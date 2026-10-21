@@ -250,7 +250,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that `SALT_CONFIG_FILE` names, as C and C++ do. Before, Fortran
   ignored it and read the installed `config.yaml`. An empty
   `SALT_CONFIG_FILE` selects the installed file, as an unset one does;
-  before, C and C++ stopped with an error.
+  before, C and C++ stopped with an error. Fortran stops with an error
+  for an empty `--config_file=` or a `--config_file` without a value, as
+  C and C++ do; before, it read `config_files/tau_config.yaml` in the
+  working directory, or the default file.
 - SALT-FM copies a Fortran source that the file lists exclude without
   reading the configuration file, so a bad one does not stop the copy
   ([#90](https://github.com/ParaToolsInc/SALT-FM/issues/90)).
