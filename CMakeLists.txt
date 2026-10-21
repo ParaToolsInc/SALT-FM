@@ -1229,6 +1229,7 @@ add_test(NAME make_clang_error_outputs
     rm -f allow_parse_errors_missing_input.inst.c &&
     rm -f allow_parse_errors_c.inst.c allow_parse_errors_env.inst.c &&
     rm -f allow_parse_errors_cxx.inst.cpp fortran_default_output_* &&
+    rm -f data_only.saltmod &&
     cp ${_tests}/missing_header.c missing_header.c &&
     rm -rf clang_error_dir.inst.c fortran_error_dir.inst.F90 &&
     mkdir clang_error_dir.inst.c fortran_error_dir.inst.F90 &&
@@ -1466,6 +1467,8 @@ set(_from_undefined_alias_include "${_include}")
 set(_to_undefined_alias_include "include: *nope")
 set(_from_list_instrumentation "instrumentation: TAU")
 set(_to_list_instrumentation "instrumentation: [TAU]")
+set(_from_map_main_setup_insert "main_setup_insert:\n  - ")
+set(_to_map_main_setup_insert "main_setup_insert:\n  - setup: ")
 set(_from_map_function_end_insert "\n  - \"TAU_PROFILE_STOP")
 set(_to_map_function_end_insert "\n  - stop: \"TAU_PROFILE_STOP")
 set(_from_scalar_procedure_end_insert "procedure_end_insert:\n    - ")
@@ -1473,8 +1476,9 @@ set(_to_scalar_procedure_end_insert "procedure_end_insert: ")
 set(_from_map_program_setup_insert "program_setup_insert:\n    - ")
 set(_to_map_program_setup_insert "program_setup_insert:\n    - setup: ")
 foreach(name scalar_include empty_include null_include alias_include
-    undefined_alias_include list_instrumentation map_function_end_insert
-    scalar_procedure_end_insert map_program_setup_insert)
+    undefined_alias_include list_instrumentation map_main_setup_insert
+    map_function_end_insert scalar_procedure_end_insert
+    map_program_setup_insert)
   _salt_config_edit(STRING "${_from_${name}}" "${_to_${name}}" "${_tau_config}" _config)
   file(WRITE ${_config_errors}/${name}.yaml "${_config}")
 endforeach()
@@ -1610,6 +1614,9 @@ _salt_add_config_error_test(scalar_include_c "lang:C" hello.c
 _salt_add_config_error_test(map_function_end_insert_c "lang:C" hello.c
   ${_config_errors}/map_function_end_insert.yaml
   "ERROR: 'function_end_insert' ${_in_config}/map_function_end_insert.yaml ${_list}")
+_salt_add_config_error_test(map_main_setup_insert_c "lang:C" hello.c
+  ${_config_errors}/map_main_setup_insert.yaml
+  "ERROR: 'main_setup_insert' ${_in_config}/map_main_setup_insert.yaml ${_list}")
 _salt_add_config_error_test(list_instrumentation_c "lang:C" hello.c
   ${_config_errors}/list_instrumentation.yaml
   "ERROR: 'instrumentation' ${_in_config}/list_instrumentation.yaml must be a string")
@@ -4228,6 +4235,15 @@ if(TEST_FORTRAN)
       fortran/hello.f90 ${_config_errors}/${name}.yaml
       "ERROR: '${CMAKE_MATCH_1}' under 'Fortran' ${_in_config}/${name}.yaml ${_list}")
   endforeach()
+  # A source with nothing to instrument needs no configuration file: the
+  # plugin writes its module file and a copy with a #line line.
+  set(_data_only ${CMAKE_BINARY_DIR}/fortran_ext/data_only.f90)
+  file(WRITE ${_data_only} "module data_only\n  integer :: x\nend module data_only\n")
+  _salt_add_clang_error_test(config_ok_data_only_fortran
+    config_ok_data_only_fortran.out "lang:Fortran" ${_data_only} EXIT_ZERO
+    CHECK "-s config_ok_data_only_fortran.out -a -s data_only.saltmod"
+    ARGS --config_file=${_config_errors}/no_such_file.yaml
+    OUT "#line 1 \\\"${_data_only}\\\"" "module data_only")
   # A Fortran run needs no top-level C and C++ keys.
   _salt_add_clang_error_test(config_ok_fortran config_ok_fortran.out
     "lang:Fortran" fortran/hello.f90 EXIT_ZERO CHECK "-s config_ok_fortran.out"
