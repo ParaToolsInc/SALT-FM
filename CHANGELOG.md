@@ -12,7 +12,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   intrinsic module paths
   ([#70](https://github.com/ParaToolsInc/SALT-FM/issues/70)).
 - CI builds and tests against LLVM 23 in
-  `ghcr.io/paratoolsinc/salt-dev:1.7`, and the README lists that image
+  `ghcr.io/paratoolsinc/salt-dev:1.8`, and the README lists that image
   in its supported-versions table
   ([#70](https://github.com/ParaToolsInc/SALT-FM/issues/70)).
 - With LLVM 19 to 22, SALT-FM now instruments Fortran sources that use

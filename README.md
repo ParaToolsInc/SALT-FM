@@ -19,7 +19,7 @@ SALT-FM supports LLVM/Clang 19 through 23. Each version has a
 | 20                 | `ghcr.io/paratoolsinc/salt-dev:1.4` | `paratools/salt-dev:1.4`  |
 | 21                 | `ghcr.io/paratoolsinc/salt-dev:1.5` | `paratools/salt-dev:1.5`  |
 | 22                 | `ghcr.io/paratoolsinc/salt-dev:1.6` | `paratools/salt-dev:1.6`  |
-| 23                 | `ghcr.io/paratoolsinc/salt-dev:1.7` | `paratools/salt-dev:1.7`  |
+| 23                 | `ghcr.io/paratoolsinc/salt-dev:1.8` | `paratools/salt-dev:1.8`  |
 
 ## Getting Started
 
