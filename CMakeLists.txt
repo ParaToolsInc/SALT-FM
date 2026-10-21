@@ -1602,8 +1602,13 @@ _salt_add_clang_error_test(no_path_self_c no_path_self_c.c "lang:C"
 _salt_add_clang_error_test(no_path_rsp_c no_path_rsp_c.c "lang:C" hello.c
   COPY_OF hello.c ARGS @no_path_rsp_c.rsp TAIL --tau_select_file
   LOG "requires a value")
-foreach(key instrumentation include main_insert function_begin_insert
-    function_end_insert)
+# C and C++ use `instrumentation` only in a log line, so it is optional.
+_salt_add_clang_error_test(config_ok_no_instrumentation_c
+  config_ok_no_instrumentation_c.out "lang:C" hello.c EXIT_ZERO
+  CHECK "-s config_ok_no_instrumentation_c.out"
+  ARGS --config_file=${_config_errors}/no_instrumentation.yaml
+  OUT "TAU_PROFILE_START")
+foreach(key include main_insert function_begin_insert function_end_insert)
   _salt_add_config_error_test(no_${key}_c "lang:C" hello.c
     ${_config_errors}/no_${key}.yaml
     "ERROR: '${key}' key not found in the configuration file")
