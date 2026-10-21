@@ -1652,8 +1652,10 @@ _salt_add_clang_error_test(config_ok_cxx_api_cxx config_ok_cxx_api_cxx.out
   "lang:CXX" c11test.cpp EXIT_ZERO CHECK "-s config_ok_cxx_api_cxx.out"
   ARGS --config_file=${_config_errors}/cxx_api.yaml --tau_use_cxx_api
   OUT "TAU_PROFILE(")
-# A selective instrumentation file that cannot be read stops saltfm too.
+# A selective instrumentation file that cannot be read, or a directory,
+# stops saltfm too.
 set(_no_such_sif ${CMAKE_SOURCE_DIR}/tests/sif/no_such_file.tau)
+set(_sif_dir ${CMAKE_SOURCE_DIR}/tests/sif)
 foreach(lang c cxx)
   set(_src hello.c)
   set(_label C)
@@ -1665,6 +1667,10 @@ foreach(lang c cxx)
     clang_sif_unreadable_${lang}.out "lang:${_label}" ${_src}
     ARGS --tau_select_file=${_no_such_sif}
     LOG "ERROR: Cannot open selective instrumentation file: ${_no_such_sif}")
+  _salt_add_clang_error_test(clang_sif_dir_${lang}
+    clang_sif_dir_${lang}.out "lang:${_label}" ${_src}
+    ARGS --tau_select_file=${_sif_dir}
+    LOG "ERROR: Cannot open selective instrumentation file: ${_sif_dir}")
 endforeach()
 foreach(cfg nvtx roctx)
   string(TOUPPER ${cfg} _name)
@@ -3934,6 +3940,13 @@ if(TEST_FORTRAN)
     ARGS --tau_select_file=${_no_such_sif}
     LOG "Running:" "ERROR: Cannot open selective instrumentation file: ${_no_such_sif}")
   set_tests_properties(fparse_sif_unreadable PROPERTIES
+    FAIL_REGULAR_EXPRESSION "salt-selectfile failed;ERROR:.*\nERROR:"
+    ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}")
+  # So does a directory.
+  _salt_add_clang_error_test(fparse_sif_dir sif_dir.inst.F90
+    "lang:Fortran" fortran/hello.f90 ARGS --tau_select_file=${_sif_dir}
+    LOG "ERROR: Cannot open selective instrumentation file: ${_sif_dir}")
+  set_tests_properties(fparse_sif_dir PROPERTIES
     FAIL_REGULAR_EXPRESSION "salt-selectfile failed;ERROR:.*\nERROR:"
     ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}")
   # The plugin copies a source that the file lists exclude without reading

@@ -267,7 +267,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - For C and C++, `saltfm` stops with an error and writes no output when
   it cannot read the selective instrumentation file. Before, it
   instrumented every routine and exited with status 0. Fortran now
-  reports this error in one line, as C and C++ do.
+  reports this error in one line, as C and C++ do. A directory given as
+  the selective instrumentation file is now this error in C, C++, and
+  Fortran; before, all three instrumented every routine.
 - `saltfm` and `fparse-llvm` read a source as Fortran if its extension
   is `.f`, `.for`, `.ftn`, `.f77`, `.fpp`, `.f90`, `.f95`, `.f03`,
   `.f08`, or `.f18`, in lowercase or uppercase (but not `.F77`). Before,
