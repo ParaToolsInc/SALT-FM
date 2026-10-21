@@ -3,19 +3,15 @@
 SALT-FM: An LLVM-based Source Analysis Toolkit for HPC
 ======================================================
 
-The [TAU Performance System] is a powerful and versatile performance monitoring and analysis system.
-TAU supports several mechanisms for instrumenting applications,
-including source-based instrumentation.
-Source-based instrumentation inserts instrumentation points around areas of interest
-by parsing and modifying an application's source code.
-However, source-based instrumentation can be difficult to use,
-especially for large code-bases written in modern languages such as C++ and Fortran.
-To improve the usability of TAU,
-we introduce a next-generation source analysis toolkit called SALT-FM.
-SALT-FM is built using LLVM compiler technology,
-including the libTooling library, Clang's C and C++ parsers, and f18/Flang's Fortran parser.
-SALT-FM supports the following LLVM/Clang versions, each tested in CI against a matching [salt-dev] container image.
-The same images are also published to [Docker Hub][salt-dev Docker Hub] under the `paratools/salt-dev` repository.
+SALT-FM adds performance instrumentation to C, C++, and Fortran
+sources. It parses each source with Clang or Flang, and writes an
+instrumented copy. The inserted code comes from a YAML configuration
+file. SALT-FM includes configuration files for the
+[TAU Performance System], perfstubs, ITT, NVTX, and ROCTX.
+For the changes in each release, see [CHANGELOG.md](CHANGELOG.md).
+
+SALT-FM supports LLVM/Clang 19 through 23. Each version has a
+[salt-dev] container image:
 
 | LLVM/Clang version | GitHub Container Registry           | Docker Hub                |
 | ------------------ | ----------------------------------- | ------------------------- |
@@ -27,45 +23,32 @@ The same images are also published to [Docker Hub][salt-dev Docker Hub] under th
 
 ## Getting Started
 
-> [!NOTE]
-> Configuring SALT-FM inside a git checkout (i.e. running `cmake` for the first
-> time on a clone) sets `core.hooksPath` in that clone's local git config to
-> point at the vendored `.githooks/` directory, so contributor-side
-> `pre-commit` and `pre-push` hooks become active automatically. The hooks
-> are advisory and version-controlled with the rest of the source tree; they
-> are not installed system-wide. Distribution build recipes and other
-> packaging contexts should disable this -- see [Notes for package
-> maintainers](#notes-for-package-maintainers).
+To install SALT-FM with [Spack], run:
 
-The build system for SALT-FM uses [CMake] as the build system generator
-(also known as a meta-build system).
-It also requires either a full installation of LLVM and Clang including the
-`clang-cmake-exports` and `cmake-exports` components, or a more minimal set of features and components
-(including both of the aforementioned `cmake-exports`) together with a patch applied to
-two of the LLVM/Clang installed CMake files.
+``` shell
+spack install saltfm
+```
 
-The development and testing of SALT-FM utilizes the [salt-dev] container,
-which is [posted to Docker Hub].
-The container image includes an installation of `git`, `cmake`, `llvm`/`clang`, and `ninja`.
-The installed `llvm` and `clang` include the patched [CMake] files.
+To build SALT-FM from source, you need [CMake] 3.23 or later and an
+installation of LLVM and Clang. The installation must include the
+`cmake-exports` and `clang-cmake-exports` components. For Fortran, it
+must also include MLIR and Flang. A minimal LLVM or Clang installation
+can need two patched CMake files (see step 1).
 
-Below are the steps required to get started using SALT-FM:
+The [salt-dev] container image has `git`, `cmake`, `ninja`, and a
+patched LLVM and Clang.
 
-### 1. Clone this repo:
+### 1. Clone this repo
 
 ``` shell
 git clone --recursive https://github.com/ParaToolsInc/SALT-FM.git
 ```
-Including the `--recursive` flag will ensure you have the patches
-that are applied to the `llvm`/`clang` installed CMake files available to you.
-This is not a requirement if using the [salt-dev] container image.
-The patches prevent SALT-FM's configuration with CMake from failing when
-incomplete/minimal installations of LLVM and Clang are present.
-A minimal subset of components must be installed.
-If SALT-FM is failing to be configured in the next step,
-and you have write access to the LLVM and/or Clang installation,
-applying the patches from https://github.com/ParaToolsInc/salt-llvm-patches
-may fix the problem.
+
+The `--recursive` option also gets the patches for the LLVM and Clang
+CMake files, in `cmake/llvm-patches`. You do not need them in the
+[salt-dev] container. If the configuration in step 3 fails with a
+minimal LLVM or Clang installation, apply these patches to it. The
+patches are also at https://github.com/ParaToolsInc/salt-llvm-patches.
 
 ### 2. Launch the salt-dev Docker image (optional)
 
@@ -76,16 +59,15 @@ $ docker run -it --pull always --tmpfs=/dev/shm:rw,nosuid,nodev,exec \
 # cd /home/salt/src
 # ccache --show-stats
 ```
-This step is optional but recommended.
-The `llvm`/`clang` CMake files are patched, and this is the environment used in CI testing.
-The docker image also includes `ccache` and two configurations of TAU
-for testing with both GCC and Clang.
-(See `/usr/local/x86_64/lib` for the two installed `TAU_MAKEFILE`s.)
 
-### 3. Configure and build SALT-FM:
+We recommend this step. The image has patched LLVM and Clang CMake
+files, `ccache`, and TAU configurations for GCC and Clang. Their
+`TAU_MAKEFILE`s are in `/usr/local/x86_64/lib`.
 
-This step is most easily performed in the [salt-dev] container,
-but can also be performed if a suitable installation of LLVM and Clang is present.
+### 3. Configure, build, and install SALT-FM
+
+Do this step in the [salt-dev] container, or on a system with a
+suitable LLVM and Clang installation.
 
 ``` shell
 # Tell CMake to use the clang/clang++ compiler to build SALT-FM
@@ -95,34 +77,42 @@ export CXX=clang++
 cmake -Wdev -Wdeprecated -S . -B build
 cmake --build build --parallel # Add --verbose to debug something going wrong
 ```
-To specify a TAU installation for testing other than the one used by the [salt-dev] container,
-you can add `-DTAU_ROOT=<dir>` to the first cmake invocation.
 
-If the Ninja build system is present and you prefer it to Makefiles
-(it's already present in the [salt-dev] container image),
-then you may add `-G Ninja` to the penultimate line above:
+To use Ninja instead of Make, add `-G Ninja` to the first `cmake`
+command:
 
 ``` shell
 cmake -Wdev -Wdeprecated -S . -B build -G Ninja
 ```
 
+The build puts `saltfm`, the command that you run, in `build/bin`.
+When CMake finds MLIR and Flang, the build also makes the Fortran
+instrumentor.
+
+To install SALT-FM, run:
+
+``` shell
+cmake --install build --prefix <dir>
+```
+
+This puts `saltfm` in `<dir>/bin`, and the configuration files in
+`<dir>/share/saltfm/config_files`.
+
 #### macOS (Homebrew LLVM 23)
 
-Apple's bundled clang does not ship `flang`. Install the Homebrew formulae
-([instructions](https://formulae.brew.sh/formula/llvm) and
+Apple's clang does not include `flang`. Install LLVM, Flang, and Ninja
+with Homebrew ([llvm](https://formulae.brew.sh/formula/llvm) and
 [flang](https://formulae.brew.sh/formula/flang)):
 
 ``` shell
 brew install llvm flang ninja
 ```
 
-Homebrew `flang` 23.1.3_1 and later ship a CMake package and the Flang
-headers, so SALT-FM also builds the Flang plugin. With an older
-`flang`, run `brew upgrade flang`; otherwise SALT-FM builds without the
-Flang plugin (C/C++ only).
+Use Homebrew `flang` 23.1.3_1 or later to build the Fortran
+instrumentor. With an older `flang`, run `brew upgrade flang`.
+Otherwise, SALT-FM builds for C and C++ only.
 
-Configure and build the same way as on Linux, pointing the compiler at
-the Homebrew LLVM clang so `flang-new` is reachable:
+Set the compilers to the Homebrew clang, and configure and build:
 
 ``` shell
 cmake -Wdev -Wdeprecated -G Ninja -S . -B build \
@@ -132,157 +122,133 @@ cmake -Wdev -Wdeprecated -G Ninja -S . -B build \
 cmake --build build --parallel
 ```
 
-CMake auto-detects the rest:
+You do not need to set `CMAKE_PREFIX_PATH` or `CMAKE_OSX_SYSROOT`.
+CMake finds them. If configuration stops with `Cannot compile
+<ryml_all.hpp>`, make sure that `CMAKE_CXX_COMPILER` is the Homebrew
+`clang++`. Without TAU, CMake leaves out the tests that need TAU.
 
-- `CMAKE_PREFIX_PATH` is seeded from the active C++ compiler's prefix,
-  `llvm-config`, and `flang-new` (no Homebrew/Spack/conda queries) so
-  `find_package(LLVM)` resolves without `-DCMAKE_PREFIX_PATH=...`.
-- `CMAKE_OSX_SYSROOT` falls back to the active Xcode SDK; you do not
-  need to pass it explicitly.
-- A configure-time `try_compile` of `<ryml_all.hpp>` with the resolved
-  toolchain catches misconfiguration with an actionable error before
-  the real build starts.
+### 4. Run the tests (optional)
 
-Notes:
-
-- `CMAKE_OSX_DEPLOYMENT_TARGET` defaults to `11.0` and is auto-raised
-  to match the linked LLVM dylib's `LC_BUILD_VERSION minos` if higher
-  (avoids ld "object file built for newer macOS version" warnings).
-- If TAU is not available, pass `-DSALT_REQUIRE_TAU=OFF`; TAU-dependent
-  tests are skipped automatically.
-
-Once this is finished, you will have an executable `cparse-llvm` in the `build` directory.
-
-### 4. Running the tests (optional):
-
-Running the tests is encouraged to verify functionality.
+Run the tests to verify the build:
 
 ``` shell
 cd build
 ctest --output-on-failure
 ```
 
-The tests are all located in the `tests` subdirectory of the project.
-[CMake] test fixtures and test dependencies ensure that:
+The tests write their output, such as instrumented sources, logs, and
+profiles, to `test-output/` in the build directory. To remove it, run
+`cmake --build build --target clean-test-artifacts`. The command
+`ctest -R <test>` also runs the setup tests that `<test>` needs.
 
- * The tests run in an order such that inter-test dependencies are satisfied
- * The SALT-FM configuration files are correctly staged to the build directory
- * Old instrumented versions of test sources are cleaned up just in time before being instrumented again
-   * This is so the user can inspect instrumented sources
- * Old object files are cleaned up
- * Old profiles associated with each test are removed just in time
- * New profiles are moved to subdirectories indicating which test they are associated with
+The tests cannot use paths that contain spaces. If the source or build
+directory path contains a space, configuration fails. Use paths
+without spaces, or configure with `-DBUILD_TESTING=OFF`.
 
-The tests write all their outputs (instrumented sources, logs, TAU binaries,
-and profiles) under `test-output/` in the build directory.
-`cmake --build build --target clean-test-artifacts` removes `test-output/` and
-keeps the built tools; `cmake --build build --target clean` also removes the
-compiled tools (`cparse-llvm` and the Flang plugin) and CTest's `Testing/`
-directory.
-A narrow `ctest -R <test>` also runs the setup and producer tests that it needs.
-
-TAU's compiler wrappers and the test checks cannot handle spaces in paths, so
-with testing on, configuring fails if the source or build directory path
-contains a space.
-Use paths without spaces, or configure with `-DBUILD_TESTING=OFF`.
-
-By default, the tests assume a TAU installation matching the [salt-dev]
-development image (located at `/usr/local/x86_64/` with a GCC and Clang configuration).
-
-To use a different TAU installation, add `-DTAU_ROOT=<dir>` to the cmake invocation.
-The specified directory should point to a TAU install built with at least these two configurations:
+The TAU tests need a TAU installation. CMake uses `-DTAU_ROOT=<dir>`,
+then the `TAU_ROOT` environment variable, then `tau_exec` on `PATH`.
+The [salt-dev] image has TAU in `/usr/local/x86_64/`. The TAU
+installation must have these two configurations:
 
  `-pthread -cc=clang -c++=clang++ -bfd=download -unwind=download -dwarf=download -otf=download`
 
  and
 
- `-pthread -bfd=download -unwind=download -libdwarf=download -otf=download`
+ `-pthread -bfd=download -unwind=download -dwarf=download -otf=download`
 
-### 5. Example usage:
+### 5. Instrument a source
 
+Run `saltfm` on a source:
+
+``` shell
+build/bin/saltfm tests/hello.c
 ```
-# Point to the appropriate config file if config_files/config.yaml is not in CWD
-./cparse-llvm --config_file=/path/to/config.yaml ../tests/hello.c
-```
 
-This will produce a file `hello.inst.c`.
-Passing the correct defines (see the [CMakeLists.txt file]) and
-setting `TAU_MAKEFILE=/usr/local/x86_64/lib/Makefile.tau-pthread` will allow you
-to compile `hello.inst.c` with `tau_cc.sh -optLinkOnly -D... hello.inst.c -o hello`.
-Running `tau_exec ./hello` should then produce a `profile.0.0.0` file.
+`saltfm` writes `hello.inst.c` in the working directory. To name the
+output file, use `--tau_output=<file>`. For all options, run
+`saltfm --help`. An option has priority over its environment variable.
 
 `saltfm` reads a source as Fortran if its extension is `.f`, `.for`,
 `.ftn`, `.f77`, `.fpp`, `.f90`, `.f95`, `.f03`, `.f08`, or `.f18`, in
 lowercase or uppercase (but not `.F77`). For another extension, give
 `--lang=fortran`.
 
-For Fortran, `fparse-llvm` (which `saltfm` runs for Fortran sources)
-runs the Flang driver that SALT-FM was configured with, even if another
-`flang` or `flang-new` comes first on `PATH`. To run a different driver,
-pass `--flang_exe=<path>` or set `SALT_FLANG_EXE=<path>`; the option
-takes priority. If the configured driver is missing, `fparse-llvm` warns
-and uses `flang` or `flang-new` from `PATH`. The driver must report the
-LLVM major version SALT-FM was built with, or `fparse-llvm` stops with
-an error.
+To instrument and compile in one step, use TAU's compiler wrappers with
+`-optSaltInst`. For example, in a container of the latest [salt-dev]
+image, set `TAU_MAKEFILE` to a TAU makefile from
+`/usr/local/x86_64/lib`:
+
+``` shell
+export TAU_MAKEFILE=/usr/local/x86_64/lib/Makefile.tau-clang-pthread-pdt
+tau_cc.sh -optSaltInst -optSaltParser="$PWD/build/bin/saltfm" tests/hello.c -o hello
+./hello
+```
+
+The run writes `profile.0.0.0`. Use `tau_cxx.sh` for C++ and
+`tau_f90.sh` for Fortran.
+
+For Fortran, `saltfm` runs the Flang driver that SALT-FM was built
+with, even if another `flang` comes first on `PATH`. To use a
+different driver, pass `--flang_exe=<path>` or set
+`SALT_FLANG_EXE=<path>`. If the configured driver is missing, SALT-FM
+warns and uses `flang` or `flang-new` from `PATH`. The driver must have
+the LLVM major version that SALT-FM was built with. Otherwise, SALT-FM
+stops with an error.
 
 ### C and C++ sources with errors
 
 When Clang reports errors in a C or C++ source, `saltfm` exits with a
-non-zero status and writes no output file. After many errors, such as
-a missing header or an unknown type name, Clang marks declarations
-that use unknown names invalid and keeps parsing. These options make
-`saltfm` insert timers in the original source from the partial parse
-tree that Clang builds, for example to instrument sources outside
-their build, without the project's include paths:
+non-zero status and writes no output file. Clang still builds a
+partial parse tree. Two options make `saltfm` instrument that tree. Use
+them, for example, to instrument a source without the include paths of
+its build:
 
-- `--tau_allow_parse_errors`, or `SALT_ALLOW_PARSE_ERRORS` set to any
-  value but empty, `0`, `false`, `no`, or `off` (in any case), makes
-  `saltfm` print `WARNING: Clang reported errors; instrumenting the
-  partial parse tree`, write the output file, and exit with status 0.
-  Timers can then be wrong or missing: Clang uses `int` for an
-  unknown type, so the timer of `void scale(RealD factor, ComplexD *z)`
-  is named `void scale(int, int *)`, and a function such as
+- `--tau_allow_parse_errors`, or `SALT_ALLOW_PARSE_ERRORS`, makes
+  `saltfm` print a warning, write the output file, and exit with status
+  0. Some timers can be wrong or missing. Clang uses `int` for an
+  unknown type, so `void scale(RealD factor, ComplexD *z)` gets the
+  timer name `void scale(int, int *)`. A function such as
   `void f(std::vector<RealD> &v)` gets no timer.
 - `--tau_fabricate_unknown_types`, or `SALT_FABRICATE_UNKNOWN_TYPES`,
-  adds declarations for unknown qualified names such as `std::vector`
-  to Clang's parse tree in memory, so more functions get timers, and
-  the timer names use the types as the source spells them. Clang still
-  reports errors for those names, so it also allows the errors, as
-  `--tau_allow_parse_errors` does.
+  adds declarations for unknown qualified names, such as `std::vector`.
+  More functions then get timers, and the timer names use the types
+  that the source spells. This option also allows the errors.
 
-These options are for C and C++ only: when Flang reports an error, it
-gives no parse tree to instrument, and `saltfm` fails. By default,
-SALT-FM does not parse a source that the file lists of a selective
-instrumentation file exclude, so its errors do not stop `saltfm` (see
+To turn on an option with its environment variable, set the variable
+to any value except empty, `0`, `false`, `no`, or `off`, in any case.
+
+These options are for C and C++ only. When Flang reports an error,
+`saltfm` fails. By default, SALT-FM does not parse a source that the
+file lists exclude, so its errors do not stop `saltfm` (see
 [Selective instrumentation](#selective-instrumentation)).
 
 ### Configuration files
 
-The YAML configuration file (`--config_file`; `config_files/` has one
-for TAU, perfstubs, ITT, NVTX, and ROCTX) holds all the code that
-SALT-FM inserts. `${full_timer_name}` in an entry stands for the timer
-name, ready to go in a `"`-delimited string literal. In Fortran, the
-name is split over continuation lines, so an entry follows
-`${full_timer_name}` with `&` and closes the literal on the next line,
-as `config_files/tau_config.yaml` does.
+The YAML configuration file holds all the code that SALT-FM inserts.
+`config_files/` has one file each for TAU, perfstubs, ITT, NVTX, and
+ROCTX. By default, SALT-FM uses the TAU file. To select a different
+file, use `--config_file=<file>`, or set `SALT_CONFIG_FILE=<file>`.
 
-- `include`: lines written at the top of an instrumented C or C++ file.
-- `main_setup_insert` (optional): setup code at the start of `main`,
-  written even when the selective instrumentation lists leave out
-  main's timer, except as
-  [Selective instrumentation](#selective-instrumentation) describes for
-  `--tau_excluded_main_setup`.
+In an entry, `${full_timer_name}` is the timer name, ready for a string
+literal in double quotes. In Fortran, the name continues over lines.
+Put `&` after `${full_timer_name}`, and close the literal on the next
+line, as `config_files/tau_config.yaml` does.
+
+- `include`: lines at the top of an instrumented C or C++ source.
+- `main_setup_insert` (optional): setup code at the start of `main`.
   `main_setup_insert_noargs` (optional) replaces it for a `main`
-  without parameters.
-- `main_insert`, or `main_insert_scope` with `--tau_use_cxx_api`: main's
-  timer, written after the setup code when main is instrumented.
-- `function_begin_insert` (or `function_begin_insert_scope`) and
-  `function_end_insert`: the timer of every other function.
+  without parameters. To learn when SALT-FM writes the setup code, see
+  [Selective instrumentation](#selective-instrumentation).
+- `main_insert`, or `main_insert_scope` with `--tau_use_cxx_api`: the
+  timer of `main`, after the setup code.
+- `function_begin_insert` and `function_end_insert`: the timer of each
+  other function. With `--tau_use_cxx_api`, SALT-FM writes
+  `function_begin_insert_scope` and no end code.
 - Under `Fortran:`, `program_setup_insert` (optional) and
-  `program_insert` do the same for the main program, and
-  `procedure_begin_insert` and `procedure_end_insert` for other
-  procedures. Since Fortran declarations come before statements, put
-  the declarations that the main program's timer needs in
+  `program_insert` do the same for the main program.
+  `procedure_begin_insert` and `procedure_end_insert` do the same for
+  other procedures. Fortran declarations come before statements. Thus,
+  put the declarations for the main program's timer in
   `program_setup_insert`, as `tau_config.yaml` does.
 
 If the configuration file is missing, cannot be read, does not parse,
@@ -291,33 +257,30 @@ the key or the parse error position, and writes no output.
 
 ### Selective instrumentation
 
-`saltfm --tau_select_file=<file>` reads a TAU selective instrumentation
-file; TAU's compiler wrappers pass the file given with
-`-optTauSelectFile=<file>`.
-If `saltfm` cannot read the file, it stops with an error and writes no
-output.
-SALT-FM removes the whitespace at the two ends of each line, including
-the carriage return of a CRLF line ending, and has no line length limit.
-It matches the entries of the lists as TAU does, in C, C++, and Fortran:
+To read a selective instrumentation file, use
+`saltfm --tau_select_file=<file>`. TAU's compiler wrappers pass the
+file that `-optTauSelectFile=<file>` names. If `saltfm` cannot read
+the file, it stops with an error and writes no output. SALT-FM uses
+these rules in C, C++, and Fortran:
 
-- A line that starts with `#` is a comment, even in a list. To start a
-  routine pattern with the `#` wildcard, put the entry in quotes
-  (`"#_internal"`); routine lists remove the quotes. In file lists, as
-  in TAU, quotes are part of the pattern and SALT-FM warns about them;
-  use `?` to match a file name that starts with `#`.
-- In routine lists, `#` matches zero or more characters; in file lists,
-  `*` does. In both, `?` matches one character, and every other
-  character, such as `.`, `[`, or `$`, matches only itself. An entry
-  matches the whole name, not a part of it.
-- C and C++ routine entries match the routine's signature as the timer
-  name shows it, for example `void compute(int)`. Fortran routine
-  entries match the bare subprogram name and ignore case, as Fortran
-  does; file entries and C and C++ routine entries are case-sensitive.
-- A file entry with no `/` matches the basename of the source file. An
-  entry with a `/` must match the whole path as given to SALT-FM, which
-  is the path as written on the compile line when TAU's compiler
-  wrappers run SALT-FM; SALT-FM does not make it absolute or remove a
-  leading `./`. In file entries, `*` also matches `/`:
+- A line that starts with `#` is a comment, also in a list.
+- In routine lists, `#` matches zero or more characters. In file lists,
+  `*` matches zero or more characters. In all lists, `?` matches one
+  character. All other characters, such as `.`, `[`, or `$`, match only
+  themselves. An entry must match the full name, not a part of it.
+- To start a routine entry with the `#` wildcard, put the entry in
+  quotes, for example `"#_internal"`. Routine lists remove the quotes.
+  In file lists, quotes are part of the pattern, and SALT-FM warns
+  about them. To match a file name that starts with `#`, use `?`.
+- A C or C++ routine entry matches the signature in the timer name, for
+  example `void compute(int)`. A Fortran routine entry matches the
+  subprogram name and ignores case. File entries and C and C++ routine
+  entries are case-sensitive.
+- A file entry without `/` matches the basename of the source. A file
+  entry with `/` must match the full path that SALT-FM gets. With TAU's
+  compiler wrappers, this is the path on the compile line. SALT-FM
+  does not make the path absolute or remove a leading `./`. In file
+  entries, `*` also matches `/`:
 
   | Pattern | `src/a.c` | `./src/a.c` | `/abs/src/a.c` |
   |---|---|---|---|
@@ -326,38 +289,42 @@ It matches the entries of the lists as TAU does, in C, C++, and Fortran:
   | `*src/a.c` | yes | yes | yes (also `mysrc/a.c`) |
   | `a.c` (no `/`, basename) | yes | yes | yes |
 - An exclude list has priority over an include list. If the include
-  list (`BEGIN_INCLUDE_LIST`) is not empty, SALT-FM instruments only the
-  routines it matches.
-- C and C++ inline functions get a timer only with
-  `--tau_instrument_inline` or when they match the include list.
-- When the routine lists leave out the main program, SALT-FM removes
-  only its timer and still writes its setup code (`main_setup_insert`
-  or `Fortran: program_setup_insert`), which for TAU is `TAU_INIT` and
-  `TAU_PROFILE_SET_NODE(0)`, or `TAU_PROFILE_INIT` and
-  `TAU_PROFILE_SET_NODE(0)` in Fortran, except with
-  `--tau_excluded_main_setup=none` below. Without it, a program run
-  without MPI or `tau_exec` writes `profile.-1.0.0`, and a threaded one
-  can fail with timer errors. When an include list that is not empty
-  leaves out the main program, and no exclude list entry names it,
-  SALT-FM warns that main still gets the setup code.
+  list (`BEGIN_INCLUDE_LIST`) is not empty, SALT-FM instruments only
+  the routines that it matches.
+- A C or C++ inline function gets a timer only with
+  `--tau_instrument_inline`, or when it matches the include list.
 
-When the file lists exclude a source file, SALT-FM does not parse or
-instrument it, by default: it copies the source to the output file
-after a `#line` line that names it, so TAU's compiler wrappers compile
-it without timers, and compiler messages, `__FILE__`, and debug
-information name the source. A parse error in such a source does not
-stop `saltfm`, so excluding a file works around a source that SALT-FM
-cannot parse. A main program in such a source gets no setup code, so a
-program run without MPI or `tau_exec` writes `profile.-1.0.0`; SALT-FM
+Setup code makes sure that the measurement library starts correctly.
+For TAU, it is `TAU_INIT` and `TAU_PROFILE_SET_NODE(0)`, or
+`tau_profile_init` and `tau_profile_set_node(0)` in Fortran. If `main`
+has no setup code and no timer, a threaded C or C++ program can crash.
+Without setup code, a program that uses no MPI or threads and runs
+without `tau_exec` writes `profile.-1.0.0`. The `-1` means that no node
+number was set; node numbers start at 0.
+
+When the routine lists leave out the main program, SALT-FM removes only
+its timer. It still writes the setup code (`main_setup_insert`, or
+`program_setup_insert` under `Fortran:`). An include list that is not
+empty can leave out the main program while no exclude list entry
+names it. Then, SALT-FM warns that the main program still gets setup
+code.
+
+By default, SALT-FM does not parse or instrument a source that the file
+lists exclude. It copies the source to the output file, so the compiler
+builds it without timers. Compiler messages, `__FILE__`, and debug
+information still name the source. A parse error in an excluded
+source does not stop `saltfm`. Thus, to skip a source that SALT-FM
+cannot parse, exclude it.
+
+The main program in an excluded source gets no setup code. SALT-FM
 warns when an excluded source seems to contain the main program. In
-Fortran, it looks only for a `program` statement, so a main program
-without one gets no warning. Use `--tau_excluded_main_setup=file` to
-give it its setup code.
+Fortran, SALT-FM finds the main program only by its `program`
+statement. To give the main program setup code, use
+`--tau_excluded_main_setup=file`.
 
 `--tau_excluded_main_setup=<none|routine|file>`, or the environment
 variable `SALT_EXCLUDED_MAIN_SETUP`, selects which excluded main
-programs get setup code; the option has priority over the environment
-variable:
+programs get setup code:
 
 | Value | A main that the routine lists leave out | A source that the file lists exclude |
 |---|---|---|
@@ -366,65 +333,35 @@ variable:
 | `file` | Setup code, no timer | Parsed, with no timers; its main gets setup code, and a parse error makes `saltfm` fail |
 
 A main program that the selective instrumentation file includes gets
-its setup code and its timer with all values.
+its setup code and its timer at the `none`, `routine`, and `file`
+levels.
 
-Unless `--tau_excluded_main_setup=file`, SALT-FM still parses an
-excluded Fortran source that seems to define a module, or has an
-INCLUDE line or `#include`, so that Flang writes any module files it
-defines and other sources can `use` those modules. The output is still
-a copy, and with `none` SALT-FM warns about the parse.
-If Flang cannot parse the source, SALT-FM warns, copies it, and does
-not write any module files it defines, so sources that use them can
-fail.
-A fixed-form `module` statement with no blank before the name, such as
-`MODULEFOO`, or with sequence numbers in columns 73-80, is not found;
-for such a source, use
-`--tau_excluded_main_setup=file`, or do not exclude the file and
-leave out its routines with the routine exclude list instead.
-
-`--tau_parse_excluded_modules=<value>`, or
-`SALT_PARSE_EXCLUDED_MODULES`, selects this parse:
-
-- `modules-only` (default): parse the sources described above.
-- `submodules-and-modules`: also parse an excluded source that seems to
-  define a submodule. Only the submodule's own child submodules need
-  its module file, so use this value when another source holds such a
-  child.
-- `off`: parse no excluded source, with a warning that sources that use
-  its modules can fail; use it when Flang cannot finish the parse of an
-  excluded source, for example when it takes too long.
-
-With `--tau_excluded_main_setup=file`, SALT-FM parses all sources and
-this option has no effect.
+At the `none` and `routine` levels, SALT-FM still parses an excluded
+Fortran source that seems to define a module, or that has an `include`
+line or `#include`. Flang then writes the module files that other
+sources `use`; the output is still a copy. To change which excluded
+sources SALT-FM parses, use `--tau_parse_excluded_modules` (see
+`saltfm --help`).
 
 ## Notes for package maintainers
 
-When SALT-FM is configured inside a git checkout, the build system installs
-client-side git hooks (in the working tree's `.git/config` via
-`core.hooksPath`) to enforce `.VERSION` / tag agreement during local
-development. This is convenience tooling for contributors and is
-irrelevant when packaging release tarballs or building from a source
-snapshot pulled by a package manager.
-
-Distribution build recipes (Spack, RPM, Debian, conda-forge, Nix, etc.)
-should pass:
+When you configure SALT-FM in a git checkout, CMake sets
+`core.hooksPath` in the local git configuration of that clone. This
+turns on the contributor git hooks in `.githooks/`. Packages do not
+need them. In distribution build recipes, such as Spack, RPM, Debian,
+conda-forge, or Nix, pass this option to `cmake`:
 
 ``` shell
 -DSALT_INSTALL_GIT_HOOKS=OFF
 ```
 
-to the cmake invocation, regardless of whether the source tree happens
-to be a git checkout. The flag is a no-op when there is no `.git/`
-directory, but setting it explicitly documents intent and avoids
-modifying the local clone's git configuration in environments where
-that is unexpected.
+Without a `.git/` directory, the option has no effect. Set it anyway,
+so that the build never changes the git configuration of a clone.
 
 [TAU Performance System]: http://www.tau.uoregon.edu/
 [CMake]: https://cmake.org
+[Spack]: https://spack.io
 [salt-dev]: https://github.com/ParaToolsInc/salt-dev
-[posted to Docker Hub]: https://hub.docker.com/repository/docker/paratools/salt-dev/general
-[salt-dev Docker Hub]: https://hub.docker.com/repository/docker/paratools/salt-dev/general
-[CMakeLists.txt file]: https://github.com/ParaToolsInc/SALT-FM/blob/364be5ddd0043281669ace6697dfaf05fe724511/CMakeLists.txt#L353-L386
 
 ## Funding Acknowledgement
 

@@ -265,6 +265,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ([#102](https://github.com/ParaToolsInc/SALT-FM/issues/102)).
   Without `--tau_output`, the output name of a fixed-form source ends in
   `.inst.F`, and that of a free-form source in `.inst.F90`.
+- The README instructions work again: the example runs
+  `build/bin/saltfm` and TAU's compiler wrappers, and the TAU
+  configuration uses `-dwarf=download`. Before, the example used a
+  wrong path and defines that `CMakeLists.txt` no longer has, and TAU's
+  `configure` rejected `-libdwarf=download`.
 
 ## [0.5.0] - 2026-10-09
 
