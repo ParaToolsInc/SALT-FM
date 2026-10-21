@@ -5,9 +5,10 @@
 
 #include <ryml_all.hpp>
 
-// The parsed configuration file `path`, with its YAML aliases resolved.
-// Exits with an error when the file cannot be read or does not parse; a
-// parse error names the file, line, and column.
+// The parsed configuration file `path`, with its YAML aliases resolved;
+// for a file that starts with `---`, its one document. Exits with an error
+// when the file cannot be read, does not parse, or holds more than one
+// document; a parse error names the file, line, and column. Call it once.
 ryml::Tree read_config_file(const std::string &path);
 
 // The child `key` of the map `node` of the configuration file `path`, or

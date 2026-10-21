@@ -1462,6 +1462,10 @@ foreach(name scalar_include empty_include null_include alias_include
   _salt_config_edit(STRING "${_from_${name}}" "${_to_${name}}" "${_tau_config}" _config)
   file(WRITE ${_config_errors}/${name}.yaml "${_config}")
 endforeach()
+# The TAU configuration file as the one document of a YAML stream, and a
+# stream of two documents
+file(WRITE ${_config_errors}/doc_start.yaml "---\n${_tau_config}")
+file(WRITE ${_config_errors}/two_docs.yaml "---\n${_tau_config}---\n${_tau_config}")
 # A configuration file that does not parse: line 4 is a key in a list.
 set(_config_parse_error ${_config_errors}/parse_error.yaml)
 file(WRITE ${_config_parse_error}
@@ -1474,11 +1478,12 @@ function(_salt_add_config_error_test name labels src config log)
     "${labels}" ${src} ARGS --config_file=${config} ${ARGN} LOG "${log}")
 endfunction()
 # Adds the config_error_<name>_<lang> tests for a missing, an unreadable,
-# and an unparsable configuration file, and one with an undefined YAML
-# alias, and config_env_<lang>,
-# config_env_option_<lang>, and config_env_empty_<lang>: without
-# --config_file, SALT_CONFIG_FILE selects the file unless it is empty, and
-# --config_file has priority over it.
+# and an unparsable configuration file, one with an undefined YAML alias,
+# and one with two YAML documents; config_ok_doc_start_<lang> for one
+# document after `---`; and config_env_<lang>, config_env_option_<lang>,
+# and config_env_empty_<lang>: without --config_file, SALT_CONFIG_FILE
+# selects the file unless it is empty, and --config_file has priority
+# over it.
 function(_salt_add_config_read_error_tests lang labels src)
   set(missing ${_config_errors}/no_such_file.yaml)
   _salt_add_config_error_test(missing_${lang} "${labels}" ${src}
@@ -1496,6 +1501,13 @@ function(_salt_add_config_read_error_tests lang labels src)
     CHECK "-s config_env_empty_${lang}.out")
   set_property(TEST config_env_empty_${lang} APPEND
     PROPERTY ENVIRONMENT "SALT_CONFIG_FILE=")
+  _salt_add_clang_error_test(config_ok_doc_start_${lang}
+    config_ok_doc_start_${lang}.out "${labels}" ${src} EXIT_ZERO
+    CHECK "-s config_ok_doc_start_${lang}.out"
+    ARGS --config_file=${_config_errors}/doc_start.yaml OUT "TAU_PROFILE_START")
+  set(two_docs ${_config_errors}/two_docs.yaml)
+  _salt_add_config_error_test(two_docs_${lang} "${labels}" ${src} ${two_docs}
+    "ERROR: The configuration file ${two_docs} must hold one YAML document")
   # Root can read the file.
   _salt_add_config_error_test(unreadable_${lang} "${labels}" ${src}
     config_unreadable.yaml

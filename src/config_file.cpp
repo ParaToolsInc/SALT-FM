@@ -44,9 +44,25 @@ ryml::Tree read_config_file(const std::string &path)
         std::exit(EXIT_FAILURE);
     }
     const llvm::StringRef text = (*buffer)->getBuffer();
-    ryml::Tree tree = ryml::parse_in_arena(ryml::to_csubstr(path), ryml::csubstr(text.data(), text.size()));
+    // The returned copy of the document of a stream points to the strings
+    // of this tree, so it lives until the exit
+    static ryml::Tree tree;
+    tree = ryml::parse_in_arena(ryml::to_csubstr(path), ryml::csubstr(text.data(), text.size()));
     tree.resolve();
-    return tree;
+    const ryml::id_type root = tree.root_id();
+    if (!tree.is_stream(root))
+    {
+        return tree;
+    }
+    // A file that starts with `---` is a stream
+    if (tree.num_children(root) != 1)
+    {
+        llvm::errs() << "ERROR: The configuration file " << path << " must hold one YAML document\n";
+        std::exit(EXIT_FAILURE);
+    }
+    ryml::Tree document;
+    document.duplicate_contents(&tree, tree.first_child(root), document.root_id());
+    return document;
 }
 
 // The child `key` of the map `node`, or an invalid node when `node` is not
