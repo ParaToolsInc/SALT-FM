@@ -160,6 +160,9 @@ for arg in "$@"; do
     #echo "working on arg: $arg"
     if [[ -n ${expecting_value_of} ]]; then
         printf -v "${expecting_value_of}" '%s' "${arg}"
+        if [[ ${expecting_value_of} == forwarded_value ]]; then
+            args+=("$arg")
+        fi
         expecting_value_of=
     elif [[ $arg == --lang=* ]]; then
         lang="${arg#--lang=}"
@@ -192,13 +195,19 @@ for arg in "$@"; do
         exit 0
     elif [[ $arg == --version ]]; then
         version=true
-    # The Fortran extensions that Flang or gfortran read
-    elif [[ $arg =~ \.(f|F|for|FOR|ftn|FTN|f77|fpp|FPP|[fF](90|95|03|08|18))$ ]]; then
+    # The tool takes the next argument as the value of these options, so
+    # it names no source; LLVM's option parser also takes one dash
+    elif [[ $arg =~ ^--?(config_file|flang_exe|tau_output|tau_select_file)$ ]]; then
+        args+=("$arg")
+        expecting_value_of=forwarded_value
+    # The Fortran extensions that Flang or gfortran read, but not in an
+    # option value, such as --tau_output=out.inst.f08
+    elif [[ $arg != -* && $arg =~ \.(f|F|for|FOR|ftn|FTN|f77|fpp|FPP|[fF](90|95|03|08|18))$ ]]; then
         args+=("$arg")
         if [[ -z "${tool:-}" ]]; then
             tool=fparse-llvm
         fi
-    elif [[ $arg == *.[cC] || $arg == *.[cC][cC] || $arg == *.cpp || $arg == *.CPP ]]; then
+    elif [[ $arg != -* && ($arg == *.[cC] || $arg == *.[cC][cC] || $arg == *.cpp || $arg == *.CPP) ]]; then
         args+=("$arg")
         if [[ -z "${tool:-}" ]]; then
             tool=cparse-llvm
