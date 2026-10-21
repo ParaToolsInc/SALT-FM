@@ -66,13 +66,7 @@ jobs:
           fi
       # The installed saltfm, with its default configuration file
       - name: Check the installed tools
-        run: |
-          cmake --install build --prefix "$PWD/salt-install" > /dev/null
-          salt="$PWD/salt-install/bin/saltfm"
-          "$salt" tests/hello.c --tau_output=hello.inst.c
-          grep -q TAU_PROFILE_START hello.inst.c
-          "$salt" tests/fortran/hello.f90 --tau_output=hello.inst.F90
-          grep -q TAU_PROFILE_START hello.inst.F90
+        run: .github/scripts/check-install build "$PWD/salt-install"
       - name: Fail CI on build failure
         if: ${{ steps.build.outputs.build_status == 'failure' }}
         run: echo "Failing build" ; exit 1
