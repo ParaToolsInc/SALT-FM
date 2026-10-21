@@ -1,6 +1,7 @@
 #include <cctype>
 #include <cerrno>
 #include <iostream>
+#include <filesystem>
 #include <fstream>
 #include <vector>
 #include <string>
@@ -783,7 +784,9 @@ bool processInstrumentationRequests(const char *fname)
   int lineno = 0;
 
 
-  if (!input) {
+  // A directory opens, but reads as empty, which would instrument every routine
+  std::error_code dir_error;
+  if (!input || std::filesystem::is_directory(fname, dir_error)) {
     std::cerr << "ERROR: Cannot open selective instrumentation file: " << fname << std::endl;
     return false;
   }
