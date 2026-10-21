@@ -776,8 +776,8 @@ namespace salt::fortran {
                                    const InstrumentationMap &instMap) {
             std::ifstream inputStream{inputFilePath};
             if (!inputStream) {
-                llvm::errs() << "ERROR: Could not open input file" << inputFilePath << "\n";
-                std::exit(-2);
+                llvm::errs() << "ERROR: Could not open input file " << inputFilePath << "\n";
+                std::exit(EXIT_FAILURE);
             }
             std::string lineText;
             int lineNum{0};
@@ -1009,7 +1009,7 @@ namespace salt::fortran {
             const auto inputFilePathStr = getInputFilePath(parsing);
             if (!inputFilePathStr) {
                 llvm::errs() << "ERROR: Unable to find input file name!\n";
-                std::exit(-1);
+                std::exit(EXIT_FAILURE);
             }
 
             verboseStream() << "Have input file: " << *inputFilePathStr << "\n";
@@ -1020,7 +1020,7 @@ namespace salt::fortran {
                 if (processInstrumentationRequests(selectPath->c_str())) {
                     dumpSelectiveRequests();
                 } else {
-                    llvm::errs() << "ERROR: Unable to read selective instrumentation file at " << selectPath << "\n";
+                    // processInstrumentationRequests() reports a file that it cannot read
                     std::exit(EXIT_FAILURE);
                 }
             }

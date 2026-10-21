@@ -3906,13 +3906,13 @@ if(TEST_FORTRAN)
     ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}")
   # When salt-selectfile cannot read the selective instrumentation file
   # (status 2), fparse-llvm gives no warning and runs Flang, and the
-  # plugin reports the error and fails.
+  # plugin reports the error in one line, as C does, and fails.
   _salt_add_clang_error_test(fparse_sif_unreadable sif_unreadable.inst.F90
     "lang:Fortran" fortran/hello.f90
-    ARGS --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/no_such_file.tau
-    LOG "Running:" "ERROR: Unable to read selective instrumentation file")
+    ARGS --tau_select_file=${_no_such_sif}
+    LOG "Running:" "ERROR: Cannot open selective instrumentation file: ${_no_such_sif}")
   set_tests_properties(fparse_sif_unreadable PROPERTIES
-    FAIL_REGULAR_EXPRESSION "salt-selectfile failed"
+    FAIL_REGULAR_EXPRESSION "salt-selectfile failed;ERROR:.*\nERROR:"
     ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}")
   # The plugin copies a source that the file lists exclude without reading
   # the configuration file, also when Flang parses it for its module files
