@@ -1217,8 +1217,11 @@ endif()
 # the bad and good sources and a config and a selective instrumentation
 # file to `self` ones that saltfm must refuse and keep when they are
 # also the output, makes read-only `ro` outputs that saltfm must not
-# remove and then fail to open for writing, and makes a configuration
-# file that saltfm cannot read.
+# remove and then fail to open for writing, makes a configuration
+# file that saltfm cannot read, copies the sources of the
+# no_path_tau_output, `self`, and `rsp` tests, writes a response file
+# naming the `rsp` one, and writes stale outputs of the other no_path
+# tests.
 set(_tests ${CMAKE_SOURCE_DIR}/tests)
 add_test(NAME make_clang_error_outputs
   COMMAND sh -c "rm -rf clang_error_new.inst.c fabricate_on.inst.cpp &&
@@ -1253,6 +1256,19 @@ add_test(NAME make_clang_error_outputs
     rm -f config_unreadable.yaml &&
     cp ${_tests}/setup_timer_name.yaml config_unreadable.yaml &&
     chmod a-r config_unreadable.yaml &&
+    rm -f no_path_* &&
+    cp ${_tests}/hello.c no_path_tau_output_empty_c.c &&
+    cp ${_tests}/hello.c no_path_tau_output_tail_c.c &&
+    cp ${_tests}/fortran/hello.f90 no_path_tau_output_empty_fortran.f90 &&
+    cp ${_tests}/fortran/hello.f90 no_path_tau_output_tail_fortran.f90 &&
+    for opt in config_file flang_exe tau_select_file; do
+      for end in empty_c tail_c empty_fortran tail_fortran; do
+        echo stale > no_path_\${opt}_\${end}.out || exit 1; done; done &&
+    echo stale > no_path_space_c.out &&
+    echo stale > no_path_dash_space_c.out &&
+    cp ${_tests}/hello.c no_path_self_c.c &&
+    cp ${_tests}/hello.c no_path_rsp_c.c &&
+    echo no_path_rsp_c.c > no_path_rsp_c.rsp &&
     echo stale > fortran_forwarded_value")
 set_tests_properties(make_clang_error_outputs PROPERTIES
   FIXTURES_SETUP clang_error_outputs
@@ -1479,10 +1495,9 @@ function(_salt_add_config_error_test name labels src config log)
 endfunction()
 # Adds the config_error_<name>_<lang> tests for a missing, an unreadable,
 # and an unparsable configuration file, one with an undefined YAML alias,
-# one with two YAML documents, and an empty or missing --config_file
-# value; config_ok_doc_start_<lang> for one document after `---`; and
-# config_env_<lang>, config_env_option_<lang>, and
-# config_env_empty_<lang>: without --config_file, SALT_CONFIG_FILE
+# and one with two YAML documents; config_ok_doc_start_<lang> for one
+# document after `---`; and config_env_<lang>, config_env_option_<lang>,
+# and config_env_empty_<lang>: without --config_file, SALT_CONFIG_FILE
 # selects the file unless it is empty, and --config_file has priority
 # over it.
 function(_salt_add_config_read_error_tests lang labels src)
@@ -1502,16 +1517,6 @@ function(_salt_add_config_read_error_tests lang labels src)
     CHECK "-s config_env_empty_${lang}.out")
   set_property(TEST config_env_empty_${lang} APPEND
     PROPERTY ENVIRONMENT "SALT_CONFIG_FILE=")
-  _salt_add_config_error_test(empty_option_${lang} "${labels}" ${src} ""
-    "ERROR: --config_file needs a path")
-  # LLVM's option parser reports a missing value for C and C++
-  set(no_value "ERROR: --config_file needs a path")
-  if(lang STREQUAL "c")
-    set(no_value "for the --config_file option: requires a value")
-  endif()
-  _salt_add_clang_error_test(config_error_no_value_${lang}
-    config_error_no_value_${lang}.out "${labels}" ${src} TAIL --config_file
-    LOG "${no_value}")
   _salt_add_clang_error_test(config_ok_doc_start_${lang}
     config_ok_doc_start_${lang}.out "${labels}" ${src} EXIT_ZERO
     CHECK "-s config_ok_doc_start_${lang}.out"
@@ -1530,6 +1535,59 @@ function(_salt_add_config_read_error_tests lang labels src)
     ${alias} "ERROR: ${alias}: anchor not found: 'nope'")
 endfunction()
 _salt_add_config_read_error_tests(c "lang:C" hello.c)
+# Adds the no_path_<option>_<form>_<lang> tests: an option that takes a
+# path, with an empty value (`empty`) or at the end without one (`tail`),
+# stops saltfm with an error and no output; C and C++ do not know
+# --flang_exe. A --tau_output test runs on the setup's copy of `src`
+# (relative to tests/), whose default output it checks; the others
+# check that saltfm removes the setup's stale --tau_output file.
+function(_salt_add_no_path_tests lang labels src)
+  set(inst_ext .inst.c)
+  if(lang STREQUAL "fortran")
+    set(inst_ext .inst.F90)
+  endif()
+  cmake_path(GET src EXTENSION src_ext)
+  foreach(opt IN ITEMS config_file flang_exe tau_output tau_select_file)
+    foreach(form IN ITEMS empty tail)
+      set(name no_path_${opt}_${form}_${lang})
+      set(log "ERROR: --${opt} needs a path")
+      set(args ARGS --${opt}=)
+      if(form STREQUAL "tail")
+        set(args TAIL --${opt})
+        # LLVM's option parser reports a missing value for C and C++
+        if(lang STREQUAL "c")
+          set(log "for the --${opt} option: requires a value")
+        endif()
+      endif()
+      if(lang STREQUAL "c" AND opt STREQUAL "flang_exe")
+        set(log "Unknown command line argument '--flang_exe")
+      endif()
+      if(opt STREQUAL "tau_output")
+        _salt_add_clang_error_test(${name} ${name}${inst_ext} "${labels}"
+          ${SALT_TEST_OUTPUT_DIR}/output_error/${name}${src_ext} DEFAULT_OUTPUT
+          ${args} LOG "${log}")
+      else()
+        _salt_add_clang_error_test(${name} ${name}.out "${labels}" ${src}
+          ${args} LOG "${log}")
+      endif()
+    endforeach()
+  endforeach()
+endfunction()
+_salt_add_no_path_tests(c "lang:C" hello.c)
+# When an option error stops C and C++, saltfm also removes a stale
+# output that a separate --tau_output or -tau_output names, and keeps
+# an output that is a source, also one in a response file.
+_salt_add_clang_error_test(no_path_space_c no_path_space_c.out "lang:C"
+  hello.c SPACE TAIL --tau_select_file LOG "requires a value")
+_salt_add_clang_error_test(no_path_dash_space_c no_path_dash_space_c.out
+  "lang:C" hello.c DEFAULT_OUTPUT ARGS -tau_output no_path_dash_space_c.out
+  TAIL --tau_select_file LOG "requires a value")
+_salt_add_clang_error_test(no_path_self_c no_path_self_c.c "lang:C"
+  ${SALT_TEST_OUTPUT_DIR}/output_error/no_path_self_c.c COPY_OF hello.c
+  TAIL --tau_select_file LOG "requires a value")
+_salt_add_clang_error_test(no_path_rsp_c no_path_rsp_c.c "lang:C" hello.c
+  COPY_OF hello.c ARGS @no_path_rsp_c.rsp TAIL --tau_select_file
+  LOG "requires a value")
 foreach(key instrumentation include main_insert function_begin_insert
     function_end_insert)
   _salt_add_config_error_test(no_${key}_c "lang:C" hello.c
@@ -4109,6 +4167,7 @@ if(TEST_FORTRAN)
     ARGS --tau_output=fortran_dash_x_name_self.f90
     --flang_exe=/nonexistent/flang fortran_other-x.inc)
   _salt_add_config_read_error_tests(fortran "lang:Fortran" fortran/hello.f90)
+  _salt_add_no_path_tests(fortran "lang:Fortran" fortran/hello.f90)
   _salt_add_config_error_test(no_Fortran_fortran "lang:Fortran"
     fortran/hello.f90 ${_config_errors}/no_Fortran.yaml
     "ERROR: 'Fortran' key not found ${_in_config}/no_Fortran.yaml")
