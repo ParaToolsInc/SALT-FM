@@ -1541,10 +1541,10 @@ endfunction()
 _salt_add_config_read_error_tests(c "lang:C" hello.c)
 # Adds the no_path_<option>_<form>_<lang> tests: an option that takes a
 # path, with an empty value (`empty`) or at the end without one (`tail`),
-# stops saltfm with an error and no output; C and C++ do not know
-# --flang_exe. A --tau_output test runs on the setup's copy of `src`
-# (relative to tests/), whose default output it checks; the others
-# check that saltfm removes the setup's stale --tau_output file.
+# stops saltfm with an error and no output. A --tau_output test runs on
+# the setup's copy of `src` (relative to tests/), whose default output
+# it checks; the others check that saltfm removes the setup's stale
+# --tau_output file.
 function(_salt_add_no_path_tests lang labels src)
   set(inst_ext .inst.c)
   if(lang STREQUAL "fortran")
@@ -1563,9 +1563,6 @@ function(_salt_add_no_path_tests lang labels src)
           set(log "for the --${opt} option: requires a value")
         endif()
       endif()
-      if(lang STREQUAL "c" AND opt STREQUAL "flang_exe")
-        set(log "Unknown command line argument '--flang_exe")
-      endif()
       if(opt STREQUAL "tau_output")
         _salt_add_clang_error_test(${name} ${name}${inst_ext} "${labels}"
           ${SALT_TEST_OUTPUT_DIR}/output_error/${name}${src_ext} DEFAULT_OUTPUT
@@ -1578,6 +1575,17 @@ function(_salt_add_no_path_tests lang labels src)
   endforeach()
 endfunction()
 _salt_add_no_path_tests(c "lang:C" hello.c)
+# C and C++ ignore the --flang_exe path, given as `--flang_exe=<path>`
+# or as `--flang_exe <path>`.
+foreach(form IN ITEMS equals space)
+  set(_name flang_exe_ignored_${form}_c)
+  set(_flang_args --flang_exe=/no/such/flang)
+  if(form STREQUAL "space")
+    set(_flang_args --flang_exe /no/such/flang)
+  endif()
+  _salt_add_clang_error_test(${_name} ${_name}.out "lang:C" hello.c EXIT_ZERO
+    CHECK "-s ${_name}.out" ARGS ${_flang_args} OUT "TAU_PROFILE_START")
+endforeach()
 # When an option error stops C and C++, saltfm also removes a stale
 # output that a separate --tau_output or -tau_output names, and keeps
 # an output that is a source, also one in a response file.

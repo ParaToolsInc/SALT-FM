@@ -95,6 +95,11 @@ llvm::cl::opt<std::string> selectfile("tau_select_file",
                                       llvm::cl::desc("Provide a selective instrumentation specification file"),
                                       llvm::cl::value_desc("filename"), llvm::cl::cat(MyToolCategory));
 
+// saltfm takes --flang_exe for any source; C and C++ ignore it
+static llvm::cl::opt<std::string> flang_exe("flang_exe", llvm::cl::desc("Flang driver for Fortran; ignored"),
+                                            llvm::cl::value_desc("path"), llvm::cl::Hidden,
+                                            llvm::cl::cat(MyToolCategory));
+
 // Whether environment variable `name` is set to a true value: anything
 // but empty, 0, false, no, or off, in any case.
 static bool getEnvBool(const char *name) {
@@ -344,7 +349,7 @@ int main(int argc, const char **argv)
         return EXIT_FAILURE;
     }
     // An empty value is not a file; SALT_CONFIG_FILE and the default never give one
-    for (const llvm::cl::opt<std::string> *option : {&configfile, &outputfile, &selectfile})
+    for (const llvm::cl::opt<std::string> *option : {&configfile, &flang_exe, &outputfile, &selectfile})
     {
         if (option->getNumOccurrences() > 0 && option->empty())
         {
