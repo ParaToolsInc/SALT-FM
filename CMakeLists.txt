@@ -2627,6 +2627,18 @@ if(TEST_FORTRAN)
             -fopenmp foo.inc)
   set_tests_properties(fparse_input_not_flag PROPERTIES
     PASS_REGULAR_EXPRESSION "(^|\n)input file: foo\\.inc\n")
+  # A flag with a Fortran extension, such as a macro definition, is not
+  # the input file; fparse-llvm forwards it to Flang.
+  foreach(tool fparse-llvm saltfm)
+    string(REPLACE "-llvm" "" _name ${tool}_input_not_macro)
+    add_test(NAME ${_name}
+      COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/${tool} --show
+              hello.f90 -- -DSRC=util.f08)
+    set_tests_properties(${_name} PROPERTIES
+      PASS_REGULAR_EXPRESSION
+        "(^|\n)input file: hello\\.f90\n.*\ncmd: [^\n]* hello\\.f90 -o [^\n]* -DSRC=util\\.f08\n")
+    list(APPEND _shell_var_tests ${_name})
+  endforeach()
   # fparse-llvm reports each argument that is not a flag and that it does
   # not take as the input file.
   add_test(NAME fparse_unused_args

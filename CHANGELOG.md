@@ -273,7 +273,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.f08`, or `.f18`, in lowercase or uppercase (but not `.F77`). Before,
   they knew only `.f`, `.f90`, and `.f03`, and their uppercase forms.
   Without such a source, `fparse-llvm` takes the first argument that is
-  not a flag as the input file; before, it could take a flag. Without
+  not a flag as the input file; before, it could take a flag. A flag
+  that ends in a Fortran extension, such as `-DSRC=util.f90`, is no
+  longer taken as the input file; before, Flang read standard input,
+  and `saltfm` could leave an empty output. Without
   `--tau_output`, the output name of a fixed-form source ends in
   `.inst.F`, and that of a free-form source in `.inst.F90`
   ([#102](https://github.com/ParaToolsInc/SALT-FM/issues/102)).

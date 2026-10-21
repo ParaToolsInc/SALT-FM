@@ -300,8 +300,9 @@ for arg in "$@"; do
         select_file="${arg#--tau_select_file=}"
         shift || true
         #echo "args remaining: $*"
-    # The Fortran extensions that Flang or gfortran read, as saltfm
-    elif [[ $arg =~ \.(f|F|for|FOR|ftn|FTN|f77|fpp|FPP|[fF](90|95|03|08|18))$ ]]; then
+    # The Fortran extensions that Flang or gfortran read, as saltfm, but not
+    # in a flag, such as -DSRC=util.f08
+    elif [[ $arg != -* && $arg =~ \.(f|F|for|FOR|ftn|FTN|f77|fpp|FPP|[fF](90|95|03|08|18))$ ]]; then
         input_file="$arg"
         shift || true
         #echo "args remaining: $*"
