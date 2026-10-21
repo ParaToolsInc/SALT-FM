@@ -10,6 +10,8 @@
 # Usage: .github/scripts/check-install <build dir> <install prefix>
 
 set -euo pipefail
+# Check the default configuration file, not one the environment names
+unset SALT_CONFIG_FILE
 
 build="$1"
 prefix="$2"
