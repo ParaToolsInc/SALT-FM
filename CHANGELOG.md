@@ -247,6 +247,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   [#90](https://github.com/ParaToolsInc/SALT-FM/issues/90)).
 - The configuration file can use YAML aliases, such as `include: *x`,
   and can start with the YAML document marker `---`.
+- C and C++ no longer need the `instrumentation` key in the
+  configuration file, which only names the instrumentation in the log.
 - Without `--config_file`, Fortran also reads the configuration file
   that `SALT_CONFIG_FILE` names, as C and C++ do. Before, Fortran
   ignored it and read the installed `config.yaml`. An empty

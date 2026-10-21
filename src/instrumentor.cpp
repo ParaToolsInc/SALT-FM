@@ -81,7 +81,7 @@ static void exit_if_io_failed(bool failed, const char *what, const std::string &
 static ryml::Tree read_config()
 {
     ryml::Tree tree = read_config_file(configfile);
-    std::vector<const char *> keys{"instrumentation", "include"};
+    std::vector<const char *> keys{"include"};
     if (use_cxx_api)
     {
         keys.insert(keys.end(), {"main_insert_scope", "function_begin_insert_scope"});
@@ -94,6 +94,8 @@ static ryml::Tree read_config()
     {
         check_config_key(tree.crootref(), key, configfile);
     }
+    // Only the log line uses `instrumentation`
+    check_config_key(tree.crootref(), "instrumentation", configfile, nullptr, true);
     check_config_key(tree.crootref(), "main_setup_insert", configfile, nullptr, true);
     check_config_key(tree.crootref(), "main_setup_insert_noargs", configfile, nullptr, true);
     return tree;
@@ -1240,7 +1242,11 @@ void instrumentor::instrument()
         inst_file.open(newname);
         exit_if_io_failed(!inst_file.is_open(), "open output file", newname);
 
-        llvm::outs() << "Instrumentation: " << (*yaml_tree)["instrumentation"].val() << "\n";
+        if (ryml::ConstNodeRef name = check_config_key(yaml_tree->crootref(), "instrumentation", configfile, nullptr, true);
+            !name.invalid())
+        {
+            llvm::outs() << "Instrumentation: " << name.val() << "\n";
+        }
         instrument_file(og_file, inst_file, fname, inst_locations, use_cxx_api, *yaml_tree);
         exit_if_io_failed(!inst_file, "write output file", newname);
         og_file.close();
