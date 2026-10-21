@@ -254,6 +254,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   for an empty `--config_file=` or a `--config_file` without a value, as
   C and C++ do; before, it read `config_files/tau_config.yaml` in the
   working directory, or the default file.
+- `saltfm` stops with an error and writes no output when
+  `--tau_output` or `--tau_select_file` has an empty value, or ends
+  the arguments without one. Before, it wrote the default output file
+  or instrumented every routine; C and C++ stopped only for a missing
+  value. When an option error stops C or C++, `saltfm` now also
+  removes a stale file at the `--tau_output` path.
 - SALT-FM copies a Fortran source that the file lists exclude without
   reading the configuration file, so a bad one does not stop the copy
   ([#90](https://github.com/ParaToolsInc/SALT-FM/issues/90)).

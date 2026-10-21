@@ -392,10 +392,17 @@ case ${parse_excluded_modules} in
         exit 1
         ;;
 esac
-if $expecting_flang_exe || [[ -n ${flang_exe+set} && -z ${flang_exe} ]]; then
-    echo "ERROR: --flang_exe needs a path" >&2
-    exit 1
-fi
+# Stops when option `--$1` ends the arguments without a value, as `$2`
+# (true or false) says, or when it sets variable `$3` to an empty value
+function require_path {
+    if $2 || [[ -n ${!3+set} && -z ${!3} ]]; then
+        echo "ERROR: --$1 needs a path" >&2
+        exit 1
+    fi
+}
+require_path flang_exe "${expecting_flang_exe}" flang_exe
+require_path tau_output "${expecting_output_file}" output_file
+require_path tau_select_file "${expecting_select_file}" select_file
 if $expecting_config_file || [[ -z ${FORTRAN_CONFIG_FILE} ]]; then
     echo "ERROR: --config_file needs a path" >&2
     exit 1

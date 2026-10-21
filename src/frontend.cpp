@@ -20,6 +20,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/StringSaver.h"
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -251,6 +252,58 @@ void findFiles(const std::vector<std::string>& files)
     }
 }
 
+// Refuses an output that names one of `inputs`, the configuration file, or the selective
+// instrumentation file, and removes a stale output. Returns false after an error.
+static bool prepareOutput(std::vector<std::string> inputs)
+{
+    inputs.push_back(configfile);
+    inputs.push_back(selectfile);
+    // Opening the output would empty an input it names, so refuse it before anything is written.
+    if (std::any_of(inputs.begin(), inputs.end(),
+                    [](const std::string &input) { return llvm::sys::fs::equivalent(input, outputfile); }))
+    {
+        llvm::errs() << "ERROR: Output file " << outputfile << " is an input file\n";
+        return false;
+    }
+    // TAU's compiler wrapper compiles any file left at this path, even a stale one, so
+    // remove it before anything can fail. Skip a read-only file; the open for writing
+    // then fails and saltfm exits with an error.
+    if (llvm::sys::fs::is_regular_file(outputfile) &&
+        !llvm::sys::fs::access(outputfile, llvm::sys::fs::AccessMode::Write))
+    {
+        if (std::error_code err = llvm::sys::fs::remove(outputfile))
+        {
+            llvm::errs() << "ERROR: Could not remove output file " << outputfile << ": " << err.message() << "\n";
+            return false;
+        }
+    }
+    return true;
+}
+
+// The arguments that can name an input when the option parser fails and gives no source list:
+// all but the value of a separate --tau_output, with response files expanded as the parser does.
+// `create` has already cut `argc` at `--`, as the parser reads it.
+static std::vector<std::string> argumentInputs(int argc, const char *const *argv)
+{
+    llvm::BumpPtrAllocator allocator;
+    llvm::StringSaver saver(allocator);
+    llvm::SmallVector<const char *, 20> args;
+    llvm::cl::expandResponseFiles(argc, argv, nullptr, saver, args);
+    std::vector<std::string> inputs;
+    // shortcut: this skips the word after any --tau_output or -tau_output, even when that word is
+    // the value of the option before it, as in `--tau_select_file --tau_output src.c`, so an
+    // option error can remove src.c; fix it if real builds pass such arguments.
+    for (size_t i = 0; i < args.size(); ++i)
+    {
+        llvm::StringRef previous = i > 0 ? args[i - 1] : "";
+        if (previous != "--tau_output" && previous != "-tau_output")
+        {
+            inputs.push_back(args[i]);
+        }
+    }
+    return inputs;
+}
+
 int main(int argc, const char **argv)
 {
     llvm::cl::SetVersionPrinter([](llvm::raw_ostream &OS) {
@@ -275,37 +328,28 @@ int main(int argc, const char **argv)
     if (!ExpectedParser)
     {
         llvm::errs() << ExpectedParser.takeError();
+        // The parser sets the options that it reads before the error, so --tau_output can name a
+        // stale output.
+        if (outputfile.getNumOccurrences() > 0)
+        {
+            prepareOutput(argumentInputs(new_argc, new_argv));
+        }
         return 1;
     }
 
     tooling::CommonOptionsParser &OptionsParser = ExpectedParser.get();
-    std::vector<std::string> inputs = OptionsParser.getSourcePathList();
-    inputs.push_back(configfile);
-    inputs.push_back(selectfile);
-    // Opening the output would empty an input it names, so refuse it before anything is written.
-    if (std::any_of(inputs.begin(), inputs.end(),
-                    [](const std::string &input) { return llvm::sys::fs::equivalent(input, outputfile); }))
+    if (!prepareOutput(OptionsParser.getSourcePathList()))
     {
-        llvm::errs() << "ERROR: Output file " << outputfile << " is an input file\n";
         return EXIT_FAILURE;
-    }
-    // TAU's compiler wrapper compiles any file left at this path, even a stale one, so
-    // remove it before anything can fail. Skip a read-only file; the open for writing
-    // then fails and saltfm exits with an error.
-    if (llvm::sys::fs::is_regular_file(outputfile) &&
-        !llvm::sys::fs::access(outputfile, llvm::sys::fs::AccessMode::Write))
-    {
-        if (std::error_code err = llvm::sys::fs::remove(outputfile))
-        {
-            llvm::errs() << "ERROR: Could not remove output file " << outputfile << ": " << err.message() << "\n";
-            return EXIT_FAILURE;
-        }
     }
     // An empty value is not a file; SALT_CONFIG_FILE and the default never give one
-    if (configfile.empty())
+    for (const llvm::cl::opt<std::string> *option : {&configfile, &outputfile, &selectfile})
     {
-        llvm::errs() << "ERROR: --config_file needs a path\n";
-        return EXIT_FAILURE;
+        if (option->getNumOccurrences() > 0 && option->empty())
+        {
+            llvm::errs() << "ERROR: --" << option->ArgStr << " needs a path\n";
+            return EXIT_FAILURE;
+        }
     }
     // processInstrumentationRequests() reports a file that it cannot read
     if (!selectfile.empty() && !processInstrumentationRequests(selectfile.c_str()))
