@@ -771,14 +771,10 @@ namespace salt::fortran {
             return "#line " + std::to_string(line) + " \"" + file + "\"";
         }
 
-        static void instrumentFile(const std::string &inputFilePath, llvm::raw_pwrite_stream &outputStream,
+        static void instrumentFile(const std::string &inputFilePath, std::ifstream &inputStream,
+                                   llvm::raw_pwrite_stream &outputStream,
                                    const SaltInstrumentParseTreeVisitor &visitor,
                                    const InstrumentationMap &instMap) {
-            std::ifstream inputStream{inputFilePath};
-            if (!inputStream) {
-                llvm::errs() << "ERROR: Could not open input file " << inputFilePath << "\n";
-                std::exit(EXIT_FAILURE);
-            }
             std::string lineText;
             int lineNum{0};
             const auto &instPts{visitor.getInstrumentationPoints()};
@@ -1064,6 +1060,13 @@ namespace salt::fortran {
                 }
             }
 
+            // Open the input before the output, so an input error leaves no output
+            std::ifstream inputStream{inputFilePath};
+            if (!inputStream) {
+                llvm::errs() << "ERROR: Could not open input file " << inputFilePath.string() << "\n";
+                std::exit(EXIT_FAILURE);
+            }
+
             // Open an output file for writing the instrumented code
             const std::string outputFileExtension = "inst."s + inputFileExtension;
             const auto outputFileStream = createOutputFile(outputFileExtension);
@@ -1075,7 +1078,7 @@ namespace salt::fortran {
             }
 
             // Use the instrumentation points stored in the Visitor to write the instrumented file.
-            instrumentFile(inputFilePath, *outputFileStream, visitor, instMap);
+            instrumentFile(inputFilePath, inputStream, *outputFileStream, visitor, instMap);
 
             outputFileStream->flush();
             // createOutputFile opens text output as a raw_fd_ostream

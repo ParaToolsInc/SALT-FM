@@ -678,6 +678,8 @@ if(MLIR_FOUND AND Flang_FOUND)
   _salt_configure_fparse_llvm(
     ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm
     "${_salt_flang_driver}")
+  # For the tests that run the plugin without fparse-llvm
+  set(_salt_test_flang "${_salt_flang_driver}")
   unset(_salt_flang_driver)
   install(PROGRAMS ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm
     TYPE BIN) # TYPE BIN installs into CMAKE_INSTALL_BINDIR
@@ -4214,6 +4216,28 @@ if(TEST_FORTRAN)
   _salt_add_clang_error_test(fortran_early_exit_space_output
     fortran_early_exit_space.inst.F90 "lang:Fortran" fortran/hello.f90
     SPACE ARGS --flang_exe=/nonexistent/flang)
+  # Flang run on stdin names the input `<stdin>` (`standard input` in
+  # Flang 19), which the plugin cannot reopen; it must stop before it
+  # opens the output, so it leaves none.
+  if(_salt_test_flang)
+    add_test(NAME fortran_plugin_stdin_output
+      COMMAND sh -c "rm -f plugin_stdin.inst.F90
+        \"$0\" -fc1 -load \"$1\" -plugin salt-instrument \\
+          -o plugin_stdin.inst.F90 < \"$2\" > plugin_stdin.log 2>&1; rc=$?
+        cat plugin_stdin.log
+        [ $rc -ge 1 ] && [ $rc -le 127 ] ||
+          { echo \"Expected an exit status from 1 to 127, got $rc\"; exit 1; }
+        [ ! -e plugin_stdin.inst.F90 ] ||
+          { echo 'Expected no plugin_stdin.inst.F90'; exit 1; }
+        grep -qF 'ERROR: Could not open input file ' plugin_stdin.log ||
+          { echo 'Expected the input error'; exit 1; }"
+        ${_salt_test_flang} $<TARGET_FILE:salt-flang-plugin>
+        ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+    set_tests_properties(fortran_plugin_stdin_output PROPERTIES
+      ENVIRONMENT "SALT_FORTRAN_CONFIG_FILE=${_tau_config_path}"
+      LABELS "lang:Fortran;phase:instrument")
+    _salt_in_test_output(output_error fortran_plugin_stdin_output)
+  endif()
   # The second `--tau_output` is the selective instrumentation file, so the
   # source after it is an input that saltfm must refuse to overwrite.
   _salt_add_clang_error_test(fortran_select_value_self_output
