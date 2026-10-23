@@ -285,6 +285,8 @@ set(LLVM_NEEDED_COMPONENTS
 # Find the libraries that correspond to the LLVM components
 # that we wish to use
 llvm_map_components_to_libnames(LLVM_LIBS ${LLVM_NEEDED_COMPONENTS})
+# For salt-selectfile and sif_check, which need only LLVM's Support library
+llvm_map_components_to_libnames(SALT_LLVM_SUPPORT_LIBS support)
 
 separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
 
@@ -420,6 +422,7 @@ target_link_libraries(SALT_LLVM_TOOLING INTERFACE ${CLANG_LIBS} ${LLVM_LIBS})
 set(SALT_HEADER_FILES
   config_file.hpp
   dprint.hpp
+  output_file.hpp
   ryml_all.hpp
   selectfile.hpp
   instrumentor.hpp
@@ -448,10 +451,11 @@ set(CPARSE_LLVM_SRCS
 
 list(TRANSFORM CPARSE_LLVM_SRCS PREPEND "${CMAKE_SOURCE_DIR}/src/")
 
-# selectfile.cpp and config_file.cpp, compiled once for cparse-llvm and
-# the Flang plugin (thus position independent), and selectfile.cpp for
-# salt-selectfile and sif_check too
-foreach(name selectfile config_file)
+# selectfile.cpp, config_file.cpp, and output_file.cpp, compiled once for
+# cparse-llvm and the Flang plugin (thus position independent), and
+# selectfile.cpp and output_file.cpp, which it uses, for salt-selectfile
+# and sif_check too
+foreach(name selectfile config_file output_file)
   add_library(salt_${name}_obj OBJECT src/${name}.cpp)
   target_include_directories(salt_${name}_obj PRIVATE
     ${CMAKE_SOURCE_DIR}/include ${LLVM_INCLUDE_DIRS})
@@ -482,7 +486,8 @@ target_include_directories(cparse-llvm PUBLIC
 target_compile_features(cparse-llvm PUBLIC cxx_std_17)
 # Inherit definitions, compile features, etc.
 target_link_libraries(cparse-llvm PUBLIC SALT_LLVM_TOOLING)
-target_link_libraries(cparse-llvm PRIVATE salt_selectfile_obj salt_config_file_obj)
+target_link_libraries(cparse-llvm PRIVATE salt_selectfile_obj salt_config_file_obj
+  salt_output_file_obj)
 # You can try adding -static. The --as-needed/--no-allow-shlib-undefined/
 # --no-undefined flags are GNU ld extensions; Apple ld doesn't recognize
 # them, so gate on linker family.
@@ -612,6 +617,7 @@ if(MLIR_FOUND AND Flang_FOUND)
   set(SALT_FLANG_PLUGIN_HEADER_FILES
     config_file.hpp
     dprint.hpp
+    output_file.hpp
     selectfile.hpp
     flang_source_location.hpp
     flang_instrumentation_constants.hpp
@@ -639,7 +645,7 @@ if(MLIR_FOUND AND Flang_FOUND)
   target_compile_features(salt-flang-plugin PUBLIC cxx_std_17)
   target_link_libraries(salt-flang-plugin PUBLIC SALT_FLANG_FRONTEND)
   target_link_libraries(salt-flang-plugin PRIVATE salt_selectfile_obj
-    salt_config_file_obj)
+    salt_config_file_obj salt_output_file_obj)
   # Apple ld uses `-undefined dynamic_lookup`; GNU ld uses --as-needed and
   # rejects -undefined dynamic_lookup. Pick per linker.
   target_link_options(salt-flang-plugin PUBLIC
@@ -655,7 +661,8 @@ if(MLIR_FOUND AND Flang_FOUND)
   # Tells fparse-llvm, before Flang runs, whether the file lists exclude a
   # source, and copies a source
   add_executable(salt-selectfile src/selectfile_main.cpp)
-  target_link_libraries(salt-selectfile PRIVATE salt_selectfile_obj)
+  target_link_libraries(salt-selectfile PRIVATE salt_selectfile_obj
+    salt_output_file_obj ${SALT_LLVM_SUPPORT_LIBS})
   target_include_directories(salt-selectfile PRIVATE
     ${CMAKE_SOURCE_DIR}/include ${LLVM_INCLUDE_DIRS})
   target_compile_definitions(salt-selectfile PRIVATE ${LLVM_DEFINITIONS_LIST})
@@ -1182,13 +1189,16 @@ set_tests_properties(make_output_error_paths PROPERTIES
   FIXTURES_SETUP output_error_paths
   LABELS "phase:setup")
 _salt_in_test_output(output_error make_output_error_paths)
-# Adds output_error_<name>: saltfm `ARGN` run in test-output/output_error
-# must fail, naming `file`.
+# Adds output_error_<name>: saltfm, run in test-output/output_error with
+# the other arguments, must fail, naming `file` in an error that holds
+# TEXT, if given.
 function(_salt_add_output_error_test name file label)
+  cmake_parse_arguments(PARSE_ARGV 3 ARG "" "TEXT" "")
   add_test(NAME output_error_${name}
-    COMMAND ${CMAKE_COMMAND} -DFILE=${file}
+    COMMAND ${CMAKE_COMMAND} -DFILE=${file} -DTEXT=${ARG_TEXT}
       -P ${CMAKE_SOURCE_DIR}/tests/expect_output_error.cmake --
-      ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm ${ARGN})
+      ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+      ${ARG_UNPARSED_ARGUMENTS})
   set_tests_properties(output_error_${name} PROPERTIES
     FIXTURES_REQUIRED output_error_paths
     LABELS "${label};phase:instrument")
@@ -1199,6 +1209,7 @@ endfunction()
 function(_salt_add_output_error_tests name out label src)
   _salt_add_output_error_test(isdir_${name} ${out} ${label} ${src})
   _salt_add_output_error_test(nodir_${name} missing/${out} ${label}
+    TEXT "Could not create a temporary file next to output file"
     --tau_output=missing/${out} ${src})
 endfunction()
 _salt_add_output_error_tests(c hello.inst.c "lang:C"
@@ -1212,18 +1223,21 @@ if(EXISTS /dev/full)
 endif()
 # When Clang or Flang reports errors, saltfm must exit with a status
 # from 1 to 127 and leave no file at the --tau_output path. The setup
-# removes the `new`, fabricated, and missing header outputs, copies
-# missing_header.c to the working directory, writes stale `old`,
-# `early_exit`, and `forwarded_value` ones that saltfm must remove,
-# makes the `dir` ones empty directories that saltfm must keep, copies
-# the bad and good sources and a config and a selective instrumentation
-# file to `self` ones that saltfm must refuse and keep when they are
-# also the output, makes read-only `ro` outputs that saltfm must not
-# remove and then fail to open for writing, makes a configuration
-# file that saltfm cannot read, copies the sources of the
-# no_path_tau_output, `self`, and `rsp` tests, writes a response file
-# naming the `rsp` one, and writes stale outputs of the other no_path
-# tests.
+# removes the `new`, fabricated, missing header, multi-source, and
+# plugin_default outputs, makes empty temp_output, temp%output,
+# write_error, stdout_output, and plugin_default_cwd directories and
+# write_error_percent ones that hold only an empty a%2Fb directory,
+# copies missing_header.c and the source of plugin_default to the
+# working directory, writes stale `old`, `early_exit`, and
+# `forwarded_value` ones that saltfm must remove, makes the `dir` ones
+# empty directories that saltfm must keep, copies the bad and good
+# sources and a config and a selective instrumentation file to `self`
+# ones that saltfm must refuse and keep when they are also the output,
+# makes read-only `ro` outputs that saltfm must not remove and then fail
+# to open for writing, makes a configuration file that saltfm cannot
+# read, copies the sources of the no_path_tau_output, `self`, and `rsp`
+# tests, writes a response file naming the `rsp` one, and writes stale
+# outputs of the other no_path tests.
 set(_tests ${CMAKE_SOURCE_DIR}/tests)
 add_test(NAME make_clang_error_outputs
   COMMAND sh -c "rm -rf clang_error_new.inst.c fabricate_on.inst.cpp &&
@@ -1231,7 +1245,16 @@ add_test(NAME make_clang_error_outputs
     rm -f allow_parse_errors_missing_input.inst.c &&
     rm -f allow_parse_errors_c.inst.c allow_parse_errors_env.inst.c &&
     rm -f allow_parse_errors_cxx.inst.cpp fortran_default_output_* &&
-    rm -f data_only.saltmod &&
+    rm -f data_only.saltmod sif_nomain.inst.c* plugin_default.inst.F90* &&
+    cp ${_tests}/fortran/hello.f90 plugin_default.f90 &&
+    rm -rf temp_output_c temp_output_fortran temp%output &&
+    mkdir temp_output_c temp_output_fortran temp%output &&
+    rm -rf write_error_c write_error_fortran write_error_fortran_copy &&
+    mkdir write_error_c write_error_fortran write_error_fortran_copy &&
+    rm -rf write_error_percent_c write_error_percent_fortran &&
+    mkdir -p write_error_percent_c/a%2Fb write_error_percent_fortran/a%2Fb &&
+    rm -rf stdout_output_fortran plugin_default_cwd &&
+    mkdir stdout_output_fortran plugin_default_cwd &&
     cp ${_tests}/missing_header.c missing_header.c &&
     rm -rf clang_error_dir.inst.c fortran_error_dir.inst.F90 &&
     mkdir clang_error_dir.inst.c fortran_error_dir.inst.F90 &&
@@ -1364,10 +1387,80 @@ _salt_add_clang_error_test(clang_sif_self_output clang_sif_self.tau
   "lang:C" hello.c COPY_OF sif/exclude_c.tau
   ARGS --tau_select_file=clang_sif_self.tau)
 # saltfm does not remove a read-only output, so opening it for writing
-# fails even for a good source.
+# fails even for a good source, and the file does not change.
 _salt_add_clang_error_test(clang_error_ro_output clang_error_ro.inst.c
   "lang:C" hello.c NOT_ROOT
-  CHECK "-f clang_error_ro.inst.c -a ! -w clang_error_ro.inst.c")
+  CHECK "-f clang_error_ro.inst.c -a ! -w clang_error_ro.inst.c"
+  LOG "ERROR: Could not open output file clang_error_ro.inst.c" OUT stale)
+# saltfm writes a device output such as /dev/null directly: a rename
+# onto it fails, or, as root, replaces the device.
+_salt_add_clang_error_test(dev_null_c /dev/null "lang:C" hello.c EXIT_ZERO
+  CHECK "-c /dev/null")
+# With more than one source and one --tau_output, the output is that of
+# the last source.
+_salt_add_clang_error_test(multi_source_one_output multi_source_one.inst.c
+  "lang:C" hello.c EXIT_ZERO CHECK "-s multi_source_one.inst.c"
+  TAIL ${CMAKE_SOURCE_DIR}/tests/sif_nomain.c OUT "keep_routine")
+# Adds temp_output_<lang>: saltfm with umask 022, run in the setup's
+# empty directory temp_output_<lang> on the sources in ARGN, must exit
+# with status 0 and leave only their default outputs `outs`, each with
+# mode 0644 and a timer, and no temporary file.
+function(_salt_add_temp_output_test lang labels outs)
+  string(REPLACE ";" " " outs "${outs}")
+  add_test(NAME temp_output_${lang}
+    COMMAND sh -c "cd temp_output_${lang} && umask 022 && \"$0\" \"$@\" || exit 1
+      [ \"$(echo $(ls))\" = \"${outs}\" ] ||
+        { echo \"Expected only ${outs}:\"; ls; exit 1; }
+      for out in ${outs}; do
+        [ \"$(ls -l $out | cut -c1-10)\" = -rw-r--r-- ] ||
+          { echo \"Expected mode 0644:\"; ls -l $out; exit 1; }
+        grep -q TAU_PROFILE_START $out ||
+          { echo \"Expected a timer in $out\"; exit 1; }
+      done"
+      ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm ${ARGN})
+  set_tests_properties(temp_output_${lang} PROPERTIES
+    FIXTURES_REQUIRED clang_error_outputs
+    LABELS "${labels};phase:instrument")
+  _salt_in_test_output(output_error temp_output_${lang})
+endfunction()
+_salt_add_temp_output_test(c "lang:C" "hello.inst.c;sif_nomain.inst.c"
+  ${CMAKE_SOURCE_DIR}/tests/hello.c ${CMAKE_SOURCE_DIR}/tests/sif_nomain.c)
+# An output in a directory whose path contains `%` also gets a temporary
+# file, which leaves no file after the rename.
+_salt_add_clang_error_test(percent_dir_output_c temp%output/hello.inst.c
+  "lang:C" hello.c EXIT_ZERO
+  CHECK "-s temp%output/hello.inst.c -a \"$(ls temp%output)\" = hello.inst.c"
+  OUT TAU_PROFILE_START)
+# Adds `name`: saltfm on `src`, run in the setup's empty directory
+# `name` with --tau_output=`out`, the other arguments, and writes to
+# regular files failing as on a full disk (`ulimit -f 0`, and SIGXFSZ
+# ignored so that the write fails instead of killing saltfm), must exit
+# with a status from 1 to 127 and an error naming `out`, and leave no
+# file. LLVM's SIGXFSZ handler removes the temporary file itself, so
+# these tests pass without the removal at exit too.
+function(_salt_add_write_error_test name labels src out)
+  add_test(NAME ${name}
+    COMMAND sh -c "cd ${name} || exit 1
+      log=$( (trap '' XFSZ; ulimit -f 0; exec \"$0\" \"$@\") 2>&1 ); rc=$?
+      echo \"$log\"
+      [ $rc -ge 1 ] && [ $rc -le 127 ] ||
+        { echo \"Expected an exit status from 1 to 127, got $rc\"; exit 1; }
+      echo \"$log\" | grep -qF 'ERROR: Could not write output file ${out}' ||
+        { echo 'Expected the write error'; exit 1; }
+      [ -z \"$(find . -type f)\" ] ||
+        { echo 'Expected no file:'; find . -type f; exit 1; }"
+      ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --tau_output=${out}
+      ${ARGN} ${src})
+  set_tests_properties(${name} PROPERTIES
+    FIXTURES_REQUIRED clang_error_outputs
+    LABELS "${labels};phase:instrument")
+  _salt_in_test_output(output_error ${name})
+endfunction()
+_salt_add_write_error_test(write_error_c "lang:C"
+  ${CMAKE_SOURCE_DIR}/tests/hello.c write_error.inst.c)
+# Also in a directory whose path contains `%`
+_salt_add_write_error_test(write_error_percent_c "lang:C"
+  ${CMAKE_SOURCE_DIR}/tests/hello.c a%2Fb/write_error.inst.c)
 # Run, as when instrumenting outside the build, with no -I for the
 # missing header: without --tau_allow_parse_errors, saltfm fails; with
 # it, it warns and instruments the partial parse tree Clang builds.
@@ -1541,6 +1634,19 @@ function(_salt_add_config_read_error_tests lang labels src)
     ${alias} "ERROR: ${alias}: anchor not found: 'nope'")
 endfunction()
 _salt_add_config_read_error_tests(c "lang:C" hello.c)
+# With more than one source and no --tau_output, an error in a later
+# source leaves no output from an earlier one (#104): saltfm copies
+# sif_nomain.c, which the file lists exclude, and then stops on the
+# configuration file, which it reads for the setup code of the main
+# program in hello.c.
+_salt_add_clang_error_test(multi_source_config_error sif_nomain.inst.c
+  "lang:C" sif_nomain.c DEFAULT_OUTPUT
+  CHECK "! -e sif_nomain.inst.c -a ! -e sif_nomain.inst.c-*.tmp"
+  ARGS --config_file=${_config_parse_error}
+  --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau
+  --tau_excluded_main_setup=file
+  TAIL ${CMAKE_SOURCE_DIR}/tests/hello.c
+  LOG "ERROR: ${_config_parse_error}:4:3: parse error")
 # Adds the no_path_<option>_<form>_<lang> tests: an option that takes a
 # path, with an empty value (`empty`) or at the end without one (`tail`),
 # stops saltfm with an error and no output. A --tau_output test runs on
@@ -2843,7 +2949,8 @@ endforeach()
 # sif_check reads each case's SIF with SALT-FM's parser and checks the
 # routine and file names of its .expect file with SALT-FM's matcher.
 add_executable(sif_check tests/sif_check.cpp)
-target_link_libraries(sif_check PRIVATE salt_selectfile_obj)
+target_link_libraries(sif_check PRIVATE salt_selectfile_obj
+  salt_output_file_obj ${SALT_LLVM_SUPPORT_LIBS})
 target_include_directories(sif_check PRIVATE
   ${CMAKE_SOURCE_DIR}/include ${LLVM_INCLUDE_DIRS})
 target_compile_definitions(sif_check PRIVATE ${LLVM_DEFINITIONS_LIST})
@@ -4226,7 +4333,34 @@ if(TEST_FORTRAN)
     COPY_OF fortran/compile_error.f90 ARGS --lang=fortran)
   _salt_add_clang_error_test(fortran_error_ro_output
     fortran_error_ro.inst.F90 "lang:Fortran" fortran/hello.f90 NOT_ROOT
-    CHECK "-f fortran_error_ro.inst.F90 -a ! -w fortran_error_ro.inst.F90")
+    CHECK "-f fortran_error_ro.inst.F90 -a ! -w fortran_error_ro.inst.F90"
+    LOG "ERROR: Could not open output file fortran_error_ro.inst.F90" OUT stale)
+  _salt_add_clang_error_test(dev_null_fortran /dev/null "lang:Fortran"
+    fortran/hello.f90 EXIT_ZERO CHECK "-c /dev/null")
+  _salt_add_temp_output_test(fortran "lang:Fortran" hello.inst.F90
+    ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+  _salt_add_write_error_test(write_error_fortran "lang:Fortran"
+    ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90 write_error.inst.F90)
+  _salt_add_write_error_test(write_error_percent_fortran "lang:Fortran"
+    ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90 a%2Fb/write_error.inst.F90)
+  # salt-selectfile copies a source that the file lists exclude.
+  _salt_add_write_error_test(write_error_fortran_copy "lang:Fortran;sif"
+    ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90 write_error.inst.F90
+    --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau)
+  # With --tau_output=-, the output goes to standard output, as Flang
+  # writes it for `-o -`, and no file is made.
+  add_test(NAME stdout_output_fortran
+    COMMAND sh -c "cd stdout_output_fortran &&
+      \"$0\" \"$@\" > ../stdout_output_fortran.log &&
+      grep -q TAU_PROFILE_START ../stdout_output_fortran.log &&
+      [ -z \"$(ls)\" ] ||
+        { echo 'Expected the output on stdout and no file:'; ls; exit 1; }"
+      ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --tau_output=-
+      ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+  set_tests_properties(stdout_output_fortran PROPERTIES
+    FIXTURES_REQUIRED clang_error_outputs
+    LABELS "lang:Fortran;phase:instrument")
+  _salt_in_test_output(output_error stdout_output_fortran)
   # The wrapper's own early exits must not leave a stale output either.
   _salt_add_clang_error_test(fortran_early_exit_output
     fortran_early_exit.inst.F90 "lang:Fortran" fortran/hello.f90
@@ -4255,6 +4389,23 @@ if(TEST_FORTRAN)
       ENVIRONMENT "SALT_FORTRAN_CONFIG_FILE=${_tau_config_path}"
       LABELS "lang:Fortran;phase:instrument")
     _salt_in_test_output(output_error fortran_plugin_stdin_output)
+    # Without -o, the plugin names its output as Flang does: the input
+    # with the extension `inst.F90`, in the input's directory, not the
+    # working directory, and leaves no temporary file.
+    add_test(NAME fortran_plugin_default_output
+      COMMAND sh -c "cd plugin_default_cwd &&
+        \"$0\" -fc1 -load \"$1\" -plugin salt-instrument \\
+          ../plugin_default.f90 &&
+        grep -q TAU_PROFILE_START ../plugin_default.inst.F90 || exit 1
+        set -- ../plugin_default.inst.F90-*.tmp
+        [ -z \"$(ls)\" ] && [ ! -e \"$1\" ] ||
+          { echo 'Expected no file here and no temporary file:'; ls . ..; exit 1; }"
+        ${_salt_test_flang} $<TARGET_FILE:salt-flang-plugin>)
+    set_tests_properties(fortran_plugin_default_output PROPERTIES
+      ENVIRONMENT "SALT_FORTRAN_CONFIG_FILE=${_tau_config_path}"
+      FIXTURES_REQUIRED clang_error_outputs
+      LABELS "lang:Fortran;phase:instrument")
+    _salt_in_test_output(output_error fortran_plugin_default_output)
   endif()
   # The second `--tau_output` is the selective instrumentation file, so the
   # source after it is an input that saltfm must refuse to overwrite.

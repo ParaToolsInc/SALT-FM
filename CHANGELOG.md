@@ -39,6 +39,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Before, C and C++ instrumentation reported success and left the old
   output in place, and Fortran crashed when it could not open the file
   and failed without naming the file when a write failed.
+- For C, C++, and Fortran, `saltfm` writes each output to a temporary
+  file in the output's directory and renames it to the output only when
+  the run succeeds. A run that fails, for example on a full disk, no
+  longer leaves a partial output for TAU's compiler wrapper to compile.
+  The output's directory must be writable. An output that is not a
+  regular file, such as `/dev/null`, is still written directly
+  ([#95](https://github.com/ParaToolsInc/SALT-FM/issues/95)).
+- With more than one C or C++ source and no `--tau_output`, `saltfm`
+  keeps its outputs only when every source succeeds, so an error in a
+  later source, such as a bad configuration file, no longer leaves the
+  output of an earlier one
+  ([#104](https://github.com/ParaToolsInc/SALT-FM/issues/104)).
 - When Clang reports errors in a C or C++ source, `saltfm` now exits
   with a non-zero status and writes no instrumented output. Before, it
   exited with status 0 and wrote output instrumented from the partial

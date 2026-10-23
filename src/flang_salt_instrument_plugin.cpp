@@ -33,6 +33,7 @@ limitations under the License.
 #include <dprint.hpp>
 #include <ryml_all.hpp>
 #include "config_file.hpp"
+#include "output_file.hpp"
 
 // On macOS, ryml_all.hpp transitively includes <sys/param.h>, which
 // defines MAX(a,b) and MIN(a,b) as function-like macros.  Those collide
@@ -59,6 +60,7 @@ limitations under the License.
 #include "flang/Semantics/symbol.h"
 #include "flang/Evaluate/tools.h"
 #include "llvm/Config/llvm-config.h"
+#include "llvm/Support/Path.h"
 #include "flang/Frontend/CompilerInstance.h"
 
 #include "flang_instrumentation_constants.hpp"
@@ -1067,27 +1069,40 @@ namespace salt::fortran {
                 std::exit(EXIT_FAILURE);
             }
 
-            // Open an output file for writing the instrumented code
+            // Open an output file for writing the instrumented code: the -o file,
+            // else, as Flang's createOutputFile names it, the input with this extension
             const std::string outputFileExtension = "inst."s + inputFileExtension;
-            const auto outputFileStream = createOutputFile(outputFileExtension);
-            if (!outputFileStream) {
-                // Flang has reported why it could not open the file
-                llvm::errs() << "ERROR: Could not open output file "
-                        << getInstance().getFrontendOpts().outputFile << "\n";
+            std::string outputPath{getInstance().getFrontendOpts().outputFile};
+            if (outputPath.empty()) {
+                llvm::SmallString<128> path{getCurrentFileOrBufferName()};
+                llvm::sys::path::replace_extension(path, outputFileExtension);
+                outputPath = std::string{path};
+            }
+            // raw_fd_ostream writes `-` to standard output, as Flang does
+            const std::optional<std::string> writePath{outputPath == "-" ? outputPath
+                                                                          : openOutput(outputPath)};
+            if (!writePath) {
+                std::exit(EXIT_FAILURE);
+            }
+            std::error_code openError;
+            llvm::raw_fd_ostream outputStream{*writePath, openError};
+            if (openError) {
+                llvm::errs() << "ERROR: Could not open output file " << outputPath << ": "
+                        << openError.message() << "\n";
                 std::exit(EXIT_FAILURE);
             }
 
             // Use the instrumentation points stored in the Visitor to write the instrumented file.
-            instrumentFile(inputFilePath, inputStream, *outputFileStream, visitor, instMap);
+            instrumentFile(inputFilePath, inputStream, outputStream, visitor, instMap);
 
-            outputFileStream->flush();
-            // createOutputFile opens text output as a raw_fd_ostream
-            auto &outputFdStream{static_cast<llvm::raw_fd_ostream &>(*outputFileStream)};
-            if (outputFdStream.has_error()) {
-                llvm::errs() << "ERROR: Could not write output file "
-                        << getInstance().getFrontendOpts().outputFile << ": "
-                        << outputFdStream.error().message() << "\n";
-                outputFdStream.clear_error();
+            outputStream.close();
+            if (outputStream.has_error()) {
+                llvm::errs() << "ERROR: Could not write output file " << outputPath << ": "
+                        << outputStream.error().message() << "\n";
+                outputStream.clear_error();
+                std::exit(EXIT_FAILURE);
+            }
+            if (!keepOutputs()) {
                 std::exit(EXIT_FAILURE);
             }
 

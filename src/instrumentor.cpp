@@ -32,6 +32,7 @@
 #include <sys/stat.h>
 
 #include "dprint.hpp"
+#include "output_file.hpp"
 #include "selectfile.hpp"
 #include "sema_fabricator.hpp"
 
@@ -1239,7 +1240,12 @@ void instrumentor::instrument()
         // Open the input first, so a missing one leaves no output file
         og_file.open(fname);
         exit_if_io_failed(!og_file.is_open(), "open input file", fname);
-        inst_file.open(newname);
+        const std::optional<std::string> write_name = openOutput(newname);
+        if (!write_name)
+        {
+            std::exit(EXIT_FAILURE);
+        }
+        inst_file.open(*write_name);
         exit_if_io_failed(!inst_file.is_open(), "open output file", newname);
 
         if (ryml::ConstNodeRef name = check_config_key(yaml_tree->crootref(), "instrumentation", configfile, nullptr, true);
@@ -1252,5 +1258,10 @@ void instrumentor::instrument()
         og_file.close();
         inst_file.close();
         exit_if_io_failed(!inst_file, "write output file", newname);
+    }
+    // Only now, so that an error in a later source leaves no output
+    if (!keepOutputs())
+    {
+        std::exit(EXIT_FAILURE);
     }
 }

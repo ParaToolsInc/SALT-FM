@@ -11,6 +11,7 @@
 
 #include "selectfile.hpp"
 #include "dprint.hpp"
+#include "output_file.hpp"
 
 // TODO refactor this to class instead of using global variables
 // TODO modernize C++
@@ -934,7 +935,11 @@ bool copySource(const std::string &source, const std::string &output,
   if (ioFailed(!in.is_open(), "open input file", source)) {
     return false;
   }
-  std::ofstream out(output);
+  const std::optional<std::string> write_name = openOutput(output);
+  if (!write_name) {
+    return false;
+  }
+  std::ofstream out(*write_name);
   if (ioFailed(!out.is_open(), "open output file", output)) {
     return false;
   }
