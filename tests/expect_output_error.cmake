@@ -1,8 +1,9 @@
 # Runs the command after `--` and passes when it exits with a status from
 # 1 to 127, so a crash (a signal, or 128+N through a shell wrapper) fails,
-# and writes an `ERROR:` line naming FILE to stderr.
+# and writes an `ERROR:` line naming FILE, and holding TEXT if set, to
+# stderr.
 #
-# Usage: cmake -DFILE=<file>
+# Usage: cmake -DFILE=<file> [-DTEXT=<text>]
 #          -P expect_output_error.cmake -- <command> [<arg>...]
 
 set(_cmd)
@@ -25,8 +26,9 @@ endif()
 string(REGEX MATCHALL "ERROR: [^\n]*" errors "${err}")
 foreach(line IN LISTS errors)
   string(FIND "${line}" "${FILE}" pos)
-  if(pos GREATER_EQUAL 0)
+  string(FIND "${line}" "${TEXT}" text_pos)
+  if(pos GREATER_EQUAL 0 AND text_pos GREATER_EQUAL 0)
     return()
   endif()
 endforeach()
-message(FATAL_ERROR "Expected an ERROR line naming ${FILE} on stderr")
+message(FATAL_ERROR "Expected an ERROR line naming ${FILE} and holding '${TEXT}' on stderr")

@@ -165,7 +165,8 @@ build/bin/saltfm tests/hello.c
 ```
 
 `saltfm` writes `hello.inst.c` in the working directory. To name the
-output file, use `--tau_output=<file>`. For all options, run
+output file, use `--tau_output=<file>`. A run that fails, for example
+on a full disk, leaves no partial output file. For all options, run
 `saltfm --help`. An option has priority over its environment variable.
 
 `saltfm` reads a source as Fortran if its extension is `.f`, `.for`,

@@ -11,13 +11,14 @@
 #include <cstdio>
 #include <cstring>
 
+#include "output_file.hpp"
 #include "selectfile.hpp"
 
 int main(int argc, char **argv)
 {
     if (argc == 4 && std::strcmp(argv[1], "--copy") == 0)
     {
-        return copySource(argv[2], argv[3], argv[2]) ? 0 : 2;
+        return copySource(argv[2], argv[3], argv[2]) && keepOutputs() ? 0 : 2;
     }
     if (argc != 3)
     {
