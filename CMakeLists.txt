@@ -699,19 +699,15 @@ if(MLIR_FOUND AND Flang_FOUND)
     TYPE BIN) # TYPE BIN installs into CMAKE_INSTALL_BINDIR
 
   # Copy the flang intrinsic module files into the salt include directory in
-  # the build tree and change the file extension to SALT_MOD_SUFFIX. Also
-  # copy them unchanged for --tau_build_uses_salt_flang: Flang 23 on Linux
-  # needs them, as its -fc1 does not find the compiler's own (Homebrew's
-  # on macOS does). configure_file copies the contents: Homebrew's modules
-  # are relative symlinks, which would dangle in the build tree.
+  # the build tree and change the file extension to SALT_MOD_SUFFIX.
+  # configure_file copies the contents: Homebrew's modules are relative
+  # symlinks, which would dangle in the build tree.
   foreach(intrinsic_mod_file IN LISTS INTRINSIC_MOD_FILES)
     get_filename_component(INTRINSIC_MOD_BASE ${intrinsic_mod_file} NAME_WLE)
     set(SALT_INTRINSIC_MOD_FILE
       ${CMAKE_BINARY_DIR}/${SALT_INC_DIR}/${INTRINSIC_MOD_BASE}${SALT_MOD_SUFFIX})
     message(STATUS "Copying ${intrinsic_mod_file} to ${SALT_INTRINSIC_MOD_FILE}")
     configure_file(${intrinsic_mod_file} ${SALT_INTRINSIC_MOD_FILE} COPYONLY)
-    configure_file(${intrinsic_mod_file}
-      ${CMAKE_BINARY_DIR}/${SALT_INC_DIR}/${INTRINSIC_MOD_BASE}.mod COPYONLY)
   endforeach()
 
   # Install the flang intrinsic module files into the salt include directory
@@ -3643,6 +3639,24 @@ if(TEST_FORTRAN)
   set_property(TEST fparse_flang_exe_no_record APPEND PROPERTY
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_fx_dir}/match")
 
+  # With --tau_build_uses_salt_flang, -fc1 gets the intrinsic module
+  # directory that the driver prints with `-###`, but not one with an
+  # escaped character.
+  _salt_add_flang_exe_test(fparse_flang_exe_probe_mods
+    "${_fx_match_cmd}[^\n]* -fintrinsic-modules-path /stub/finclude "
+    "${_fx_stub_ran};WARNING"
+    ${_fx_bin}/fparse-llvm --show --tau_build_uses_salt_flang
+    --flang_exe=${_fx_dir}/match/flang ${_fx_src})
+  set_property(TEST fparse_flang_exe_probe_mods APPEND PROPERTY
+    ENVIRONMENT_MODIFICATION "STUB_INTRINSIC_MODS=set:/stub/finclude")
+  _salt_add_flang_exe_test(fparse_flang_exe_probe_mods_escaped
+    "WARNING: cannot read the intrinsic module directory"
+    "${_fx_stub_ran};-fintrinsic-modules-path"
+    ${_fx_bin}/fparse-llvm --show --tau_build_uses_salt_flang
+    --flang_exe=${_fx_dir}/match/flang ${_fx_src})
+  set_property(TEST fparse_flang_exe_probe_mods_escaped APPEND PROPERTY
+    ENVIRONMENT_MODIFICATION "STUB_INTRINSIC_MODS=set:/stub/a\\\"b")
+
   # --flang_exe (both forms, also through saltfm) and SALT_FLANG_EXE
   # select the driver; the flag has priority.
   _salt_add_flang_exe_test(fparse_flang_exe_flag
@@ -3948,7 +3962,7 @@ if(TEST_FORTRAN)
   _salt_add_user_mod_test(use-user-iso-fortran-env.f90 -I)
   _salt_add_user_mod_test(use-user-iso-fortran-env.f90 -J)
   _salt_add_user_mod_test(use-mixed-nature.f90 -I)
-  # So must the original compiler modules that --tau_build_uses_salt_flang
+  # So must the compiler's own modules that --tau_build_uses_salt_flang
   # reads (#40). The Flang driver writes the user module, as a build does.
   if(_salt_test_flang)
     set(_user_mod_flang_dir ${SALT_TEST_OUTPUT_DIR}/user-mod-flang)
@@ -4515,11 +4529,18 @@ if(TEST_FORTRAN)
       ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
       LABELS "lang:Fortran;phase:instrument")
     _salt_in_test_output(instrument salt_flang_project_mod)
-    # Flang gets no -module-suffix, and SALT-FM's directory, which holds
-    # the original compiler modules. saltfm passes the option to
-    # fparse-llvm only.
-    string(CONCAT _sf_show "cmd: [^\n]* -fintrinsic-modules-path "
-      "[^ ]*/${SALT_INC_DIR} ")
+    # Flang gets no -module-suffix and not SALT-FM's directory, but the
+    # intrinsic module directory of the Flang that runs: the one that
+    # Flang 23 prints with `-###`, and none on Flang 19-22, whose -fc1
+    # finds it. saltfm passes the option to fparse-llvm only.
+    set(_sf_show "cmd: ")
+    set(_sf_not_show "-module-suffix;/${SALT_INC_DIR}")
+    if(LLVM_VERSION_MAJOR GREATER_EQUAL 23)
+      string(CONCAT _sf_show "cmd: [^\n]* -fintrinsic-modules-path "
+        "[^ ]*/finclude/flang/[^ ]+ ")
+    else()
+      list(APPEND _sf_not_show "-fintrinsic-modules-path")
+    endif()
     foreach(tool saltfm fparse-llvm)
       string(REPLACE "-llvm" "" _name ${tool}_show_build_uses_salt_flang)
       add_test(NAME ${_name}
@@ -4527,14 +4548,36 @@ if(TEST_FORTRAN)
                 ${_sf_on} ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
       set_tests_properties(${_name} PROPERTIES
         PASS_REGULAR_EXPRESSION "${_sf_show}"
-        FAIL_REGULAR_EXPRESSION "-module-suffix")
+        FAIL_REGULAR_EXPRESSION "${_sf_not_show}")
     endforeach()
+    # So does a source that the driver does not read as Fortran, such as
+    # a .f18 or .inc one, and the .f18 copy of a source that uses
+    # iso_c_binding instruments.
+    set(_sf_ext_dir ${CMAKE_BINARY_DIR}/salt_flang_ext)
+    configure_file(tests/fortran/use-intrinsic-c-binding.f90
+      ${_sf_ext_dir}/use-intrinsic-c-binding.f18 COPYONLY)
+    foreach(ext f18 inc)
+      configure_file(tests/fortran/hello.f90 ${_sf_ext_dir}/hello.${ext}
+        COPYONLY)
+      add_test(NAME fparse_show_build_uses_salt_flang_${ext}
+        COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show
+                ${_sf_on} ${_sf_ext_dir}/hello.${ext})
+      set_tests_properties(fparse_show_build_uses_salt_flang_${ext} PROPERTIES
+        PASS_REGULAR_EXPRESSION "${_sf_show}"
+        FAIL_REGULAR_EXPRESSION "${_sf_not_show}")
+    endforeach()
+    _salt_add_clang_error_test(salt_flang_f18 salt_flang_f18.inst.F90
+      "lang:Fortran" ${_sf_ext_dir}/use-intrinsic-c-binding.f18 EXIT_ZERO
+      CHECK "-s salt_flang_f18.inst.F90" OUT "TAU_PROFILE_START"
+      ARGS ${_sf_on})
+    set_tests_properties(salt_flang_f18 PROPERTIES
+      ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}")
     add_test(NAME fparse_show_build_uses_salt_flang_env
       COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show
               ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
     set_tests_properties(fparse_show_build_uses_salt_flang_env PROPERTIES
       PASS_REGULAR_EXPRESSION "${_sf_show}"
-      FAIL_REGULAR_EXPRESSION "-module-suffix")
+      FAIL_REGULAR_EXPRESSION "${_sf_not_show}")
     add_test(NAME saltfm_show_build_uses_salt_flang_c
       COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
               ${_sf_on} ${CMAKE_SOURCE_DIR}/tests/hello.c)
@@ -4544,9 +4587,13 @@ if(TEST_FORTRAN)
       LABELS "lang:C;phase:smoke")
     set_tests_properties(saltfm_show_build_uses_salt_flang
       fparse_show_build_uses_salt_flang fparse_show_build_uses_salt_flang_env
+      fparse_show_build_uses_salt_flang_f18
+      fparse_show_build_uses_salt_flang_inc
       PROPERTIES LABELS "lang:Fortran;phase:smoke")
     set_tests_properties(saltfm_show_build_uses_salt_flang
       fparse_show_build_uses_salt_flang fparse_show_build_uses_salt_flang_env
+      fparse_show_build_uses_salt_flang_f18
+      fparse_show_build_uses_salt_flang_inc
       saltfm_show_build_uses_salt_flang_c PROPERTIES
       ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}")
     set_property(TEST fparse_show_build_uses_salt_flang_env APPEND PROPERTY
