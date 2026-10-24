@@ -692,15 +692,19 @@ if(MLIR_FOUND AND Flang_FOUND)
     TYPE BIN) # TYPE BIN installs into CMAKE_INSTALL_BINDIR
 
   # Copy the flang intrinsic module files into the salt include directory in
-  # the build tree and change the file extension to SALT_MOD_SUFFIX.
-  # configure_file copies the contents: Homebrew's modules are relative
-  # symlinks, which would dangle in the build tree.
+  # the build tree and change the file extension to SALT_MOD_SUFFIX. Also
+  # copy them unchanged for --tau_build_uses_salt_flang: Flang 23 on Linux
+  # needs them, as its -fc1 does not find the compiler's own (Homebrew's
+  # on macOS does). configure_file copies the contents: Homebrew's modules
+  # are relative symlinks, which would dangle in the build tree.
   foreach(intrinsic_mod_file IN LISTS INTRINSIC_MOD_FILES)
     get_filename_component(INTRINSIC_MOD_BASE ${intrinsic_mod_file} NAME_WLE)
     set(SALT_INTRINSIC_MOD_FILE
       ${CMAKE_BINARY_DIR}/${SALT_INC_DIR}/${INTRINSIC_MOD_BASE}${SALT_MOD_SUFFIX})
     message(STATUS "Copying ${intrinsic_mod_file} to ${SALT_INTRINSIC_MOD_FILE}")
     configure_file(${intrinsic_mod_file} ${SALT_INTRINSIC_MOD_FILE} COPYONLY)
+    configure_file(${intrinsic_mod_file}
+      ${CMAKE_BINARY_DIR}/${SALT_INC_DIR}/${INTRINSIC_MOD_BASE}.mod COPYONLY)
   endforeach()
 
   # Install the flang intrinsic module files into the salt include directory
@@ -1308,14 +1312,14 @@ _salt_in_test_output(output_error make_clang_error_outputs)
 # NOT_ROOT skips the test as root, who can write read-only files.
 # SPACE passes `--tau_output <out>` as two arguments, and DEFAULT_OUTPUT
 # passes no --tau_output, so `out` is saltfm's default output. TAIL
-# arguments follow `src`. Each LOG text must be in saltfm's output, and
-# each OUT text in `out`.
+# arguments follow `src`. Each LOG text must be in saltfm's output, no
+# NOT_LOG text, and each OUT text in `out`.
 # COPY_OF `fixture` (relative to tests/) instead expects the error that
 # `out`, a copy of the fixture that is also `src` or another input, is
 # an input file, and `out` unchanged.
 function(_salt_add_clang_error_test name out labels src)
   cmake_parse_arguments(PARSE_ARGV 4 ARG "EXIT_ZERO;NOT_ROOT;SPACE;DEFAULT_OUTPUT"
-    "CHECK;COPY_OF" "ARGS;TAIL;LOG;OUT")
+    "CHECK;COPY_OF" "ARGS;TAIL;LOG;NOT_LOG;OUT")
   set(out_args --tau_output=${out})
   if(ARG_SPACE)
     set(out_args --tau_output ${out})
@@ -1340,6 +1344,10 @@ function(_salt_add_clang_error_test name out labels src)
       string(APPEND text_checks "grep -qF -- \"${text}\" ${${kind}_file} ||
         { echo \"Expected ${text} in ${${kind}_file}\"; exit 1; }\n")
     endforeach()
+  endforeach()
+  foreach(text IN LISTS ARG_NOT_LOG)
+    string(APPEND text_checks "! grep -qF -- \"${text}\" ${log_file} ||
+      { echo \"Did not expect ${text} in ${log_file}\"; exit 1; }\n")
   endforeach()
   set(rc_ok "[ $rc -ge 1 ] && [ $rc -le 127 ]")
   set(rc_want "from 1 to 127")
@@ -1831,7 +1839,8 @@ endfunction()
 # The SIF tests expect the default values unless their ARGS set them, so
 # a value in the developer's environment must not reach saltfm.
 set(_salt_unset_option_env
-  "SALT_EXCLUDED_MAIN_SETUP=unset:;SALT_PARSE_EXCLUDED_MODULES=unset:")
+  "SALT_EXCLUDED_MAIN_SETUP=unset:;SALT_PARSE_EXCLUDED_MODULES=unset:"
+  "SALT_BUILD_USES_SALT_FLANG=unset:")
 
 # Standard SIF test: instrumented output IS produced and inspected by
 # check_sif_<test_name>. The caller is responsible for setting
@@ -2672,7 +2681,7 @@ if(TEST_FORTRAN)
   string(CONCAT _shell_var_shown "^fparse-llvm --show "
     "--tau_parse_excluded_modules=modules-only --tau_excluded_main_setup=routine ")
   foreach(var excluded_main_setup=none parse_excluded_modules=off
-      tool=cparse-llvm version=true)
+      tool=cparse-llvm version=true build_uses_salt_flang=true)
     string(REGEX REPLACE "=.*" "" name "${var}")
     add_test(NAME saltfm_shell_var_${name}
       COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
@@ -2804,9 +2813,16 @@ if(TEST_FORTRAN)
   set_tests_properties(fparse_shell_var_select_file PROPERTIES
     ENVIRONMENT "select_file=shell_var.tau"
     PASS_REGULAR_EXPRESSION "\nSALT_FORTRAN_SELECT_FILE=\"\"\n")
+  add_test(NAME fparse_shell_var_build_uses_salt_flang
+    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show
+            ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+  set_tests_properties(fparse_shell_var_build_uses_salt_flang PROPERTIES
+    ENVIRONMENT "build_uses_salt_flang=true"
+    PASS_REGULAR_EXPRESSION "\ncmd: [^\n]* -module-suffix ")
   list(APPEND _shell_var_tests saltfm_shell_var_show saltfm_shell_var_force_lang
     fparse_shell_var_input_file fparse_shell_var_config_file
-    fparse_shell_var_output_file fparse_shell_var_select_file fparse_no_input
+    fparse_shell_var_output_file fparse_shell_var_select_file
+    fparse_shell_var_build_uses_salt_flang fparse_no_input
     fparse_no_input_flag fparse_input_after_flag fparse_input_not_flag
     fparse_unused_args fparse_unused_args_not_flag ${_ext_tests})
   set_tests_properties(saltfm_main_setup_fortran fparse_main_setup_canonical_only
@@ -3881,16 +3897,28 @@ if(TEST_FORTRAN)
     ENVIRONMENT "SALT_FORTRAN_VERBOSE=1"
     PASS_REGULAR_EXPRESSION "SALT Instrumentor Plugin finished")
   # Instruments `src` with the user module directory given by `flag`.
+  # With BUILD_USES_SALT_FLANG, the directory has only the .mod file that
+  # the Flang driver writes, and saltfm gets --tau_build_uses_salt_flang.
   function(_salt_add_user_mod_test src flag)
+    cmake_parse_arguments(PARSE_ARGV 2 ARG "BUILD_USES_SALT_FLANG" "" "")
     get_filename_component(base ${src} NAME_WLE)
+    set(dir ${_user_mod_dir})
+    set(fixture user_iso_fortran_env_mod)
+    set(option "")
+    if(ARG_BUILD_USES_SALT_FLANG)
+      string(APPEND base _build_uses_salt_flang)
+      set(dir ${_user_mod_flang_dir})
+      set(fixture user_iso_fortran_env_flang_mod)
+      set(option --tau_build_uses_salt_flang)
+    endif()
     set(name instrument_${base}${flag})
     add_test(NAME ${name}
       COMMAND
-        ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
-        ${flag}${_user_mod_dir} --tau_output=${base}${flag}.inst.F90
+        ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm ${option}
+        ${flag}${dir} --tau_output=${base}${flag}.inst.F90
         ${CMAKE_SOURCE_DIR}/tests/fortran/${src})
     set_tests_properties(${name} PROPERTIES
-      FIXTURES_REQUIRED user_iso_fortran_env_mod
+      FIXTURES_REQUIRED ${fixture}
       REQUIRED_FILES "${_required_files}"
       ENVIRONMENT "SALT_FORTRAN_VERBOSE=1"
       LABELS "lang:Fortran;phase:instrument"
@@ -3900,6 +3928,22 @@ if(TEST_FORTRAN)
   _salt_add_user_mod_test(use-user-iso-fortran-env.f90 -I)
   _salt_add_user_mod_test(use-user-iso-fortran-env.f90 -J)
   _salt_add_user_mod_test(use-mixed-nature.f90 -I)
+  # So must the original compiler modules that --tau_build_uses_salt_flang
+  # reads (#40). The Flang driver writes the user module, as a build does.
+  if(_salt_test_flang)
+    set(_user_mod_flang_dir ${SALT_TEST_OUTPUT_DIR}/user-mod-flang)
+    add_test(NAME make_user_iso_fortran_env_flang_mod
+      COMMAND sh -c "rm -rf \"$0\" && mkdir -p \"$0\" && cd \"$0\" &&
+        \"$1\" -c -J. \"$2\""
+        ${_user_mod_flang_dir} ${_salt_test_flang}
+        ${CMAKE_SOURCE_DIR}/tests/fortran/user-iso-fortran-env.f90)
+    set_tests_properties(make_user_iso_fortran_env_flang_mod PROPERTIES
+      FIXTURES_SETUP user_iso_fortran_env_flang_mod
+      LABELS "lang:Fortran;phase:setup")
+    _salt_add_user_mod_test(use-user-iso-fortran-env.f90 -I BUILD_USES_SALT_FLANG)
+    _salt_add_user_mod_test(use-user-iso-fortran-env.f90 -J BUILD_USES_SALT_FLANG)
+    _salt_add_user_mod_test(use-mixed-nature.f90 -I BUILD_USES_SALT_FLANG)
+  endif()
 
   # Unless --tau_excluded_main_setup=file, fparse-llvm parses a Fortran
   # source that the file lists exclude only when it seems to define a
@@ -4297,6 +4341,184 @@ if(TEST_FORTRAN)
   # module files has no setup code for its main program.
   _salt_add_excluded_test(mod_program ${_module_check_dir}/module_and_program.f90
     MOD m LOG "Running:")
+
+  # Adds test `name`: _salt_add_clang_error_test on tests/fortran/`src`
+  # with the ARGS, LOG, and NOT_LOG, and SALT_BUILD_USES_SALT_FLANG
+  # unset. It must write the output with a timer and exit with status 0,
+  # or with FAILS, write no output.
+  function(_salt_add_fortran_flags_test name src)
+    cmake_parse_arguments(PARSE_ARGV 2 ARG "FAILS" "" "ARGS;LOG;NOT_LOG")
+    set(out ${name}.inst.F90)
+    set(expect EXIT_ZERO CHECK "-s ${out}" OUT "TAU_PROFILE_START")
+    if(ARG_FAILS)
+      set(expect "")
+    endif()
+    _salt_add_clang_error_test(${name} ${out} "lang:Fortran" fortran/${src}
+      ${expect} ARGS ${ARG_ARGS} LOG ${ARG_LOG} NOT_LOG ${ARG_NOT_LOG})
+    set_tests_properties(${name} PROPERTIES
+      ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}")
+  endfunction()
+  # A generic call resolves to the specific procedure of the kinds that
+  # the default kind flags set, as in a Flang build, with and without
+  # --tau_build_uses_salt_flang (#40).
+  set(_no_specific "No specific subroutine of generic 'show'")
+  foreach(mode off on)
+    set(_on "")
+    if(mode STREQUAL "on")
+      set(_on --tau_build_uses_salt_flang)
+    endif()
+    foreach(kind real integer)
+      _salt_add_fortran_flags_test(default_${kind}_8_${mode}
+        default-${kind}-8.f90 ARGS ${_on} -fdefault-${kind}-8)
+      _salt_add_fortran_flags_test(default_${kind}_8_none_${mode}
+        default-${kind}-8.f90 FAILS ARGS ${_on} LOG "${_no_specific}")
+    endforeach()
+    _salt_add_fortran_flags_test(default_double_8_${mode} default-double-8.f90
+      ARGS ${_on} -fdefault-double-8 -fdefault-real-8)
+    _salt_add_fortran_flags_test(default_double_8_real_only_${mode}
+      default-double-8.f90 FAILS ARGS ${_on} -fdefault-real-8
+      LOG "${_no_specific}")
+    # Flang refuses -fdefault-double-8 without -fdefault-real-8, which
+    # gfortran accepts, so fparse-llvm removes it.
+    _salt_add_fortran_flags_test(default_double_8_alone_${mode} hello.f90
+      ARGS ${_on} -fdefault-double-8
+      LOG "Removed flag without -fdefault-real-8: -fdefault-double-8")
+  endforeach()
+
+  # --tau_build_uses_salt_flang, or SALT_BUILD_USES_SALT_FLANG, makes
+  # SALT-FM read the .mod files of a build and its libraries that use its
+  # Flang (#40). The fixture installs library module mylib, as the Flang
+  # driver writes it, in salt-flang/include, and module files that Flang
+  # refuses: one with a changed byte in salt-flang/checksum, one that
+  # gfortran writes, if found, in salt-flang/gfortran, and none in
+  # salt-flang/none.
+  if(_salt_test_flang)
+    set(_sf_dir ${SALT_TEST_OUTPUT_DIR}/salt-flang)
+    set(_sf_gfortran "")
+    if(SALT_GFORTRAN)
+      set(_sf_gfortran
+        "&& mkdir gfortran && \"$2\" -c -Jgfortran -o gfortran/mylib.o \"$1\"")
+    endif()
+    add_test(NAME make_mylib_mod
+      COMMAND sh -c "rm -rf \"$3\" && mkdir -p \"$3\" && cd \"$3\" &&
+        mkdir include checksum none && \"$0\" -c -Jinclude \"$1\" &&
+        cp include/mylib.mod checksum &&
+        echo '!x' >> checksum/mylib.mod ${_sf_gfortran}"
+        ${_salt_test_flang} ${CMAKE_SOURCE_DIR}/tests/fortran/mylib.f90
+        "${SALT_GFORTRAN}" ${_sf_dir})
+    set_tests_properties(make_mylib_mod PROPERTIES
+      FIXTURES_SETUP mylib_mod
+      LABELS "lang:Fortran;phase:setup")
+    set(_sf_on --tau_build_uses_salt_flang)
+    set(_sf_hint
+      "Note: the build and its libraries must use LLVM Flang ${LLVM_VERSION_MAJOR}.")
+    set(_sf_not_found "Source file 'mylib.saltmod' was not found")
+    # Adds test salt_flang_<name>: _salt_add_fortran_flags_test on
+    # use-mylib.f90 with ARGN, after the fixture.
+    function(_salt_add_salt_flang_test name)
+      _salt_add_fortran_flags_test(salt_flang_${name} use-mylib.f90 ${ARGN})
+      set_property(TEST salt_flang_${name} APPEND PROPERTY
+        FIXTURES_REQUIRED mylib_mod)
+    endfunction()
+    _salt_add_salt_flang_test(I ARGS ${_sf_on} -I${_sf_dir}/include)
+    _salt_add_salt_flang_test(J ARGS ${_sf_on} -J${_sf_dir}/include)
+    # The variable turns the option on unless it is empty or 0.
+    _salt_add_salt_flang_test(env ARGS -I${_sf_dir}/include)
+    _salt_add_salt_flang_test(env_0 FAILS ARGS -I${_sf_dir}/include
+      LOG "${_sf_not_found}" NOT_LOG "${_sf_hint}")
+    _salt_add_salt_flang_test(env_empty FAILS ARGS -I${_sf_dir}/include
+      LOG "${_sf_not_found}" NOT_LOG "${_sf_hint}")
+    set_property(TEST salt_flang_env APPEND PROPERTY
+      ENVIRONMENT_MODIFICATION "SALT_BUILD_USES_SALT_FLANG=set:1")
+    set_property(TEST salt_flang_env_0 APPEND PROPERTY
+      ENVIRONMENT_MODIFICATION "SALT_BUILD_USES_SALT_FLANG=set:0")
+    set_property(TEST salt_flang_env_empty APPEND PROPERTY
+      ENVIRONMENT_MODIFICATION "SALT_BUILD_USES_SALT_FLANG=set:")
+    # Off, Flang reads only .saltmod files, and gives no hint.
+    _salt_add_salt_flang_test(off FAILS ARGS -I${_sf_dir}/include
+      LOG "${_sf_not_found}" NOT_LOG "${_sf_hint}")
+    # When Flang refuses a module file, a hint follows its errors, but not
+    # when a module file is missing. The verb in `Cannot <verb> module
+    # file`, `read`, `parse`, or `use`, depends on the reason and the
+    # Flang version.
+    _salt_add_salt_flang_test(hint_checksum FAILS
+      ARGS ${_sf_on} -I${_sf_dir}/checksum
+      LOG "module 'mylib': File has invalid checksum" "${_sf_hint}")
+    _salt_add_salt_flang_test(hint_none FAILS ARGS ${_sf_on} -I${_sf_dir}/none
+      LOG "module 'mylib': Source file 'mylib.mod' was not found"
+      NOT_LOG "${_sf_hint}")
+    _salt_add_fortran_flags_test(salt_flang_hint_missing_and_checksum
+      use-missing-and-mylib.f90 FAILS ARGS ${_sf_on} -I${_sf_dir}/checksum
+      LOG "module 'missing_module': Source file 'missing_module.mod' was not found"
+        "module 'mylib': File has invalid checksum" "${_sf_hint}")
+    set_property(TEST salt_flang_hint_missing_and_checksum APPEND PROPERTY
+      FIXTURES_REQUIRED mylib_mod)
+    # Flang 19 says that the gfortran file has a bad character, Flang 23
+    # that it is not a module file, so only the missing .saltmod file of
+    # the off mode is excluded.
+    if(SALT_GFORTRAN)
+      _salt_add_salt_flang_test(hint_gfortran FAILS
+        ARGS ${_sf_on} -I${_sf_dir}/gfortran
+        LOG " module file for module 'mylib': " "${_sf_hint}"
+        NOT_LOG "was not found")
+    endif()
+    _salt_add_fortran_flags_test(salt_flang_omp_lib use-omp-lib.f90
+      ARGS ${_sf_on} -fopenmp NOT_LOG "Removed unknown flag")
+    # The parse of a module source of the project keeps the .mod file that
+    # the Flang driver wrote, and writes no .saltmod file.
+    add_test(NAME salt_flang_project_mod
+      COMMAND sh -c "rm -rf salt_flang_project && mkdir salt_flang_project &&
+        cd salt_flang_project && \"$0\" -c -J. \"$2\" &&
+        cp mylib.mod mylib.mod.orig &&
+        \"$1\" ${_sf_on} -J. --tau_output=out.inst.F90 \"$2\" || exit 1
+        cmp mylib.mod mylib.mod.orig || { echo 'mylib.mod changed'; exit 1; }
+        ! ls *.saltmod > /dev/null 2>&1 ||
+          { echo 'Did not expect a .saltmod file'; exit 1; }
+        grep -q TAU_PROFILE_START out.inst.F90 ||
+          { echo 'Expected a timer in out.inst.F90'; exit 1; }"
+        ${_salt_test_flang} ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+        ${CMAKE_SOURCE_DIR}/tests/fortran/mylib.f90)
+    set_tests_properties(salt_flang_project_mod PROPERTIES
+      ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
+      LABELS "lang:Fortran;phase:instrument")
+    _salt_in_test_output(instrument salt_flang_project_mod)
+    # Flang gets no -module-suffix, and SALT-FM's directory, which holds
+    # the original compiler modules. saltfm passes the option to
+    # fparse-llvm only.
+    string(CONCAT _sf_show "cmd: [^\n]* -fintrinsic-modules-path "
+      "[^ ]*/${SALT_INC_DIR} ")
+    foreach(tool saltfm fparse-llvm)
+      string(REPLACE "-llvm" "" _name ${tool}_show_build_uses_salt_flang)
+      add_test(NAME ${_name}
+        COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/${tool} --show
+                ${_sf_on} ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+      set_tests_properties(${_name} PROPERTIES
+        PASS_REGULAR_EXPRESSION "${_sf_show}"
+        FAIL_REGULAR_EXPRESSION "-module-suffix")
+    endforeach()
+    add_test(NAME fparse_show_build_uses_salt_flang_env
+      COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show
+              ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+    set_tests_properties(fparse_show_build_uses_salt_flang_env PROPERTIES
+      PASS_REGULAR_EXPRESSION "${_sf_show}"
+      FAIL_REGULAR_EXPRESSION "-module-suffix")
+    add_test(NAME saltfm_show_build_uses_salt_flang_c
+      COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
+              ${_sf_on} ${CMAKE_SOURCE_DIR}/tests/hello.c)
+    set_tests_properties(saltfm_show_build_uses_salt_flang_c PROPERTIES
+      PASS_REGULAR_EXPRESSION "^cparse-llvm "
+      FAIL_REGULAR_EXPRESSION "build_uses_salt_flang"
+      LABELS "lang:C;phase:smoke")
+    set_tests_properties(saltfm_show_build_uses_salt_flang
+      fparse_show_build_uses_salt_flang fparse_show_build_uses_salt_flang_env
+      PROPERTIES LABELS "lang:Fortran;phase:smoke")
+    set_tests_properties(saltfm_show_build_uses_salt_flang
+      fparse_show_build_uses_salt_flang fparse_show_build_uses_salt_flang_env
+      saltfm_show_build_uses_salt_flang_c PROPERTIES
+      ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}")
+    set_property(TEST fparse_show_build_uses_salt_flang_env APPEND PROPERTY
+      ENVIRONMENT_MODIFICATION "SALT_BUILD_USES_SALT_FLANG=set:1")
+  endif()
 
   _salt_add_output_error_tests(fortran hello.inst.F90 "lang:Fortran"
     ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)

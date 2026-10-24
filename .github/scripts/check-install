@@ -5,7 +5,9 @@
 # The tests run the tools in the build tree, so this checks that an
 # installed saltfm finds its libraries, plugin, and default configuration
 # file: it instruments a C and a Fortran source without --config_file,
-# and each output must have a timer. Run it from the source directory.
+# and a Fortran source with --tau_build_uses_salt_flang, which on Flang 23
+# on Linux needs the installed unchanged compiler modules, and each output
+# must have a timer. Run it from the source directory.
 #
 # Usage: .github/scripts/check-install <build dir> <install prefix>
 
@@ -21,3 +23,6 @@ salt="${prefix}/bin/saltfm"
 grep -q TAU_PROFILE_START "${prefix}/hello.inst.c"
 "${salt}" tests/fortran/hello.f90 --tau_output="${prefix}/hello.inst.F90"
 grep -q TAU_PROFILE_START "${prefix}/hello.inst.F90"
+"${salt}" --tau_build_uses_salt_flang tests/fortran/use-intrinsic-c-binding.f90 \
+    --tau_output="${prefix}/use-intrinsic-c-binding.inst.F90"
+grep -q TAU_PROFILE_START "${prefix}/use-intrinsic-c-binding.inst.F90"
