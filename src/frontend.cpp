@@ -22,13 +22,13 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/StringSaver.h"
 #include <algorithm>
-#include <cctype>
 #include <cstring>
 #include <iostream>
 #include <cstdlib>
 #include <string>
 #include <vector>
 
+#include "env_bool.hpp"
 #include "selectfile.hpp"
 
 using namespace clang;
@@ -99,19 +99,6 @@ llvm::cl::opt<std::string> selectfile("tau_select_file",
 static llvm::cl::opt<std::string> flang_exe("flang_exe", llvm::cl::desc("Flang driver for Fortran; ignored"),
                                             llvm::cl::value_desc("path"), llvm::cl::Hidden,
                                             llvm::cl::cat(MyToolCategory));
-
-// Whether environment variable `name` is set to a true value: anything
-// but empty, 0, false, no, or off, in any case.
-static bool getEnvBool(const char *name) {
-    const char *val = getenv(name);
-    if (val == nullptr) {
-        return false;
-    }
-    std::string s(val);
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
-    return !(s.empty() || s == "0" || s == "false" || s == "no" || s == "off");
-}
 
 llvm::cl::opt<bool> fabricate_unknown_types("tau_fabricate_unknown_types",
                                             llvm::cl::desc("Fabricate declarations for unknown qualified C++ names "

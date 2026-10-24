@@ -22,6 +22,8 @@ set -o pipefail
 #set -o verbose
 #set -o xtrace
 
+# The functions of src/salt-common.sh
+@SALT_COMMON_SH@
 readonly _VERSION="@SALT_VERSION_FULL@"
 # get the absolute path of this script, without `dirname`; a `\` also
 # separates directories, as under MSYS
@@ -64,7 +66,8 @@ TAU instrumentor options:
                                   libraries (for example MPI and HDF5). Without it,
                                   SALT-FM reads and writes only .saltmod files.
                                   (default: on if \$SALT_BUILD_USES_SALT_FLANG is set
-                                  and is not empty or 0, else off)
+                                  and is not empty, 0, false, no, or off, in any
+                                  case, else off)
   --tau_fabricate_unknown_types - Fabricate declarations for unknown qualified names (default: \$SALT_FABRICATE_UNKNOWN_TYPES, else false)
   --tau_instrument_inline       - Instrument inlined functions (default: false)
   --tau_excluded_main_setup=<none|routine|file>

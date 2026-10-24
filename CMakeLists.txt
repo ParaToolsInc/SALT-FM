@@ -526,6 +526,13 @@ else()
   message(STATUS "MLIR not found -- skipping Flang")
 endif()
 
+# The shell code that saltfm and fparse-llvm share, without its shebang,
+# for @SALT_COMMON_SH@ in their templates (#105)
+set(_salt_common_sh ${CMAKE_SOURCE_DIR}/src/salt-common.sh)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_salt_common_sh})
+file(READ ${_salt_common_sh} SALT_COMMON_SH)
+string(REGEX REPLACE "^#![^\n]*\n" "" SALT_COMMON_SH "${SALT_COMMON_SH}")
+
 if(MLIR_FOUND AND Flang_FOUND)
   message(STATUS "Found Flang -- will build Flang frontend plugin")
   set(SALT_MOD_SUFFIX ".saltmod" CACHE STRING
@@ -989,6 +996,19 @@ set_tests_properties(salt_parser_smoke_test
   LABELS "phase:smoke"
   PASS_REGULAR_EXPRESSION "OVERVIEW"
 )
+
+# Configure inlines src/salt-common.sh into the scripts (#105).
+set(_salt_common_scripts saltfm)
+if(TEST_FORTRAN)
+  list(APPEND _salt_common_scripts fparse-llvm)
+endif()
+foreach(script IN LISTS _salt_common_scripts)
+  add_test(NAME salt_common_sh_${script}
+    COMMAND grep -q "^function env_bool "
+      ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/${script})
+  set_tests_properties(salt_common_sh_${script} PROPERTIES
+    LABELS "phase:smoke")
+endforeach()
 
 # Map an entry from TESTS_LIST to a saltfm parser test (with a follow-up
 # check that the .inst file was emitted). Optional second argument overrides
@@ -4385,6 +4405,19 @@ if(TEST_FORTRAN)
       LOG "Removed flag without -fdefault-real-8: -fdefault-double-8")
   endforeach()
 
+  # SALT_FORTRAN_VERBOSE turns on the plugin's messages unless it is
+  # empty, 0, false, no, or off, in any case.
+  foreach(value 1 false Off)
+    set(_log NOT_LOG)
+    if(value STREQUAL "1")
+      set(_log LOG)
+    endif()
+    _salt_add_fortran_flags_test(fortran_verbose_env_${value} hello.f90
+      ${_log} "SALT Instrumentor Plugin finished")
+    set_property(TEST fortran_verbose_env_${value} APPEND PROPERTY
+      ENVIRONMENT_MODIFICATION "SALT_FORTRAN_VERBOSE=set:${value}")
+  endforeach()
+
   # --tau_build_uses_salt_flang, or SALT_BUILD_USES_SALT_FLANG, makes
   # SALT-FM read the .mod files of a build and its libraries that use its
   # Flang (#40). The fixture installs library module mylib, as the Flang
@@ -4422,18 +4455,18 @@ if(TEST_FORTRAN)
     endfunction()
     _salt_add_salt_flang_test(I ARGS ${_sf_on} -I${_sf_dir}/include)
     _salt_add_salt_flang_test(J ARGS ${_sf_on} -J${_sf_dir}/include)
-    # The variable turns the option on unless it is empty or 0.
+    # The variable turns the option on unless it is empty, 0, false, no,
+    # or off, in any case.
     _salt_add_salt_flang_test(env ARGS -I${_sf_dir}/include)
-    _salt_add_salt_flang_test(env_0 FAILS ARGS -I${_sf_dir}/include
-      LOG "${_sf_not_found}" NOT_LOG "${_sf_hint}")
-    _salt_add_salt_flang_test(env_empty FAILS ARGS -I${_sf_dir}/include
-      LOG "${_sf_not_found}" NOT_LOG "${_sf_hint}")
     set_property(TEST salt_flang_env APPEND PROPERTY
       ENVIRONMENT_MODIFICATION "SALT_BUILD_USES_SALT_FLANG=set:1")
-    set_property(TEST salt_flang_env_0 APPEND PROPERTY
-      ENVIRONMENT_MODIFICATION "SALT_BUILD_USES_SALT_FLANG=set:0")
-    set_property(TEST salt_flang_env_empty APPEND PROPERTY
-      ENVIRONMENT_MODIFICATION "SALT_BUILD_USES_SALT_FLANG=set:")
+    foreach(value empty 0 false NO Off)
+      _salt_add_salt_flang_test(env_${value} FAILS ARGS -I${_sf_dir}/include
+        LOG "${_sf_not_found}" NOT_LOG "${_sf_hint}")
+      string(REPLACE "empty" "" _set "${value}")
+      set_property(TEST salt_flang_env_${value} APPEND PROPERTY
+        ENVIRONMENT_MODIFICATION "SALT_BUILD_USES_SALT_FLANG=set:${_set}")
+    endforeach()
     # Off, Flang reads only .saltmod files, and gives no hint.
     _salt_add_salt_flang_test(off FAILS ARGS -I${_sf_dir}/include
       LOG "${_sf_not_found}" NOT_LOG "${_sf_hint}")

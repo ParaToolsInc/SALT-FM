@@ -8,7 +8,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - The new `--tau_build_uses_salt_flang` option of `saltfm` and
   `fparse-llvm`, or the `SALT_BUILD_USES_SALT_FLANG` environment
-  variable, is for a build that compiles with the same LLVM Flang
+  variable set to any value except empty, `0`, `false`, `no`, or `off`,
+  in any case, is for a build that compiles with the same LLVM Flang
   version that SALT-FM parses with. The Fortran parse then reads and
   writes `.mod` files instead of `.saltmod` files, so it finds the
   modules of the build and of its libraries, such as `use mpi`. SALT-FM
@@ -22,6 +23,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   still removes `-fdefault-double-8` without `-fdefault-real-8`, which
   Flang refuses and gfortran accepts
   ([#40](https://github.com/ParaToolsInc/SALT-FM/issues/40)).
+- `SALT_FORTRAN_VERBOSE` follows the rule of the other on/off
+  environment variables: `false`, `no`, and `off`, in any case, now
+  turn the Flang plugin's messages off, as empty and `0` do.
 - The Flang plugin builds and runs with LLVM and Flang 23: it follows
   the renamed OpenMP parse-tree nodes, finds the intrinsic modules in
   the Clang resource directory, and passes them to the frontend as
