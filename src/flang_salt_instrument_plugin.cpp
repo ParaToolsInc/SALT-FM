@@ -199,9 +199,14 @@ namespace salt::fortran {
             // When an InternalSubprogramPart is present (a `contains`
             // section), the procedure's body ends just before the
             // ContainsStmt; otherwise it ends just before the End statement.
+            //
+            // endLineOut and containsLineOut are physical lines of the
+            // input, where the TAU calls go.  nameEndLineOut is the line
+            // of the body's end as `#line` directives number it, for the
+            // timer name.
             template <typename SubprogramT, typename EndStmtT>
             void captureBodyEndLines(const SubprogramT &subprogram, int &endLineOut, int &endColOut,
-                                     int &containsLineOut) {
+                                     int &containsLineOut, int &nameEndLineOut) {
                 // Reset so a procedure that has no `contains` does not inherit
                 // its parent's containsLine bookkeeping.  Without this, an
                 // internal procedure walked from inside an outer procedure
@@ -212,9 +217,11 @@ namespace salt::fortran {
                 endLineOut = 0;
                 endColOut = 1;
                 containsLineOut = 0;
+                nameEndLineOut = 0;
                 const auto &endStmt = std::get<Fortran::parser::Statement<EndStmtT> >(subprogram.t);
                 if (const auto pos = locationFromSource(parsing, endStmt.source, false); pos.has_value()) {
-                    endLineOut = pos.value().line;
+                    endLineOut = pos.value().trueLineNumber;
+                    nameEndLineOut = pos.value().line;
                 }
                 if (const auto pos = locationFromSource(parsing, endStmt.source, true); pos.has_value()) {
                     endColOut = pos.value().column > 1 ? pos.value().column - 1 : 1;
@@ -226,7 +233,8 @@ namespace salt::fortran {
                         std::get<Fortran::parser::Statement<Fortran::parser::ContainsStmt> >(
                             maybeInternalPart.value().t);
                     if (const auto pos = locationFromSource(parsing, containsStmt.source, false); pos.has_value()) {
-                        containsLineOut = pos.value().line;
+                        containsLineOut = pos.value().trueLineNumber;
+                        nameEndLineOut = pos.value().line;
                     }
                 }
             }
@@ -264,14 +272,16 @@ namespace salt::fortran {
             bool Pre(const Fortran::parser::MainProgram &mainProgram) {
                 isInMainProgram_ = true;
                 captureBodyEndLines<Fortran::parser::MainProgram, Fortran::parser::EndProgramStmt>(
-                    mainProgram, mainProgramEndLine_, mainProgramEndCol_, mainProgramContainsLine_);
+                    mainProgram, mainProgramEndLine_, mainProgramEndCol_, mainProgramContainsLine_,
+                    mainProgramNameEndLine_);
                 mainProgramStartCol_ = captureMainProgramStartCol(mainProgram);
                 return true;
             }
 
             bool Pre(const Fortran::parser::SubroutineSubprogram &subprogram) {
                 captureBodyEndLines<Fortran::parser::SubroutineSubprogram, Fortran::parser::EndSubroutineStmt>(
-                    subprogram, subProgramEndLine_, subProgramEndCol_, subProgramContainsLine_);
+                    subprogram, subProgramEndLine_, subProgramEndCol_, subProgramContainsLine_,
+                    subProgramNameEndLine_);
                 subProgramStartCol_ =
                     captureStartCol<Fortran::parser::SubroutineSubprogram, Fortran::parser::SubroutineStmt>(
                         subprogram);
@@ -280,7 +290,8 @@ namespace salt::fortran {
 
             bool Pre(const Fortran::parser::FunctionSubprogram &subprogram) {
                 captureBodyEndLines<Fortran::parser::FunctionSubprogram, Fortran::parser::EndFunctionStmt>(
-                    subprogram, subProgramEndLine_, subProgramEndCol_, subProgramContainsLine_);
+                    subprogram, subProgramEndLine_, subProgramEndCol_, subProgramContainsLine_,
+                    subProgramNameEndLine_);
                 subProgramStartCol_ =
                     captureStartCol<Fortran::parser::FunctionSubprogram, Fortran::parser::FunctionStmt>(subprogram);
                 return true;
@@ -296,7 +307,8 @@ namespace salt::fortran {
                 captureBodyEndLines<
                     Fortran::parser::SeparateModuleSubprogram,
                     Fortran::parser::EndMpSubprogramStmt>(
-                    subprogram, subProgramEndLine_, subProgramEndCol_, subProgramContainsLine_);
+                    subprogram, subProgramEndLine_, subProgramEndCol_, subProgramContainsLine_,
+                    subProgramNameEndLine_);
                 subProgramStartCol_ =
                     captureStartCol<Fortran::parser::SeparateModuleSubprogram,
                         Fortran::parser::MpSubprogramStmt>(subprogram);
@@ -310,11 +322,22 @@ namespace salt::fortran {
                 mainProgramEndCol_ = 1;
                 mainProgramStartCol_ = 1;
                 mainProgramContainsLine_ = 0;
+                mainProgramNameEndLine_ = 0;
+            }
+
+            // Capture the line and file of a procedure's name as `#line`
+            // directives give them, as compiler messages do, for the
+            // timer name.
+            void captureNameStart(const Fortran::parser::CharBlock &source, int &lineOut,
+                                  std::string &pathOut) const {
+                const auto pos{parsing->allCooked().GetSourcePositionRange(source)->first};
+                lineOut = pos.line;
+                pathOut = *pos.path;
             }
 
             void Post(const Fortran::parser::ProgramStmt &program) {
                 mainProgramName_ = program.v.ToString();
-                mainProgramLine_ = parsing->allCooked().GetSourcePositionRange(program.v.source)->first.line;
+                captureNameStart(program.v.source, mainProgramLine_, mainProgramPath_);
                 verboseStream() << "Enter main program: " << mainProgramName_ << "\n";
             }
 
@@ -378,7 +401,7 @@ namespace salt::fortran {
                 isInMainProgram_ = false;
                 const auto &name = std::get<Fortran::parser::Name>(subroutineStmt.t);
                 subprogramName_ = name.ToString();
-                subProgramLine_ = parsing->allCooked().GetSourcePositionRange(name.source)->first.line;
+                captureNameStart(name.source, subProgramLine_, subProgramPath_);
                 verboseStream() << "Enter Subroutine: " << subprogramName_ << "\n";
                 if (prefixSkipsInstrumentation(std::get<std::list<Fortran::parser::PrefixSpec> >(subroutineStmt.t))) {
                     notePureOrElementalSkip(subprogramName_, name.source);
@@ -399,13 +422,14 @@ namespace salt::fortran {
                 subProgramEndCol_ = 1;
                 subProgramStartCol_ = 1;
                 subProgramContainsLine_ = 0;
+                subProgramNameEndLine_ = 0;
             }
 
             bool Pre(const Fortran::parser::FunctionStmt &functionStmt) {
                 isInMainProgram_ = false;
                 const auto &name = std::get<Fortran::parser::Name>(functionStmt.t);
                 subprogramName_ = name.ToString();
-                subProgramLine_ = parsing->allCooked().GetSourcePositionRange(name.source)->first.line;
+                captureNameStart(name.source, subProgramLine_, subProgramPath_);
                 verboseStream() << "Enter Function: " << subprogramName_ << "\n";
                 if (prefixSkipsInstrumentation(std::get<std::list<Fortran::parser::PrefixSpec> >(functionStmt.t))) {
                     notePureOrElementalSkip(subprogramName_, name.source);
@@ -427,6 +451,7 @@ namespace salt::fortran {
                 subProgramEndCol_ = 1;
                 subProgramStartCol_ = 1;
                 subProgramContainsLine_ = 0;
+                subProgramNameEndLine_ = 0;
             }
 
             // Header statement for a separate module procedure body
@@ -438,7 +463,7 @@ namespace salt::fortran {
             bool Pre(const Fortran::parser::MpSubprogramStmt &mpStmt) {
                 isInMainProgram_ = false;
                 subprogramName_ = mpStmt.v.ToString();
-                subProgramLine_ = parsing->allCooked().GetSourcePositionRange(mpStmt.v.source)->first.line;
+                captureNameStart(mpStmt.v.source, subProgramLine_, subProgramPath_);
                 verboseStream() << "Enter Module Procedure: " << subprogramName_ << "\n";
                 if (symbolSkipsInstrumentation(mpStmt.v.symbol)) {
                     notePureOrElementalSkip(subprogramName_, mpStmt.v.source);
@@ -460,6 +485,7 @@ namespace salt::fortran {
                 subProgramEndCol_ = 1;
                 subProgramStartCol_ = 1;
                 subProgramContainsLine_ = 0;
+                subProgramNameEndLine_ = 0;
             }
 
             // Split handling of ExecutionPart into two phases
@@ -530,22 +556,28 @@ namespace salt::fortran {
                     // `_implicit_main_` marker (won't collide with any
                     // user symbol since `-` is not a valid Fortran ident
                     // character), and use the first-executable-stmt line.
+                    //
+                    // The file and lines of the name are those that `#line`
+                    // directives give, as in compiler messages.
                     std::string procName;
+                    std::string procPath;
                     int procStartLine;
                     if (isInMainProgram_ && mainProgramName_.empty()) {
-                        procName = std::filesystem::path(startLoc.sourceFile->path()).stem().string()
+                        procName = std::filesystem::path(*startLoc.path).stem().string()
                                 + "._implicit_main_";
+                        procPath = *startLoc.path;
                         procStartLine = startLoc.line;
                     } else {
                         procName = isInMainProgram_ ? mainProgramName_ : subprogramName_;
+                        procPath = isInMainProgram_ ? mainProgramPath_ : subProgramPath_;
                         procStartLine = isInMainProgram_ ? mainProgramLine_ : subProgramLine_;
                     }
                     std::stringstream ss;
                     ss << procName;
-                    ss << " [{" << startLoc.sourceFile->path() << "} {";
+                    ss << " [{" << procPath << "} {";
                     ss << procStartLine;
                     ss << "," << startCol << "}-{";
-                    ss << endLine + 1;
+                    ss << (isInMainProgram_ ? mainProgramNameEndLine_ : subProgramNameEndLine_);
                     ss << "," << endCol << "}]";
 
                     const std::string timerName{ss.str()};
@@ -580,16 +612,16 @@ namespace salt::fortran {
                                 " due to selective instrumentation\n";
                         skipInstrumentSubprogram_ = true;
                         if (mainSetup_) {
-                            addProgramSetupInstrumentation(startLoc.line, splitTimerName);
+                            addProgramSetupInstrumentation(startLoc.trueLineNumber, splitTimerName);
                         }
                     } else if (isInMainProgram_) {
-                        verboseStream() << "Program begin \"" << mainProgramName_ << "\" at " << startLoc.line <<
-                                ", " << startLoc.column << "\n";
-                        addProgramBeginInstrumentation(startLoc.line, splitTimerName);
+                        verboseStream() << "Program begin \"" << mainProgramName_ << "\" at " <<
+                                startLoc.trueLineNumber << ", " << startLoc.column << "\n";
+                        addProgramBeginInstrumentation(startLoc.trueLineNumber, splitTimerName);
                     } else {
-                        verboseStream() << "Subprogram begin \"" << subprogramName_ << "\" at " << startLoc.line <<
-                                ", " << startLoc.column << "\n";
-                        addProcedureBeginInstrumentation(startLoc.line, splitTimerName);
+                        verboseStream() << "Subprogram begin \"" << subprogramName_ << "\" at " <<
+                                startLoc.trueLineNumber << ", " << startLoc.column << "\n";
+                        addProcedureBeginInstrumentation(startLoc.trueLineNumber, splitTimerName);
                     }
                 } else {
                     verboseStream() << "End at line " << endLine << "\n";
@@ -637,7 +669,7 @@ namespace salt::fortran {
                             DIE("SALT: cooked-source mapping unavailable for ReturnStmt; "
                                 "refusing to emit unbalanced TAU timers");
                         }
-                        const int returnLine{returnPos->line};
+                        const int returnLine{returnPos->trueLineNumber};
                         verboseStream() << "Return statement at " << returnLine << "\n";
                         addReturnStmtInstrumentation(returnLine);
                     } else if (const auto ifInd = std::get_if<Fortran::common::Indirection<Fortran::parser::IfStmt> >(
@@ -677,15 +709,15 @@ namespace salt::fortran {
                                     innerRet->value().v.value().thing.thing.value().source.ToString();
                                 noteAlternateReturn(actionStmt->source, /*insideIfStmt=*/true);
                             }
-                            verboseStream() << "If-return spans lines " << startPos.line << "-" << endPos.line
-                                    << ", condition: " << conditionText
+                            verboseStream() << "If-return spans lines " << startPos.trueLineNumber << "-"
+                                    << endPos.trueLineNumber << ", condition: " << conditionText
                                     << (returnExprText.empty() ? "" : ", return expr: " + returnExprText)
                                     << (actionStmt->label.has_value()
                                             ? ", label: " + std::to_string(actionStmt->label.value())
                                             : "")
                                     << "\n";
-                            addIfReturnStmtInstrumentation(startPos.line, endPos.line, conditionText,
-                                                           returnExprText, actionStmt->label);
+                            addIfReturnStmtInstrumentation(startPos.trueLineNumber, endPos.trueLineNumber,
+                                                           conditionText, returnExprText, actionStmt->label);
                         }
                     }
                 }
@@ -718,8 +750,12 @@ namespace salt::fortran {
             // Keeps track of current state of traversal
             bool isInMainProgram_{false};
             std::string mainProgramName_;
+            // The line and file of the name, and the line of the body's
+            // end, for the timer name, as `#line` directives give them
             int mainProgramLine_{0};
-            // Line numbers of the wrapping End{Program,Subroutine,Function}Stmt
+            std::string mainProgramPath_;
+            int mainProgramNameEndLine_{0};
+            // Physical line numbers of the wrapping End{Program,Subroutine,Function}Stmt
             // and (when present) the ContainsStmt that begins the
             // InternalSubprogramPart.  Used to bound the procedure's
             // executable section from above instead of relying on the last
@@ -736,6 +772,8 @@ namespace salt::fortran {
             int mainProgramEndCol_{1};
             std::string subprogramName_;
             int subProgramLine_{0};
+            std::string subProgramPath_;
+            int subProgramNameEndLine_{0};
             int subProgramEndLine_{0};
             int subProgramContainsLine_{0};
             int subProgramStartCol_{1};
@@ -783,13 +821,6 @@ namespace salt::fortran {
             const auto &instPts{visitor.getInstrumentationPoints()};
 
             verboseStream() << "Will perform instrumentation:\n" << visitor.dumpInstrumentationPoints();
-
-            // Sanity check: are instrumentation points in the right order?
-            if (!std::is_sorted(instPts.cbegin(), instPts.cend(), [&](const auto &p1, const auto &p2) {
-                return *p1 < *p2;
-            })) {
-                DIE("ERROR: Instrumentation points not sorted by line number!\n");
-            }
 
             outputStream << lineDirective(1, inputFilePath) << "\n";
 
@@ -1059,6 +1090,17 @@ namespace salt::fortran {
                 if (!inputFileExtension.empty()) {
                     inputFileExtension[0] = static_cast<char>(std::toupper(inputFileExtension[0]));
                 }
+            }
+
+            // Check the order of the instrumentation points before the output is
+            // opened, so points out of line order leave no output
+            if (const auto &instPts{visitor.getInstrumentationPoints()};
+                !std::is_sorted(instPts.cbegin(), instPts.cend(), [](const auto &p1, const auto &p2) {
+                    return *p1 < *p2;
+                })) {
+                llvm::errs() << "ERROR: Instrumentation points of " << inputFilePath.string()
+                        << " are not in line order, as when an included file holds instrumented code\n";
+                std::exit(EXIT_FAILURE);
             }
 
             // Open the input before the output, so an input error leaves no output

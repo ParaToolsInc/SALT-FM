@@ -17,6 +17,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--o`, or `--output` and its value are build options, not a source.
   Giving the output file more than once, with `-o` or `--tau_output`,
   is an error ([#111](https://github.com/ParaToolsInc/SALT-FM/issues/111)).
+- `saltfm` puts each TAU call of a Fortran source on its line of the
+  source when the source has `#line` lines, such as `#line 100
+  "orig.f90"` or the `# 100 "orig.f90"` line markers of `cpp` and fypp.
+  Before, it used the line numbers of the `#line` lines, so it wrote no
+  TAU calls or put them on wrong lines, with exit status 0, or Flang
+  aborted, as with an instrumented output as the input. The timer
+  names give the file and lines of the `#line` lines, as compiler
+  messages do. When the instrumentation points are out of line order,
+  which instrumented code in an included file can cause, `saltfm` stops
+  with an error and exit status 1 and writes no output, instead of
+  aborting ([#112](https://github.com/ParaToolsInc/SALT-FM/issues/112)).
 - The new `--tau_build_uses_salt_flang` option of `saltfm` and
   `fparse-llvm`, or the `SALT_BUILD_USES_SALT_FLANG` environment
   variable set to any value except empty, `0`, `false`, `no`, or `off`,
