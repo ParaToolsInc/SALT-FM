@@ -33,8 +33,15 @@
 
 using namespace clang;
 
-llvm::cl::opt<std::string> outputfile("tau_output", llvm::cl::desc("Specify name of output instrumented file"),
+llvm::cl::opt<std::string> outputfile("tau_output",
+                                      llvm::cl::desc("Specify name of output instrumented file; needs exactly one source"),
                                       llvm::cl::value_desc("filename"), llvm::cl::cat(MyToolCategory));
+
+// Only before `--`; after it, -o is a build option, which Clang's tooling drops. The help shows
+// no value for an alias, so the description names it
+static llvm::cl::alias outputfile_o("o",
+                                    llvm::cl::desc("Same as --tau_output=<filename>, before --; after --, a build option"),
+                                    llvm::cl::aliasopt(outputfile), llvm::cl::NotHidden);
 
 std::string getExecutablePath() {
     char buffer[1024];
@@ -274,8 +281,8 @@ static bool prepareOutput(std::vector<std::string> inputs)
 }
 
 // The arguments that can name an input when the option parser fails and gives no source list:
-// all but the value of a separate --tau_output, with response files expanded as the parser does.
-// `create` has already cut `argc` at `--`, as the parser reads it.
+// all but the value of a separate --tau_output or -o, with response files expanded as the parser
+// does. `create` has already cut `argc` at `--`, as the parser reads it.
 static std::vector<std::string> argumentInputs(int argc, const char *const *argv)
 {
     llvm::BumpPtrAllocator allocator;
@@ -283,13 +290,13 @@ static std::vector<std::string> argumentInputs(int argc, const char *const *argv
     llvm::SmallVector<const char *, 20> args;
     llvm::cl::expandResponseFiles(argc, argv, nullptr, saver, args);
     std::vector<std::string> inputs;
-    // shortcut: this skips the word after any --tau_output or -tau_output, even when that word is
-    // the value of the option before it, as in `--tau_select_file --tau_output src.c`, so an
-    // option error can remove src.c; fix it if real builds pass such arguments.
+    // shortcut: this skips the word after any --tau_output, -tau_output, or -o, even when that
+    // word is the value of the option before it, as in `--tau_select_file --tau_output src.c`, so
+    // an option error can remove src.c; fix it if real builds pass such arguments.
     for (size_t i = 0; i < args.size(); ++i)
     {
         llvm::StringRef previous = i > 0 ? args[i - 1] : "";
-        if (previous != "--tau_output" && previous != "-tau_output")
+        if (previous != "--tau_output" && previous != "-tau_output" && previous != "-o")
         {
             inputs.push_back(args[i]);
         }
@@ -315,8 +322,9 @@ int main(int argc, const char **argv)
     //Get source paths
     auto ExpectedParser =
         tooling::CommonOptionsParser::create(new_argc, (const char **)new_argv, MyToolCategory, llvm::cl::OneOrMore,
-                                             "Tool for adding TAU instrumentation to source files.\nNote that this "
-                                             "will only instrument the first source file given.");
+                                             "Tool for adding TAU instrumentation to source files.\nEach source "
+                                             "file gets its own output; --tau_output and -o need exactly one\n"
+                                             "source file.");
 
     if (!ExpectedParser)
     {
@@ -335,12 +343,26 @@ int main(int argc, const char **argv)
     {
         return EXIT_FAILURE;
     }
+    // The option parser keeps the last value
+    if (outputfile.getNumOccurrences() > 1)
+    {
+        llvm::errs() << "ERROR: give -o or --tau_output only once\n";
+        return EXIT_FAILURE;
+    }
+    // Each source would write the same output, so only the last one would be in it
+    if (outputfile.getNumOccurrences() > 0 && OptionsParser.getSourcePathList().size() > 1)
+    {
+        llvm::errs() << "ERROR: -o or --tau_output needs exactly one source file; got "
+                     << OptionsParser.getSourcePathList().size() << "\n";
+        return EXIT_FAILURE;
+    }
     // An empty value is not a file; SALT_CONFIG_FILE and the default never give one
     for (const llvm::cl::opt<std::string> *option : {&configfile, &flang_exe, &outputfile, &selectfile})
     {
         if (option->getNumOccurrences() > 0 && option->empty())
         {
-            llvm::errs() << "ERROR: --" << option->ArgStr << " needs a path\n";
+            llvm::errs() << "ERROR: " << (option == &outputfile ? "-o or " : "") << "--" << option->ArgStr
+                         << " needs a path\n";
             return EXIT_FAILURE;
         }
     }

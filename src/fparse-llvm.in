@@ -44,7 +44,9 @@ SALT_PLUGIN_SO="${_SCRIPT_DIR}/../@CMAKE_INSTALL_LIBDIR@/${_SALTFM_PLUGIN_SO}"
 
 read -r -d '' _USAGE <<EOF || true
 OVERVIEW: Tool for adding TAU instrumentation to source files.
-Note that this will only instrument the first source file given.
+With more than one source file and no output option, only the last one is
+instrumented; the others are ignored. --tau_output and -o need exactly one
+source file.
 USAGE: $0 [options] <source0> [... <sourceN>]
 
 OPTIONS:
@@ -103,7 +105,8 @@ TAU instrumentor options:
                                  With --tau_excluded_main_setup=file, SALT-FM parses all
                                  files, and this option has no effect.
                                  (default: modules-only)
-  --tau_output=<filename>      - Specify name of output instrumented file
+  --tau_output=<filename>      - Specify name of output instrumented file; needs exactly one source
+  -o <filename>                - Same as --tau_output, before --; after --, a build option
   --tau_select_file=<filename> - Provide a selective instrumentation specification file
   --show                       - Print the command line that would be executed by the wrapper script
 EOF
@@ -231,6 +234,13 @@ expecting_select_file=false
 expecting_flang_exe=false
 expecting_excluded_main_setup=false
 expecting_parse_excluded_modules=false
+# After `--`, -o is a build option, not the output, and its value is no source
+after_dashes=false
+expecting_build_output=false
+# The numbers of -o and --tau_output options, and of sources
+output_options=0
+sources=0
+unknown_o_option=
 # Only the arguments set these, not environment variables of the same names
 unset FORTRAN_CONFIG_FILE flang_exe input_file output_file select_file
 excluded_main_setup=routine
@@ -259,6 +269,11 @@ for arg in "$@"; do
         shift
         continue
         #echo "args remaining: $*"
+    elif $expecting_build_output; then
+        echo "Removed build output: $arg"
+        expecting_build_output=false
+        shift
+        continue
     elif $expecting_config_file; then
         FORTRAN_CONFIG_FILE="$arg"
         expecting_config_file=false
@@ -304,14 +319,28 @@ for arg in "$@"; do
     elif [[ $arg == --tau_build_uses_salt_flang ]]; then
         build_uses_salt_flang=true
         shift || true
-    elif [[ $arg == --tau_output ]]; then
+    # As in LLVM's option parser for C, -o and --o take `<file>` or `=<file>`
+    elif [[ $arg == --tau_output || ($arg =~ ^--?o$ && $after_dashes == false) ]]; then
         expecting_output_file=true
+        output_options=$((output_options + 1))
         shift || true
         #echo "args remaining: $*"
-    elif [[ $arg == --tau_output=* ]]; then
-        output_file="${arg#--tau_output=}"
+    elif [[ $arg == --tau_output=* || ($arg =~ ^--?o= && $after_dashes == false) ]]; then
+        output_file="${arg#*=}"
+        output_options=$((output_options + 1))
         shift || true
         #echo "args remaining: $*"
+    # Such as -o<file>, which LLVM's option parser refuses for C; the error
+    # comes after the removal of a stale output, as for C
+    elif [[ $arg =~ ^--?o && $after_dashes == false ]]; then
+        unknown_o_option="$arg"
+        shift || true
+    # After `--`, also --output, which Clang reads as -o, and --o, as before
+    # `--`; Clang reads -output as -o utput
+    elif [[ $arg =~ ^(--?o|--output)$ ]]; then
+        expecting_build_output=true
+        echo "Removed build flag: $arg"
+        shift || true
     elif [[ $arg == --tau_select_file ]]; then
         expecting_select_file=true
         shift || true
@@ -324,6 +353,7 @@ for arg in "$@"; do
     # in a flag, such as -DSRC=util.f08
     elif [[ $arg != -* && $arg =~ \.(f|F|for|FOR|ftn|FTN|f77|fpp|FPP|[fF](90|95|03|08|18))$ ]]; then
         input_file="$arg"
+        sources=$((sources + 1))
         shift || true
         #echo "args remaining: $*"
     elif [[ $arg == --show ]]; then
@@ -340,6 +370,9 @@ for arg in "$@"; do
         #echo "args remaining: $*"
     # Begin sanitizing options/flags that cause the frontend plugin to throw an error
     elif [[ ${arg:-} =~ $_BLACKLISTED_REGEX ]]; then
+        if [[ $arg == -- ]]; then
+            after_dashes=true
+        fi
         shift || true
         echo "Removed blacklisted flag: $arg"
     elif [[ "${arg:-}" =~ $_WHITELISTED_WARNING_REGEX ]]; then
@@ -408,6 +441,19 @@ if ! $show && ! $version && [[ -f ${output_file:-} && -w ${output_file} ]] &&
     echo "ERROR: Could not remove output file ${output_file}: ${rm_err##*: }" >&2
     exit 1
 fi
+if [[ -n ${unknown_o_option} ]]; then
+    echo "ERROR: Unknown command line argument '${unknown_o_option}'" >&2
+    exit 1
+fi
+# The loop keeps the last output and the last source
+if [[ ${output_options} -gt 1 ]]; then
+    echo "ERROR: give -o or --tau_output only once" >&2
+    exit 1
+fi
+if [[ ${output_options} -gt 0 && ${sources} -gt 1 ]]; then
+    echo "ERROR: -o or --tau_output needs exactly one source file; got ${sources}" >&2
+    exit 1
+fi
 
 if $expecting_excluded_main_setup; then
     echo "WARNING: --tau_excluded_main_setup needs a value; using ${excluded_main_setup}" >&2
@@ -429,17 +475,17 @@ case ${parse_excluded_modules} in
         exit 1
         ;;
 esac
-# Stops when option `--$1` ends the arguments without a value, as `$2`
+# Stops when option `$1` ends the arguments without a value, as `$2`
 # (true or false) says, or when it sets variable `$3` to an empty value
 function require_path {
     if $2 || [[ -n ${!3+set} && -z ${!3} ]]; then
-        echo "ERROR: --$1 needs a path" >&2
+        echo "ERROR: $1 needs a path" >&2
         exit 1
     fi
 }
-require_path flang_exe "${expecting_flang_exe}" flang_exe
-require_path tau_output "${expecting_output_file}" output_file
-require_path tau_select_file "${expecting_select_file}" select_file
+require_path --flang_exe "${expecting_flang_exe}" flang_exe
+require_path "-o or --tau_output" "${expecting_output_file}" output_file
+require_path --tau_select_file "${expecting_select_file}" select_file
 if $expecting_config_file || [[ -z ${FORTRAN_CONFIG_FILE} ]]; then
     echo "ERROR: --config_file needs a path" >&2
     exit 1

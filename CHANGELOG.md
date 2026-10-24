@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- `saltfm` stops with an error, and writes no output, when
+  `--tau_output` comes with more than one source, instead of writing
+  only the last source to the output
+  ([#111](https://github.com/ParaToolsInc/SALT-FM/issues/111)).
+- Before `--`, `-o <file>`, `-o=<file>`, `--o <file>`, and
+  `--o=<file>` name the output file, as `--tau_output` does, and
+  `-o<file>` is an error. C and C++ refused `-o`, and
+  Fortran ignored it or took `<file>` as the source. After `--`, `-o`,
+  `--o`, or `--output` and its value are build options, not a source.
+  Giving the output file more than once, with `-o` or `--tau_output`,
+  is an error ([#111](https://github.com/ParaToolsInc/SALT-FM/issues/111)).
 - The new `--tau_build_uses_salt_flang` option of `saltfm` and
   `fparse-llvm`, or the `SALT_BUILD_USES_SALT_FLANG` environment
   variable set to any value except empty, `0`, `false`, `no`, or `off`,

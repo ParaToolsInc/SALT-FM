@@ -1312,6 +1312,11 @@ add_test(NAME make_clang_error_outputs
         echo stale > no_path_\${opt}_\${end}.out || exit 1; done; done &&
     echo stale > no_path_space_c.out &&
     echo stale > no_path_dash_space_c.out &&
+    echo stale > no_path_o_c.out &&
+    rm -f o_* multi_source_one.inst.* tau_output_twice_* &&
+    cp ${_tests}/hello.c o_after_dashes_c.c &&
+    cp ${_tests}/fortran/hello.f90 o_after_dashes_fortran.f90 &&
+    echo stale > o_joined_fortran.out &&
     cp ${_tests}/hello.c no_path_self_c.c &&
     cp ${_tests}/hello.c no_path_rsp_c.c &&
     echo no_path_rsp_c.c > no_path_rsp_c.rsp &&
@@ -1419,11 +1424,54 @@ _salt_add_clang_error_test(clang_error_ro_output clang_error_ro.inst.c
 # onto it fails, or, as root, replaces the device.
 _salt_add_clang_error_test(dev_null_c /dev/null "lang:C" hello.c EXIT_ZERO
   CHECK "-c /dev/null")
-# With more than one source and one --tau_output, the output is that of
-# the last source.
+# With more than one source, --tau_output is an error before a parse,
+# which would report the errors in clang_error.c.
 _salt_add_clang_error_test(multi_source_one_output multi_source_one.inst.c
-  "lang:C" hello.c EXIT_ZERO CHECK "-s multi_source_one.inst.c"
-  TAIL ${CMAKE_SOURCE_DIR}/tests/sif_nomain.c OUT "keep_routine")
+  "lang:C" hello.c TAIL ${CMAKE_SOURCE_DIR}/tests/clang_error.c
+  LOG "ERROR: -o or --tau_output needs exactly one source file; got 2"
+  NOT_LOG "error:")
+# -o names the output as --tau_output does, before or after the source,
+# but not after `--`, where it is a build option. With --tau_output, it
+# is an error.
+_salt_add_clang_error_test(o_before_source_c o_before_source_c.out "lang:C"
+  hello.c DEFAULT_OUTPUT EXIT_ZERO CHECK "-s o_before_source_c.out"
+  ARGS -o o_before_source_c.out OUT "TAU_PROFILE_START")
+_salt_add_clang_error_test(o_after_source_c o_after_source_c.out "lang:C"
+  hello.c DEFAULT_OUTPUT EXIT_ZERO CHECK "-s o_after_source_c.out"
+  TAIL -o o_after_source_c.out OUT "TAU_PROFILE_START")
+# Guard: fails if the option parser read -o after `--` as the output.
+_salt_add_clang_error_test(o_after_dashes_c o_after_dashes_c.inst.c "lang:C"
+  ${SALT_TEST_OUTPUT_DIR}/output_error/o_after_dashes_c.c DEFAULT_OUTPUT
+  EXIT_ZERO CHECK "-s o_after_dashes_c.inst.c -a ! -e o_after_dashes_c.o"
+  TAIL -- -o o_after_dashes_c.o OUT "TAU_PROFILE_START")
+_salt_add_clang_error_test(o_with_tau_output_c o_with_tau_output_c.out
+  "lang:C" hello.c CHECK "! -e o_with_tau_output_c.out -a ! -e o_with_tau_output_c.o"
+  ARGS -o o_with_tau_output_c.o LOG "ERROR: give -o or --tau_output only once")
+# So is --tau_output given twice.
+_salt_add_clang_error_test(tau_output_twice_c tau_output_twice_c.out "lang:C"
+  hello.c CHECK "! -e tau_output_twice_c.out -a ! -e tau_output_twice_c.first"
+  ARGS --tau_output=tau_output_twice_c.first
+  LOG "ERROR: give -o or --tau_output only once")
+# C++ reads -o as C does.
+_salt_add_clang_error_test(o_before_source_cxx o_before_source_cxx.out
+  "lang:CXX" c11test.cpp DEFAULT_OUTPUT EXIT_ZERO
+  CHECK "-s o_before_source_cxx.out" ARGS -o o_before_source_cxx.out
+  OUT "TAU_PROFILE_START")
+# Adds o_<form>_<name>: saltfm on `src` (relative to tests/) with the
+# output o_<form>_<name><ext> given as -o=<file>, --o <file>, or
+# --o=<file>, which LLVM's option parser also reads as -o <file>.
+function(_salt_add_o_form_tests name labels src ext)
+  foreach(form IN ITEMS equals dashes dashes_equals)
+    set(out o_${form}_${name}${ext})
+    set(args_equals -o=${out})
+    set(args_dashes --o ${out})
+    set(args_dashes_equals --o=${out})
+    _salt_add_clang_error_test(o_${form}_${name} ${out} "${labels}" ${src}
+      DEFAULT_OUTPUT EXIT_ZERO CHECK "-s ${out}" ARGS ${args_${form}}
+      OUT "TAU_PROFILE_START")
+  endforeach()
+endfunction()
+_salt_add_o_form_tests(c "lang:C" hello.c .out)
 # Adds temp_output_<lang>: saltfm with umask 022, run in the setup's
 # empty directory temp_output_<lang> on the sources in ARGN, must exit
 # with status 0 and leave only their default outputs `outs`, each with
@@ -1686,6 +1734,9 @@ function(_salt_add_no_path_tests lang labels src)
     foreach(form IN ITEMS empty tail)
       set(name no_path_${opt}_${form}_${lang})
       set(log "ERROR: --${opt} needs a path")
+      if(opt STREQUAL "tau_output")
+        set(log "ERROR: -o or --tau_output needs a path")
+      endif()
       set(args ARGS --${opt}=)
       if(form STREQUAL "tail")
         set(args TAIL --${opt})
@@ -1718,13 +1769,16 @@ foreach(form IN ITEMS equals space)
     CHECK "-s ${_name}.out" ARGS ${_flang_args} OUT "TAU_PROFILE_START")
 endforeach()
 # When an option error stops C and C++, saltfm also removes a stale
-# output that a separate --tau_output or -tau_output names, and keeps
-# an output that is a source, also one in a response file.
+# output that a separate --tau_output, -tau_output, or -o names, and
+# keeps an output that is a source, also one in a response file.
 _salt_add_clang_error_test(no_path_space_c no_path_space_c.out "lang:C"
   hello.c SPACE TAIL --tau_select_file LOG "requires a value")
 _salt_add_clang_error_test(no_path_dash_space_c no_path_dash_space_c.out
   "lang:C" hello.c DEFAULT_OUTPUT ARGS -tau_output no_path_dash_space_c.out
   TAIL --tau_select_file LOG "requires a value")
+_salt_add_clang_error_test(no_path_o_c no_path_o_c.out "lang:C" hello.c
+  DEFAULT_OUTPUT ARGS -o no_path_o_c.out TAIL --tau_select_file
+  LOG "requires a value")
 _salt_add_clang_error_test(no_path_self_c no_path_self_c.c "lang:C"
   ${SALT_TEST_OUTPUT_DIR}/output_error/no_path_self_c.c COPY_OF hello.c
   TAIL --tau_select_file LOG "requires a value")
@@ -2641,6 +2695,18 @@ foreach(lang IN LISTS _option_langs)
         PASS_REGULAR_EXPRESSION "^${_tool} [^\n]* ${dash}${opt} ${_out_re} "
         LABELS "lang:${_label};phase:smoke")
     endforeach()
+  endforeach()
+  foreach(dash IN ITEMS - --)
+    set(_name o_${lang})
+    if(dash STREQUAL "--")
+      set(_name dashes_o_${lang})
+    endif()
+    add_test(NAME saltfm_option_next_${_name}
+      COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
+              ${dash}o ${_out} ${_src})
+    set_tests_properties(saltfm_option_next_${_name} PROPERTIES
+      PASS_REGULAR_EXPRESSION "^${_tool} [^\n]* ${dash}o ${_out_re} "
+      LABELS "lang:${_label};phase:smoke")
   endforeach()
 endforeach()
 if(TEST_FORTRAN)
@@ -4601,6 +4667,69 @@ if(TEST_FORTRAN)
     LOG "ERROR: Could not open output file fortran_error_ro.inst.F90" OUT stale)
   _salt_add_clang_error_test(dev_null_fortran /dev/null "lang:Fortran"
     fortran/hello.f90 EXIT_ZERO CHECK "-c /dev/null")
+  # As for C: more than one source with --tau_output is an error before
+  # Flang runs, and -o names the output, but not after `--`.
+  _salt_add_clang_error_test(multi_source_one_output_fortran
+    multi_source_one.inst.F90 "lang:Fortran" fortran/hello.f90
+    TAIL ${CMAKE_SOURCE_DIR}/tests/fortran/cubes.f
+    LOG "ERROR: -o or --tau_output needs exactly one source file; got 2"
+    NOT_LOG "Running:")
+  _salt_add_clang_error_test(o_before_source_fortran
+    o_before_source_fortran.inst.F90 "lang:Fortran" fortran/hello.f90
+    DEFAULT_OUTPUT EXIT_ZERO CHECK "-s o_before_source_fortran.inst.F90"
+    ARGS -o o_before_source_fortran.inst.F90 OUT "TAU_PROFILE_START")
+  _salt_add_clang_error_test(o_after_source_fortran
+    o_after_source_fortran.inst.F90 "lang:Fortran" fortran/hello.f90
+    DEFAULT_OUTPUT EXIT_ZERO CHECK "-s o_after_source_fortran.inst.F90"
+    TAIL -o o_after_source_fortran.inst.F90 OUT "TAU_PROFILE_START")
+  # Guard: fails if fparse-llvm read -o after `--` as the output.
+  _salt_add_clang_error_test(o_after_dashes_fortran
+    o_after_dashes_fortran.inst.F90 "lang:Fortran"
+    ${SALT_TEST_OUTPUT_DIR}/output_error/o_after_dashes_fortran.f90
+    DEFAULT_OUTPUT EXIT_ZERO
+    CHECK "-s o_after_dashes_fortran.inst.F90 -a ! -e o_after_dashes_fortran.o"
+    TAIL -- -o o_after_dashes_fortran.o OUT "TAU_PROFILE_START")
+  _salt_add_clang_error_test(o_with_tau_output_fortran
+    o_with_tau_output_fortran.inst.F90 "lang:Fortran" fortran/hello.f90
+    CHECK "! -e o_with_tau_output_fortran.inst.F90 -a ! -e o_with_tau_output_fortran.o"
+    ARGS -o o_with_tau_output_fortran.o
+    LOG "ERROR: give -o or --tau_output only once")
+  _salt_add_clang_error_test(tau_output_twice_fortran
+    tau_output_twice_fortran.inst.F90 "lang:Fortran" fortran/hello.f90
+    CHECK "! -e tau_output_twice_fortran.inst.F90 -a ! -e tau_output_twice_fortran.first"
+    ARGS --tau_output tau_output_twice_fortran.first
+    LOG "ERROR: give -o or --tau_output only once")
+  # After `--`, the value of -o, here with a Fortran extension, is the
+  # build's output, not a source.
+  _salt_add_clang_error_test(o_value_after_dashes_fortran
+    o_value_after_dashes_fortran.inst.F90 "lang:Fortran" fortran/hello.f90
+    EXIT_ZERO CHECK "-s o_value_after_dashes_fortran.inst.F90"
+    TAIL -- -o o_value_after_dashes_fortran.f90 OUT "TAU_PROFILE_START")
+  # So is the value of --output, which Clang reads as -o, and of --o, as
+  # before `--`.
+  _salt_add_clang_error_test(o_long_value_after_dashes_fortran
+    o_long_value_after_dashes_fortran.inst.F90 "lang:Fortran"
+    fortran/hello.f90 EXIT_ZERO
+    CHECK "-s o_long_value_after_dashes_fortran.inst.F90"
+    TAIL -- --o o_long_value_after_dashes_fortran.f90
+    --output o_long_value_after_dashes_fortran.f08 OUT "TAU_PROFILE_START")
+  # But Clang reads -output as -o utput, so the source after it is the
+  # input.
+  add_test(NAME o_single_dash_output_after_dashes_fortran
+    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
+            --tau_output=out.inst.F90 -- -output
+            ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+  set_tests_properties(o_single_dash_output_after_dashes_fortran PROPERTIES
+    PASS_REGULAR_EXPRESSION "\ninput file: [^\n]*/tests/fortran/hello[.]f90\n"
+    LABELS "lang:Fortran;phase:smoke")
+  # As in C, -o=<file>, --o <file>, and --o=<file> name the output, and
+  # -o<file> is an error, which removes the setup's stale --tau_output.
+  _salt_add_o_form_tests(fortran "lang:Fortran" fortran/hello.f90 .inst.F90)
+  _salt_add_clang_error_test(o_joined_fortran o_joined_fortran.out
+    "lang:Fortran" fortran/hello.f90
+    CHECK "! -e o_joined_fortran.out -a ! -e o_joined_fortran.x"
+    ARGS -oo_joined_fortran.x
+    LOG "ERROR: Unknown command line argument '-oo_joined_fortran.x'")
   _salt_add_temp_output_test(fortran "lang:Fortran" hello.inst.F90
     ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
   _salt_add_write_error_test(write_error_fortran "lang:Fortran"
