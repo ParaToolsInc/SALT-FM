@@ -1386,7 +1386,6 @@ function(_salt_add_clang_error_test name out labels src)
       ${out_args} ${src} ${ARG_TAIL})
   set_tests_properties(${name} PROPERTIES
     REQUIRED_FILES "${src}"
-    ENVIRONMENT "SALT_FABRICATE_UNKNOWN_TYPES=0;SALT_ALLOW_PARSE_ERRORS=0"
     FIXTURES_REQUIRED clang_error_outputs
     SKIP_RETURN_CODE 77
     LABELS "${labels};phase:instrument")
@@ -1852,12 +1851,6 @@ function(_sif_set_warning_checks test warnings fail)
   endif()
 endfunction()
 
-# The SIF tests expect the default values unless their ARGS set them, so
-# a value in the developer's environment must not reach saltfm.
-set(_salt_unset_option_env
-  "SALT_EXCLUDED_MAIN_SETUP=unset:;SALT_PARSE_EXCLUDED_MODULES=unset:"
-  "SALT_BUILD_USES_SALT_FLANG=unset:")
-
 # Standard SIF test: instrumented output IS produced and inspected by
 # check_sif_<test_name>. The caller is responsible for setting
 # PASS_REGULAR_EXPRESSION / FAIL_REGULAR_EXPRESSION on the check test.
@@ -1908,7 +1901,6 @@ function(add_sif_test test_name lang src sif)
     PROPERTIES
     REQUIRED_FILES "${CMAKE_SOURCE_DIR}/${src};${sif_path}"
     ENVIRONMENT "SALT_FORTRAN_VERBOSE=1"
-    ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
     FIXTURES_REQUIRED ${name}_output
     FIXTURES_SETUP ${name}_inst
     LABELS "${_lang_label};phase:instrument;sif"
@@ -1971,7 +1963,6 @@ function(add_sif_test_no_output test_name lang src sif)
   set_tests_properties(instrument_${name}
     PROPERTIES
     REQUIRED_FILES "${CMAKE_SOURCE_DIR}/${src};${CMAKE_SOURCE_DIR}/${sif}"
-    ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
     FIXTURES_REQUIRED ${name}_output
     FIXTURES_SETUP ${name}_inst
     LABELS "${_lang_label};phase:instrument;sif"
@@ -2641,7 +2632,6 @@ foreach(lang IN LISTS _option_langs)
               ${dash}tau_output=${_out} ${_src})
     set_tests_properties(saltfm_option_value_${_name} PROPERTIES
       PASS_REGULAR_EXPRESSION "^${_tool} "
-      ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
       LABELS "lang:${_label};phase:smoke")
     foreach(opt config_file flang_exe tau_output tau_select_file)
       add_test(NAME saltfm_option_next_${opt}_${_name}
@@ -2649,7 +2639,6 @@ foreach(lang IN LISTS _option_langs)
                 ${dash}${opt} ${_out} ${_src})
       set_tests_properties(saltfm_option_next_${opt}_${_name} PROPERTIES
         PASS_REGULAR_EXPRESSION "^${_tool} [^\n]* ${dash}${opt} ${_out_re} "
-        ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
         LABELS "lang:${_label};phase:smoke")
     endforeach()
   endforeach()
@@ -2845,7 +2834,6 @@ if(TEST_FORTRAN)
     saltfm_main_setup_fortran_next fparse_main_setup_next fparse_main_setup_no_value
     ${_shell_var_tests}
     PROPERTIES
-    ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
     LABELS "lang:Fortran;phase:smoke")
 endif()
 
@@ -2894,7 +2882,6 @@ function(_salt_add_line_escape_test name ext src)
       -P ${CMAKE_SOURCE_DIR}/tests/check_line_escape.cmake)
   _salt_lang_to_label(${ext} lang_label)
   set_tests_properties(line_escape_${name} PROPERTIES
-    ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
     LABELS "${lang_label};phase:run")
   _salt_in_test_output(instrument line_escape_${name})
 endfunction()
@@ -2923,8 +2910,6 @@ if(TEST_FORTRAN)
     ARGS --tau_excluded_main_setup=file
     --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau
     LOG "undeclared_name")
-  set_tests_properties(parse_error_file_fortran PROPERTIES
-    ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}")
 endif()
 
 # Unless --tau_excluded_main_setup=file, the main program of a source
@@ -3080,7 +3065,6 @@ function(add_fabricate_test name src with_flag pass_regex)
   set_tests_properties(instrument_fabricate_${name}
     PROPERTIES
     REQUIRED_FILES "${CMAKE_SOURCE_DIR}/tests/${src}"
-    ENVIRONMENT "SALT_FABRICATE_UNKNOWN_TYPES=0"
     FIXTURES_SETUP instrument_fabricate_${name}
     LABELS "${_lang_label};phase:instrument;fabricate"
     PASS_REGULAR_EXPRESSION "${instrument_pass_pattern}"
@@ -3091,7 +3075,6 @@ function(add_fabricate_test name src with_flag pass_regex)
   set_tests_properties(check_fabricate_${name}
     PROPERTIES
     FIXTURES_REQUIRED instrument_fabricate_${name}
-    ENVIRONMENT "SALT_FABRICATE_UNKNOWN_TYPES=0"
     LABELS "${_lang_label};phase:check;fabricate"
     PASS_REGULAR_EXPRESSION "${pass_regex}"
   )
@@ -3556,7 +3539,6 @@ if(TEST_FORTRAN)
     set_tests_properties(${name} PROPERTIES
       PASS_REGULAR_EXPRESSION "${pass}"
       FAIL_REGULAR_EXPRESSION "${fail}"
-      ENVIRONMENT_MODIFICATION "SALT_FLANG_EXE=unset:"
       LABELS "lang:Fortran;phase:smoke")
     _salt_in_test_output(flang_exe ${name})
   endfunction()
@@ -4032,8 +4014,6 @@ if(TEST_FORTRAN)
         --tau_output=out.inst.F90 ${src})
     set_tests_properties(excluded_${name} PROPERTIES
       REQUIRED_FILES "${src}"
-      ENVIRONMENT_MODIFICATION
-        "SALT_EXCLUDED_MAIN_SETUP=unset:;SALT_PARSE_EXCLUDED_MODULES=unset:"
       LABELS "lang:Fortran;phase:instrument")
   endfunction()
   # The module files of an excluded module source let another source use
@@ -4120,8 +4100,7 @@ if(TEST_FORTRAN)
     excluded_missing_input.inst.F90 "lang:Fortran" fortran/no_such_source.f90
     ARGS --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau
     LOG "ERROR: Could not open input file")
-  set_tests_properties(excluded_missing_input PROPERTIES REQUIRED_FILES ""
-    ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}")
+  set_tests_properties(excluded_missing_input PROPERTIES REQUIRED_FILES "")
   # When salt-selectfile cannot read the selective instrumentation file
   # (status 2), fparse-llvm gives no warning and runs Flang, and the
   # plugin reports the error in one line, as C does, and fails.
@@ -4130,15 +4109,13 @@ if(TEST_FORTRAN)
     ARGS --tau_select_file=${_no_such_sif}
     LOG "Running:" "ERROR: Cannot open selective instrumentation file: ${_no_such_sif}")
   set_tests_properties(fparse_sif_unreadable PROPERTIES
-    FAIL_REGULAR_EXPRESSION "salt-selectfile failed;ERROR:.*\nERROR:"
-    ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}")
+    FAIL_REGULAR_EXPRESSION "salt-selectfile failed;ERROR:.*\nERROR:")
   # So does a directory.
   _salt_add_clang_error_test(fparse_sif_dir sif_dir.inst.F90
     "lang:Fortran" fortran/hello.f90 ARGS --tau_select_file=${_sif_dir}
     LOG "ERROR: Cannot open selective instrumentation file: ${_sif_dir}")
   set_tests_properties(fparse_sif_dir PROPERTIES
-    FAIL_REGULAR_EXPRESSION "salt-selectfile failed;ERROR:.*\nERROR:"
-    ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}")
+    FAIL_REGULAR_EXPRESSION "salt-selectfile failed;ERROR:.*\nERROR:")
   # The plugin copies a source that the file lists exclude without reading
   # the configuration file, also when Flang parses it for its module files
   # or main program.
@@ -4160,7 +4137,6 @@ if(TEST_FORTRAN)
         -DNAME=fortran_names_${name} ${ARGN}
         -P ${CMAKE_SOURCE_DIR}/tests/check_fortran_names.cmake)
     set_tests_properties(fortran_names_${name} PROPERTIES
-      ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
       LABELS "lang:Fortran;phase:check")
     _salt_in_test_output(instrument fortran_names_${name})
   endfunction()
@@ -4229,7 +4205,6 @@ if(TEST_FORTRAN)
     set_tests_properties(saltfm_modules_value_${value} PROPERTIES
       PASS_REGULAR_EXPRESSION
         "fparse-llvm --show --tau_parse_excluded_modules=${canonical} .*\ncmd: "
-      ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
       LABELS "lang:Fortran;phase:smoke")
   endforeach()
   # The option has no synonyms.
@@ -4242,7 +4217,6 @@ if(TEST_FORTRAN)
       PASS_REGULAR_EXPRESSION
         "ERROR: unknown value '${value}' for --tau_parse_excluded_modules\n.*USAGE:"
       FAIL_REGULAR_EXPRESSION "cmd: "
-      ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
       LABELS "lang:Fortran;phase:smoke")
   endforeach()
   # fparse-llvm takes only the canonical values.
@@ -4278,8 +4252,7 @@ if(TEST_FORTRAN)
       "WARNING: --tau_parse_excluded_modules needs a value. using modules-only\n.*\ncmd: ")
   set_tests_properties(fparse_modules_canonical_only
     fparse_modules_next saltfm_modules_no_value fparse_modules_no_value
-    PROPERTIES ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
-    LABELS "lang:Fortran;phase:smoke")
+    PROPERTIES LABELS "lang:Fortran;phase:smoke")
 
   # The module and main program checks, with the parse off so that
   # Flang does not run. A comment line does not match, in free and fixed
@@ -4389,8 +4362,6 @@ if(TEST_FORTRAN)
     endif()
     _salt_add_clang_error_test(${name} ${out} "lang:Fortran" fortran/${src}
       ${expect} ARGS ${ARG_ARGS} LOG ${ARG_LOG} NOT_LOG ${ARG_NOT_LOG})
-    set_tests_properties(${name} PROPERTIES
-      ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}")
   endfunction()
   # A generic call resolves to the specific procedure of the kinds that
   # the default kind flags set, as in a Flang build, with and without
@@ -4526,7 +4497,6 @@ if(TEST_FORTRAN)
         ${_salt_test_flang} ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
         ${CMAKE_SOURCE_DIR}/tests/fortran/mylib.f90)
     set_tests_properties(salt_flang_project_mod PROPERTIES
-      ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}"
       LABELS "lang:Fortran;phase:instrument")
     _salt_in_test_output(instrument salt_flang_project_mod)
     # Flang gets no -module-suffix and not SALT-FM's directory, but the
@@ -4570,8 +4540,6 @@ if(TEST_FORTRAN)
       "lang:Fortran" ${_sf_ext_dir}/use-intrinsic-c-binding.f18 EXIT_ZERO
       CHECK "-s salt_flang_f18.inst.F90" OUT "TAU_PROFILE_START"
       ARGS ${_sf_on})
-    set_tests_properties(salt_flang_f18 PROPERTIES
-      ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}")
     add_test(NAME fparse_show_build_uses_salt_flang_env
       COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show
               ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
@@ -4590,12 +4558,6 @@ if(TEST_FORTRAN)
       fparse_show_build_uses_salt_flang_f18
       fparse_show_build_uses_salt_flang_inc
       PROPERTIES LABELS "lang:Fortran;phase:smoke")
-    set_tests_properties(saltfm_show_build_uses_salt_flang
-      fparse_show_build_uses_salt_flang fparse_show_build_uses_salt_flang_env
-      fparse_show_build_uses_salt_flang_f18
-      fparse_show_build_uses_salt_flang_inc
-      saltfm_show_build_uses_salt_flang_c PROPERTIES
-      ENVIRONMENT_MODIFICATION "${_salt_unset_option_env}")
     set_property(TEST fparse_show_build_uses_salt_flang_env APPEND PROPERTY
       ENVIRONMENT_MODIFICATION "SALT_BUILD_USES_SALT_FLANG=set:1")
   endif()
@@ -4932,7 +4894,7 @@ if(HAVE_TAU)
         PROPERTIES
         ENVIRONMENT TAU_MAKEFILE=${TAU_${dir}_MAKEFILE}
         ENVIRONMENT_MODIFICATION
-          "PATH=path_list_prepend:${TAU_BIN_DIR};${_salt_unset_option_env}"
+          "PATH=path_list_prepend:${TAU_BIN_DIR}"
         FIXTURES_REQUIRED ${prof_fix}
         FIXTURES_SETUP compile_${comp}_${name}
         LABELS "${lang_label};${tc_label};phase:compile"
@@ -5034,14 +4996,35 @@ if(HAVE_TAU)
   endif()
 endif()
 
-# A SALT_CONFIG_FILE in the developer's environment must not reach a test
-# that does not set it.
+# A SALT_* variable in the developer's environment must not reach a test
+# that does not set it, so each test unsets every SALT_* name in the
+# sources that it does not set.
+# The list is deliberately broad: it also has include guards, macros, and
+# @VAR@ placeholders, which are harmless to unset.
+file(GLOB _salt_sources ${CMAKE_SOURCE_DIR}/src/* ${CMAKE_SOURCE_DIR}/include/*)
+set(_salt_vars "")
+foreach(src IN LISTS _salt_sources)
+  file(STRINGS ${src} _lines REGEX "SALT_[A-Z0-9_]+")
+  string(REGEX MATCHALL "SALT_[A-Z0-9_]+" _names "${_lines}")
+  list(APPEND _salt_vars ${_names})
+endforeach()
+list(REMOVE_DUPLICATES _salt_vars)
+# env_isolation checks that the loop below reaches every test and name.
+string(REPLACE ";" "," _salt_vars_arg "${_salt_vars}")
+add_test(NAME env_isolation
+  COMMAND ${CMAKE_COMMAND} -DBINARY_DIR=${CMAKE_BINARY_DIR}
+    -DNAMES=${_salt_vars_arg} -DCTEST_CONFIGURATION_TYPE=$<CONFIG>
+    -P ${CMAKE_SOURCE_DIR}/tests/check_env_isolation.cmake)
+set_tests_properties(env_isolation PROPERTIES LABELS "phase:check")
 get_property(_salt_tests DIRECTORY PROPERTY TESTS)
 foreach(test IN LISTS _salt_tests)
   get_test_property(${test} ENVIRONMENT _env)
   get_test_property(${test} ENVIRONMENT_MODIFICATION _env_mod)
-  if(NOT "${_env};${_env_mod}" MATCHES "SALT_CONFIG_FILE=")
-    set_property(TEST ${test} APPEND
-      PROPERTY ENVIRONMENT_MODIFICATION "SALT_CONFIG_FILE=unset:")
-  endif()
+  set(_unset "")
+  foreach(var IN LISTS _salt_vars)
+    if(NOT ";${_env};${_env_mod}" MATCHES ";${var}=")
+      list(APPEND _unset "${var}=unset:")
+    endif()
+  endforeach()
+  set_property(TEST ${test} APPEND PROPERTY ENVIRONMENT_MODIFICATION "${_unset}")
 endforeach()
