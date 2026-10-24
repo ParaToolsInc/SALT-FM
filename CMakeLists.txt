@@ -2978,6 +2978,58 @@ if(TEST_FORTRAN)
     LOG "undeclared_name")
 endif()
 
+# A `#line` line in the input moves no TAU call off its line of the
+# input, and a Fortran timer name gives the file and lines that the
+# `#line` lines give, as compiler messages do (#112). Adds test
+# line_directive_<name>: saltfm, run in test-output/instrument (for
+# module files) on `src` in tests/line_directive with its config.yaml,
+# must write the output `expected`, which leaves out the `#line` lines
+# that saltfm writes (with no file, or the path of `src`), the blank
+# lines, and the path of that directory, but keeps those of `src`.
+# Case is ignored, as Flang versions differ in the case of a program
+# name.
+function(_salt_add_line_directive_test name src expected label)
+  set(dir ${CMAKE_SOURCE_DIR}/tests/line_directive)
+  set(out ${SALT_TEST_OUTPUT_DIR}/instrument/line_directive_${name}.out)
+  add_test(NAME line_directive_${name}
+    COMMAND sh -c "\"$0\" \"$@\" || exit 1
+      grep -Ev -e '^#line [0-9]+( \"${dir}/${src}\")?$' -e '^[[:space:]]*$' ${out} |
+        sed 's|${dir}/||g' | diff -iu ${dir}/${expected} -"
+      ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+      --config_file=${dir}/config.yaml --tau_output=${out} ${dir}/${src})
+  set_tests_properties(line_directive_${name} PROPERTIES
+    REQUIRED_FILES ${dir}/${src}
+    LABELS "${label};phase:instrument")
+  _salt_in_test_output(instrument line_directive_${name})
+endfunction()
+_salt_add_line_directive_test(c mid.c mid.c.expected "lang:C")
+_salt_add_line_directive_test(cxx mid.cpp mid.cpp.expected "lang:CXX")
+if(TEST_FORTRAN)
+  _salt_add_line_directive_test(top top.f90 top.f90.expected "lang:Fortran")
+  _salt_add_line_directive_test(top_hash top_hash.f90 top_hash.f90.expected
+    "lang:Fortran")
+  _salt_add_line_directive_test(mid mid.f90 mid.f90.expected "lang:Fortran")
+  # A separate module procedure and a function
+  _salt_add_line_directive_test(procs procs.f90 procs.f90.expected
+    "lang:Fortran")
+  # Fixed form
+  _salt_add_line_directive_test(fixed fixed.f fixed.f.expected "lang:Fortran")
+  # A `#line` line that changes only the file
+  _salt_add_line_directive_test(implicit implicit.f90 implicit.f90.expected
+    "lang:Fortran")
+  # An output of saltfm as the input
+  _salt_add_line_directive_test(instrumented hello.inst.F90
+    hello.inst.F90.expected "lang:Fortran")
+  # The return statement of this included file puts the instrumentation
+  # points out of line order, so saltfm must stop with an error.
+  _salt_add_clang_error_test(line_directive_include_return
+    line_directive_include_return.out "lang:Fortran"
+    line_directive/include_return.f90
+    ARGS --config_file=${CMAKE_SOURCE_DIR}/tests/line_directive/config.yaml
+    LOG "ERROR: Instrumentation points of ${CMAKE_SOURCE_DIR}/tests/line_directive/include_return"
+    "include_return.f90 are not in line order, as when an included file holds instrumented code")
+endif()
+
 # Unless --tau_excluded_main_setup=file, the main program of a source
 # that the file lists exclude gets no setup code, and saltfm warns about
 # it.

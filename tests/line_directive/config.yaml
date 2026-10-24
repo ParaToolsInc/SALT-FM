@@ -1,0 +1,19 @@
+# A configuration file with one short line for each insertion, which
+# holds the timer name, for outputs that tests compare as text.
+include: []
+main_insert:
+  - "    timer_start(\"${full_timer_name}\");"
+function_begin_insert:
+  - "    timer_start(\"${full_timer_name}\");"
+function_end_insert:
+  - "timer_stop();"
+
+Fortran:
+  program_insert:
+    - "      call timer_start(\"${full_timer_name}&"
+    - "     &\")"
+  procedure_begin_insert:
+    - "      call timer_start(\"${full_timer_name}&"
+    - "     &\")"
+  procedure_end_insert:
+    - "      call timer_stop()"
