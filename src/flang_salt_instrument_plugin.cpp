@@ -33,6 +33,7 @@ limitations under the License.
 #include <dprint.hpp>
 #include <ryml_all.hpp>
 #include "config_file.hpp"
+#include "env_bool.hpp"
 #include "output_file.hpp"
 
 // On macOS, ryml_all.hpp transitively includes <sys/param.h>, which
@@ -991,10 +992,8 @@ namespace salt::fortran {
          * This is the entry point for the plugin.
          */
         void executeAction() override {
-            if (const char *val = getenv(SALT_FORTRAN_VERBOSE_VAR)) {
-                if (const std::string verboseFlag{val}; !verboseFlag.empty() && verboseFlag != "0"s) {
-                    enableVerbose();
-                }
+            if (getEnvBool(SALT_FORTRAN_VERBOSE_VAR)) {
+                enableVerbose();
             }
 
             verboseStream() << "==== SALT Instrumentor Plugin starting ====\n";

@@ -40,3 +40,8 @@ Mirror CI locally: run the jobs in `.github/workflows/` with the same commands a
 
 - Use `&>/dev/null` instead of `>/dev/null 2>&1`.
 - Put a comment immediately above each `shellcheck disable` explaining why it is needed.
+
+## Environment Variables
+
+- On/off variables use `getEnvBool` (`include/env_bool.hpp`) in C++ and `env_bool` (`src/salt-common.sh`) in bash: off when unset, empty, `0`, `false`, `no`, or `off`, in any case; on otherwise.
+- Multi-way choices validate the value against a list of allowed values, as `canonical_value` in `src/saltfm.in` does.

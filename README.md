@@ -168,6 +168,9 @@ build/bin/saltfm tests/hello.c
 output file, use `--tau_output=<file>`. A run that fails, for example
 on a full disk, leaves no partial output file. For all options, run
 `saltfm --help`. An option has priority over its environment variable.
+To turn on an on/off option with its environment variable, set the
+variable to any value except empty, `0`, `false`, `no`, or `off`, in
+any case.
 
 `saltfm` reads a source as Fortran if its extension is `.f`, `.for`,
 `.ftn`, `.f77`, `.fpp`, `.f90`, `.f95`, `.f03`, `.f08`, or `.f18`, in
@@ -200,12 +203,12 @@ By default, the Fortran parse reads and writes only `.saltmod` module
 files, so that it cannot overwrite or misread the `.mod` files of a
 build with another compiler, such as gfortran. If the build compiles
 with the same LLVM Flang version that SALT-FM parses with, give
-`--tau_build_uses_salt_flang`, or set `SALT_BUILD_USES_SALT_FLANG` to a
-value other than empty or `0`. SALT-FM then reads and writes the `.mod`
-files in the build's module directories, and reads those of its
-libraries, such as MPI or HDF5. The libraries must be built with that
-Flang version too. Otherwise, Flang refuses their module files, and
-SALT-FM fails with a note that names the version.
+`--tau_build_uses_salt_flang`, or set `SALT_BUILD_USES_SALT_FLANG`.
+SALT-FM then reads and writes the `.mod` files in the build's module
+directories, and reads those of its libraries, such as MPI or HDF5. The
+libraries must be built with that Flang version too. Otherwise, Flang
+refuses their module files, and SALT-FM fails with a note that names
+the version.
 
 ### C and C++ sources with errors
 
@@ -225,9 +228,6 @@ its build:
   adds declarations for unknown qualified names, such as `std::vector`.
   More functions then get timers, and the timer names use the types
   that the source spells. This option also allows the errors.
-
-To turn on an option with its environment variable, set the variable
-to any value except empty, `0`, `false`, `no`, or `off`, in any case.
 
 These options are for C and C++ only. When Flang reports an error,
 `saltfm` fails. By default, SALT-FM does not parse a source that the

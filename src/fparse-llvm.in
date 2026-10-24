@@ -21,6 +21,8 @@ set -o pipefail
 #set -o verbose
 #set -o xtrace
 
+# The functions of src/salt-common.sh
+@SALT_COMMON_SH@
 readonly _SALTFM_PLUGIN_SO="libsalt-flang-plugin@CMAKE_SHARED_LIBRARY_SUFFIX@"
 readonly _VERSION="@SALT_VERSION_FULL@"
 readonly _SALT_MOD_SUFFIX=@SALT_MOD_SUFFIX@
@@ -66,7 +68,8 @@ TAU instrumentor options:
                                  libraries (for example MPI and HDF5). Without it,
                                  SALT-FM reads and writes only .saltmod files.
                                  (default: on if \$SALT_BUILD_USES_SALT_FLANG is set
-                                 and is not empty or 0, else off)
+                                 and is not empty, 0, false, no, or off, in any
+                                 case, else off)
   --tau_excluded_main_setup=<none|routine|file>
                                - Selects which excluded main programs get setup code.
                                  Setup code makes sure that the measurement library
@@ -383,8 +386,8 @@ fi
 # --config_file, then SALT_CONFIG_FILE unless it is empty, then the installed
 # one
 FORTRAN_CONFIG_FILE="${FORTRAN_CONFIG_FILE-${SALT_CONFIG_FILE:-${_SCRIPT_DIR}/../@CMAKE_INSTALL_DATADIR@/@CMAKE_PROJECT_NAME@/config_files/config.yaml}}"
-# The variable turns the option on unless it is empty or 0
-if [[ -n ${SALT_BUILD_USES_SALT_FLANG:-} && ${SALT_BUILD_USES_SALT_FLANG} != 0 ]]; then
+# The variable can turn the option on, but not off
+if env_bool SALT_BUILD_USES_SALT_FLANG; then
     build_uses_salt_flang=true
 fi
 
