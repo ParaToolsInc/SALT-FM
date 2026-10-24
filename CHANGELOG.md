@@ -12,11 +12,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   in any case, is for a build that compiles with the same LLVM Flang
   version that SALT-FM parses with. The Fortran parse then reads and
   writes `.mod` files instead of `.saltmod` files, so it finds the
-  modules of the build and of its libraries, such as `use mpi`. SALT-FM
-  installs the unchanged compiler modules next to its `.saltmod`
-  copies for it. When Flang refuses a module file, `fparse-llvm` adds a
-  note that the build and its libraries must use SALT-FM's Flang
-  version ([#40](https://github.com/ParaToolsInc/SALT-FM/issues/40)).
+  modules of the build and of its libraries, such as `use mpi`, and the
+  intrinsic modules of the Flang that runs. When Flang refuses a module
+  file, `fparse-llvm` adds a note that the build and its libraries must
+  use SALT-FM's Flang version
+  ([#40](https://github.com/ParaToolsInc/SALT-FM/issues/40)).
 - `fparse-llvm` passes `-fdefault-real-8`, `-fdefault-integer-8`, and
   `-fdefault-double-8` to Flang instead of removing them, so a generic
   call resolves to the same specific procedure as in the build. It

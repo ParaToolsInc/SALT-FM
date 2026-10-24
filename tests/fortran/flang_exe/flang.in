@@ -1,8 +1,18 @@
 #!/bin/sh
 # Stub Flang driver that reports LLVM major version @_fx_major@ and
-# fails for anything else
+# fails for anything else. Like a real driver, the probe of fparse-llvm,
+# `-### -x f95 -c /dev/null` and no other arguments, prints the version
+# on stderr, and with STUB_INTRINSIC_MODS set, the -fc1 command with
+# that intrinsic module directory.
 if [ "$1" = --version ]; then
   echo "flang version @_fx_major@.0.0 (stub)"
+  exit 0
+fi
+if [ $# -eq 5 ] && [ "$*" = "-### -x f95 -c /dev/null" ]; then
+  echo "flang version @_fx_major@.0.0 (stub)" >&2
+  if [ -n "${STUB_INTRINSIC_MODS:-}" ]; then
+    echo " \"$0\" \"-fc1\" \"-fintrinsic-modules-path\" \"${STUB_INTRINSIC_MODS}\" \"-o\" \"x.o\"" >&2
+  fi
   exit 0
 fi
 echo "stub driver must not run: $0 $*" >&2

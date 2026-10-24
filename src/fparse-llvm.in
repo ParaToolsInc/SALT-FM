@@ -465,10 +465,19 @@ if [[ -z "${flang_exe}" ]]; then
     echo "with --flang_exe=<path> or SALT_FLANG_EXE." >&2
     exit 1
 fi
-# The plugin only loads into the LLVM major version it was built with
-flang_version="$("${flang_exe}" --version || true)"
+# The plugin only loads into the LLVM major version it was built with. For a
+# Fortran input, `-###` prints the first line of --version and the -fc1
+# command that the driver would run, on stderr, and runs nothing. A fixed
+# input prints -fc1 whatever the extension of the source, and keeps the
+# build flags out, so that an unknown one cannot make it fail
+if $version; then
+    flang_out="$("${flang_exe}" --version || true)"
+else
+    flang_out="$("${flang_exe}" -### -x f95 -c /dev/null 2>&1 >/dev/null || true)"
+fi
 flang_major=unknown
-if [[ ${flang_version%%$'\n'*} =~ version\ (([0-9]+)\.[0-9.]*) ]]; then
+# The first match is on the first line that has one
+if [[ ${flang_out} =~ version\ (([0-9]+)\.[0-9.]*) ]]; then
     flang_major="${BASH_REMATCH[2]}"
     # For the hint when Flang refuses a module file
     flang_full_version="${BASH_REMATCH[1]}"
@@ -484,7 +493,7 @@ if [[ ${flang_exe_override##*/} == flang-new && ${flang_major} -ge 20 ]]; then
 fi
 if $version; then
     echo "SALT-FM Version: ${_VERSION}"
-    echo "${flang_version}"
+    echo "${flang_out}"
     exit 0
 fi
 
@@ -533,10 +542,26 @@ fi
 echo "output file: ${output_file:-\"<None given>\" }"
 echo "Remaining Arguments: ${args[*]:-}"
 
-# Without the suffix, Flang reads and writes the .mod files of the build
+# Without the suffix, Flang reads and writes the .mod files of the build,
+# which hold the checksums of the intrinsic modules of the Flang that runs.
+# Flang 23 prints their directory in the -fc1 command of `-###`; Flang 19-22
+# print none, and their -fc1 finds the modules by itself
 mod_suffix=(-module-suffix "${_SALT_MOD_SUFFIX}")
+intrinsic_mods=(-fintrinsic-modules-path "${_SALT_INC_DIR}")
 if $build_uses_salt_flang; then
     mod_suffix=()
+    intrinsic_mods=()
+    intrinsic_mods_re='"-fintrinsic-modules-path" "([^"]*)"'
+    if [[ ${flang_out} =~ ${intrinsic_mods_re} ]]; then
+        # shortcut: a path with an escaped `"` or `\` is not unescaped, so
+        # Flang gets none; unescape it if a user needs such a path
+        if [[ ${BASH_REMATCH[1]} == *\\* ]]; then
+            echo "WARNING: cannot read the intrinsic module directory that" >&2
+            echo "'${flang_exe} -###' prints; Flang -fc1 gets none." >&2
+        else
+            intrinsic_mods=(-fintrinsic-modules-path "${BASH_REMATCH[1]}")
+        fi
+    fi
 fi
 # This script invokes an LLVM flang frontend plugin to parse and instrument Fortran code
 cmd=("${flang_exe}"
@@ -545,9 +570,8 @@ cmd=("${flang_exe}"
     -plugin salt-instrument
     ${mod_suffix[@]+"${mod_suffix[@]}"}
     # Flang 23+ resolves `use, intrinsic` only from intrinsic module paths;
-    # on Flang 19-22 the plugin adds these directories to them. They hold
-    # the compiler modules with the suffix, and unchanged.
-    -fintrinsic-modules-path "${_SALT_INC_DIR}"
+    # on Flang 19-22 the plugin adds these directories to them
+    ${intrinsic_mods[@]+"${intrinsic_mods[@]}"}
     "${input_file:-}"
     -o "${output_file}"
     ${args[@]+"${args[@]}"})
