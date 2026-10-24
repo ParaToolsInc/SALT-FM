@@ -36,7 +36,9 @@ readonly _SCRIPT_DIR
 
 read -r -d '' _USAGE <<EOF || true
 OVERVIEW: Tool for adding TAU instrumentation to source files.
-Note that this will only instrument the first source file given.
+C and C++ source files each get their own output. With more than one Fortran
+source file and no output option, only the last one is instrumented; the
+others are ignored. --tau_output and -o need exactly one source file.
 USAGE: $0 [options] <source0> [... <sourceN>]
 
 OPTIONS:
@@ -103,7 +105,8 @@ TAU instrumentor options:
                                   With --tau_excluded_main_setup=file, SALT-FM parses all
                                   files, and this option has no effect.
                                   (default: \$SALT_PARSE_EXCLUDED_MODULES, else modules-only)
-  --tau_output=<filename>       - Specify name of output instrumented file
+  --tau_output=<filename>       - Specify name of output instrumented file; needs exactly one source
+  -o <filename>                 - Same as --tau_output, before --; after --, a build option
   --tau_select_file=<filename>  - Provide a selective instrumentation specification file
   --tau_use_cxx_api             - Use TAU's C++ instrumentation API
 EOF
@@ -210,8 +213,9 @@ for arg in "$@"; do
     elif [[ $arg == --version ]]; then
         version=true
     # The tool takes the next argument as the value of these options, so
-    # it names no source; LLVM's option parser also takes one dash
-    elif [[ $arg =~ ^--?(config_file|flang_exe|tau_output|tau_select_file)$ ]]; then
+    # it names no source; LLVM's option parser takes one or two dashes.
+    # After `--`, -o is a build option, whose value names no source either
+    elif [[ $arg =~ ^--?(config_file|flang_exe|o|tau_output|tau_select_file)$ ]]; then
         args+=("$arg")
         expecting_value_of=forwarded_value
     # The Fortran extensions that Flang or gfortran read, but not in an
