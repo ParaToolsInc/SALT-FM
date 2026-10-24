@@ -57,6 +57,16 @@ TAU instrumentor options:
 
   --config_file=<filename>     - Specify path to SALT-FM configuration YAML file (default: \$SALT_CONFIG_FILE, else the installed config.yaml)
   --flang_exe=<path>           - Flang driver to run (default: \$SALT_FLANG_EXE, else the one SALT-FM was built with)
+  --tau_build_uses_salt_flang  - The build compiles with the same LLVM Flang version
+                                 that SALT-FM parses with (--flang_exe), or with a
+                                 compiler that writes the same module files, for
+                                 example amdflang of the same LLVM version. SALT-FM
+                                 then reads and writes the .mod files in the build's
+                                 module directories, and reads those of its
+                                 libraries (for example MPI and HDF5). Without it,
+                                 SALT-FM reads and writes only .saltmod files.
+                                 (default: on if \$SALT_BUILD_USES_SALT_FLANG is set
+                                 and is not empty or 0, else off)
   --tau_excluded_main_setup=<none|routine|file>
                                - Selects which excluded main programs get setup code.
                                  Setup code makes sure that the measurement library
@@ -115,6 +125,8 @@ declare -a -r _WHITELISTED_FLAGS=(
   -falternative-parameter-statement
   -fbackslash
   -fcolor-diagnostics
+  -fdefault-integer-8
+  -fdefault-real-8
   -ffixed-form
   -ffree-form
   -fimplicit-none
@@ -220,6 +232,8 @@ expecting_parse_excluded_modules=false
 unset FORTRAN_CONFIG_FILE flang_exe input_file output_file select_file
 excluded_main_setup=routine
 parse_excluded_modules=modules-only
+build_uses_salt_flang=false
+default_double_8=false
 show=false
 version=false
 for arg in "$@"; do
@@ -284,6 +298,9 @@ for arg in "$@"; do
     elif [[ $arg == --tau_parse_excluded_modules=* ]]; then
         parse_excluded_modules="${arg#*=}"
         shift || true
+    elif [[ $arg == --tau_build_uses_salt_flang ]]; then
+        build_uses_salt_flang=true
+        shift || true
     elif [[ $arg == --tau_output ]]; then
         expecting_output_file=true
         shift || true
@@ -330,6 +347,11 @@ for arg in "$@"; do
         # Flang frontend doesn't (yet) support -Wall, -Wextra, etc. only -Werror, so throw others away
         shift || true
         #echo "Added whitelisted warning flag: $arg"
+    # Flang refuses it without -fdefault-real-8, but gfortran accepts it, so
+    # the check after the loop forwards it only with -fdefault-real-8
+    elif [[ $arg == -fdefault-double-8 ]]; then
+        default_double_8=true
+        shift || true
     elif [[ ${arg:-} =~ ${_WHITELISTED_REGEX} ]]; then
         args+=("$arg")
         shift || true
@@ -350,10 +372,21 @@ for arg in "$@"; do
     fi
     inputs+=("$arg")
 done
+if $default_double_8; then
+    if [[ " ${args[*]:-} " == *" -fdefault-real-8 "* ]]; then
+        args+=(-fdefault-double-8)
+    else
+        echo "Removed flag without -fdefault-real-8: -fdefault-double-8"
+    fi
+fi
 
 # --config_file, then SALT_CONFIG_FILE unless it is empty, then the installed
 # one
 FORTRAN_CONFIG_FILE="${FORTRAN_CONFIG_FILE-${SALT_CONFIG_FILE:-${_SCRIPT_DIR}/../@CMAKE_INSTALL_DATADIR@/@CMAKE_PROJECT_NAME@/config_files/config.yaml}}"
+# The variable turns the option on unless it is empty or 0
+if [[ -n ${SALT_BUILD_USES_SALT_FLANG:-} && ${SALT_BUILD_USES_SALT_FLANG} != 0 ]]; then
+    build_uses_salt_flang=true
+fi
 
 # Opening the output would empty an input it names, such as an argument or the
 # config or selective instrumentation file, so refuse it before anything is
@@ -432,8 +465,10 @@ fi
 # The plugin only loads into the LLVM major version it was built with
 flang_version="$("${flang_exe}" --version || true)"
 flang_major=unknown
-if [[ ${flang_version%%$'\n'*} =~ version\ ([0-9]+)\. ]]; then
-    flang_major="${BASH_REMATCH[1]}"
+if [[ ${flang_version%%$'\n'*} =~ version\ (([0-9]+)\.[0-9.]*) ]]; then
+    flang_major="${BASH_REMATCH[2]}"
+    # For the hint when Flang refuses a module file
+    flang_full_version="${BASH_REMATCH[1]}"
 fi
 if [[ ${flang_major} != "${_LLVM_VERSION_MAJOR}" ]]; then
     echo "ERROR: Flang driver '${flang_exe}' has LLVM major version ${flang_major}," >&2
@@ -495,14 +530,20 @@ fi
 echo "output file: ${output_file:-\"<None given>\" }"
 echo "Remaining Arguments: ${args[*]:-}"
 
+# Without the suffix, Flang reads and writes the .mod files of the build
+mod_suffix=(-module-suffix "${_SALT_MOD_SUFFIX}")
+if $build_uses_salt_flang; then
+    mod_suffix=()
+fi
 # This script invokes an LLVM flang frontend plugin to parse and instrument Fortran code
 cmd=("${flang_exe}"
     -fc1
     -load "${SALT_PLUGIN_SO}"
     -plugin salt-instrument
-    -module-suffix "${_SALT_MOD_SUFFIX}"
+    ${mod_suffix[@]+"${mod_suffix[@]}"}
     # Flang 23+ resolves `use, intrinsic` only from intrinsic module paths;
-    # on Flang 19-22 the plugin adds these directories to them
+    # on Flang 19-22 the plugin adds these directories to them. They hold
+    # the compiler modules with the suffix, and unchanged.
     -fintrinsic-modules-path "${_SALT_INC_DIR}"
     "${input_file:-}"
     -o "${output_file}"
@@ -523,6 +564,33 @@ fi
 # Runs Flang with the plugin
 function run_flang {
     echo "Running: ${cmd[*]}"
+    if ! $build_uses_salt_flang; then
+        run_cmd
+        return
+    fi
+    # Flang's errors, to add a hint after them when it refuses a module
+    # file of the build; the plugin's output still goes to stdout
+    local errors status=0
+    { errors="$(run_cmd 2>&1 1>&3 3>&-)" || status=$?; } 3>&1
+    if [[ -n ${errors} ]]; then
+        printf '%s\n' "${errors}" >&2
+    fi
+    local LC_ALL=C line
+    if [[ ${status} -ne 0 ]]; then
+        while IFS= read -r line; do
+            # A missing module file, such as one not built yet, gets no hint
+            if [[ ${line} != *"was not found"* &&
+                ${line} =~ Cannot\ (parse|read|use)\ module\ file|is\ not\ the\ right\ module\ file ]]; then
+                echo "Note: the build and its libraries must use LLVM Flang ${flang_full_version}, as SALT-FM does" >&2
+                break
+            fi
+        done <<<"${errors}"
+    fi
+    return "${status}"
+}
+
+# Runs the command, with the environment that the plugin reads
+function run_cmd {
     SALT_FORTRAN_SELECT_FILE="${select_file:-}" SALT_FORTRAN_CONFIG_FILE="${FORTRAN_CONFIG_FILE}" \
         SALT_FORTRAN_EXCLUDED_MAIN_SETUP="${excluded_main_setup}" "${cmd[@]}"
 }

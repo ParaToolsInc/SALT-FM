@@ -196,6 +196,17 @@ warns and uses `flang` or `flang-new` from `PATH`. The driver must have
 the LLVM major version that SALT-FM was built with. Otherwise, SALT-FM
 stops with an error.
 
+By default, the Fortran parse reads and writes only `.saltmod` module
+files, so that it cannot overwrite or misread the `.mod` files of a
+build with another compiler, such as gfortran. If the build compiles
+with the same LLVM Flang version that SALT-FM parses with, give
+`--tau_build_uses_salt_flang`, or set `SALT_BUILD_USES_SALT_FLANG` to a
+value other than empty or `0`. SALT-FM then reads and writes the `.mod`
+files in the build's module directories, and reads those of its
+libraries, such as MPI or HDF5. The libraries must be built with that
+Flang version too. Otherwise, Flang refuses their module files, and
+SALT-FM fails with a note that names the version.
+
 ### C and C++ sources with errors
 
 When Clang reports errors in a C or C++ source, `saltfm` exits with a

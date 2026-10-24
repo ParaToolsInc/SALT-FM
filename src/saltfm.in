@@ -55,6 +55,16 @@ TAU instrumentor options:
   --config_file=<filename>      - Specify path to SALT-FM configuration YAML file (default: \$SALT_CONFIG_FILE, else the installed config.yaml)
   --flang_exe=<path>            - Flang driver for Fortran (default: \$SALT_FLANG_EXE, else the one SALT-FM was built with)
   --tau_allow_parse_errors      - C and C++ only: instrument the partial parse tree that Clang builds after errors (default: \$SALT_ALLOW_PARSE_ERRORS, else false)
+  --tau_build_uses_salt_flang   - Fortran only. The build compiles with the same LLVM
+                                  Flang version that SALT-FM parses with (--flang_exe),
+                                  or with a compiler that writes the same module files,
+                                  for example amdflang of the same LLVM version.
+                                  SALT-FM then reads and writes the .mod files in the
+                                  build's module directories, and reads those of its
+                                  libraries (for example MPI and HDF5). Without it,
+                                  SALT-FM reads and writes only .saltmod files.
+                                  (default: on if \$SALT_BUILD_USES_SALT_FLANG is set
+                                  and is not empty or 0, else off)
   --tau_fabricate_unknown_types - Fabricate declarations for unknown qualified names (default: \$SALT_FABRICATE_UNKNOWN_TYPES, else false)
   --tau_instrument_inline       - Instrument inlined functions (default: false)
   --tau_excluded_main_setup=<none|routine|file>
@@ -155,6 +165,7 @@ tool=
 force_lang=
 version=false
 show=false
+build_uses_salt_flang=false
 unset excluded_main_setup parse_excluded_modules
 for arg in "$@"; do
     #echo "working on arg: $arg"
@@ -226,6 +237,8 @@ for arg in "$@"; do
         # canonical_value reads it by name
         # shellcheck disable=SC2034
         parse_excluded_modules="${arg#*=}"
+    elif [[ $arg == --tau_build_uses_salt_flang ]]; then
+        build_uses_salt_flang=true
     else
         args+=("$arg")
     fi
@@ -255,6 +268,9 @@ if [[ ${tool} == fparse-llvm ]]; then
     canonical_value --tau_parse_excluded_modules parse_excluded_modules SALT_PARSE_EXCLUDED_MODULES \
         modules-only "off modules-only submodules-and-modules"
     args=("--tau_parse_excluded_modules=${option_value}" "${args[@]}")
+    if $build_uses_salt_flang; then
+        args=(--tau_build_uses_salt_flang "${args[@]}")
+    fi
 fi
 
 # Check if the tool exists
