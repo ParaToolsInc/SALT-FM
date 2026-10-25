@@ -1313,6 +1313,7 @@ add_test(NAME make_clang_error_outputs
     echo stale > no_path_space_c.out &&
     echo stale > no_path_dash_space_c.out &&
     echo stale > no_path_o_c.out &&
+    echo stale > no_path_dashes_o_c.out &&
     rm -f o_* multi_source_one.inst.* tau_output_twice_* &&
     cp ${_tests}/hello.c o_after_dashes_c.c &&
     cp ${_tests}/fortran/hello.f90 o_after_dashes_fortran.f90 &&
@@ -1769,8 +1770,8 @@ foreach(form IN ITEMS equals space)
     CHECK "-s ${_name}.out" ARGS ${_flang_args} OUT "TAU_PROFILE_START")
 endforeach()
 # When an option error stops C and C++, saltfm also removes a stale
-# output that a separate --tau_output, -tau_output, or -o names, and
-# keeps an output that is a source, also one in a response file.
+# output that a separate --tau_output, -tau_output, -o, or --o names,
+# and keeps an output that is a source, also one in a response file.
 _salt_add_clang_error_test(no_path_space_c no_path_space_c.out "lang:C"
   hello.c SPACE TAIL --tau_select_file LOG "requires a value")
 _salt_add_clang_error_test(no_path_dash_space_c no_path_dash_space_c.out
@@ -1779,6 +1780,9 @@ _salt_add_clang_error_test(no_path_dash_space_c no_path_dash_space_c.out
 _salt_add_clang_error_test(no_path_o_c no_path_o_c.out "lang:C" hello.c
   DEFAULT_OUTPUT ARGS -o no_path_o_c.out TAIL --tau_select_file
   LOG "requires a value")
+_salt_add_clang_error_test(no_path_dashes_o_c no_path_dashes_o_c.out "lang:C"
+  hello.c DEFAULT_OUTPUT ARGS --o no_path_dashes_o_c.out
+  TAIL --tau_select_file LOG "requires a value")
 _salt_add_clang_error_test(no_path_self_c no_path_self_c.c "lang:C"
   ${SALT_TEST_OUTPUT_DIR}/output_error/no_path_self_c.c COPY_OF hello.c
   TAIL --tau_select_file LOG "requires a value")
