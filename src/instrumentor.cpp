@@ -640,6 +640,13 @@ static src_pos presumedPos(const SourceManager &src_mgr, SourceLocation loc)
     return {presumed.getFilename(), presumed.getLine(), presumed.getColumn()};
 }
 
+// The line that the `#line` lines give the spelling location of `loc`, minus
+// its line in its file
+static int lineShift(const SourceManager &src_mgr, SourceLocation loc)
+{
+    return static_cast<int>(presumedPos(src_mgr, loc).line) - static_cast<int>(src_mgr.getSpellingLineNumber(loc));
+}
+
 // Sets the name of `func` and its timer name, which has the file and lines
 // that the `#line` lines give, as in compiler messages, and returns the file
 // that holds `func`, whose lines the instrumentation keeps
@@ -800,6 +807,7 @@ class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
 
         inst_loc *ret = new inst_loc;
         ret->line = start_line;
+        ret->line_shift = lineShift(src_mgr, range.getBegin());
         ret->col = start_col - 1;
         ret->kind = start_line == end_line ? RETURN_FUNC : MULTILINE_RETURN_FUNC;
         ret->func_name = func_name_c;
@@ -906,6 +914,7 @@ class FindFunctionVisitor : public RecursiveASTVisitor<FindFunctionVisitor>
 
         inst_loc *start = new inst_loc;
         start->line = start_line;
+        start->line_shift = lineShift(src_mgr, range.getBegin());
         start->col = start_col;
         start->kind = BEGIN_FUNC;
         start->return_type = ret_name_c;
@@ -920,6 +929,7 @@ class FindFunctionVisitor : public RecursiveASTVisitor<FindFunctionVisitor>
 
         inst_loc *end = new inst_loc;
         end->line = end_line;
+        end->line_shift = lineShift(src_mgr, range.getEnd());
         end->col = end_col - 1;
         end->kind = RETURN_FUNC;
         end->return_type = ret_name_c;
@@ -1085,21 +1095,23 @@ void instrumentor::instrument_file(std::ifstream &og_file, std::ofstream &inst_f
                         inst_file << start;
                     }
                     std::string inst_code = "";
+                    // Each `#line` gives the line that the `#line` lines of the input
+                    // give it; the input's own `#line` lines, copied, set the file
                     switch (curr_inst_loc->kind)
                     {
                     case BEGIN_FUNC:
-                        inst_file << "\n#line " << lineno << "\n";
+                        inst_file << "\n#line " << lineno + curr_inst_loc->line_shift << "\n";
                         make_begin_func_code(curr_inst_loc, inst_code, yaml_tree, use_cxx_api);
                         inst_file << inst_code;
-                        inst_file << "#line " << lineno << "\n";
+                        inst_file << "#line " << lineno + curr_inst_loc->line_shift << "\n";
                         break;
                     case RETURN_FUNC:
                         if (!use_cxx_api)
                         {
-                            inst_file << "\n#line " << lineno << "\n";
+                            inst_file << "\n#line " << lineno + curr_inst_loc->line_shift << "\n";
                             make_end_func_code(curr_inst_loc, inst_code, line, yaml_tree);
                             inst_file << inst_code;
-                            inst_file << "#line " << lineno << "\n";
+                            inst_file << "#line " << lineno + curr_inst_loc->line_shift << "\n";
                             if (line.find("return", curr_inst_loc->col) != std::string::npos &&
                                 line.find(";", line.find("return", curr_inst_loc->col)) != std::string::npos)
                             {
@@ -1110,7 +1122,7 @@ void instrumentor::instrument_file(std::ifstream &og_file, std::ofstream &inst_f
                     case MULTILINE_RETURN_FUNC:
                         if (!use_cxx_api)
                         {
-                            inst_file << "\n#line " << lineno << "\n";
+                            inst_file << "\n#line " << lineno + curr_inst_loc->line_shift << "\n";
                             // join all the lines together into one so make_end_func_code can actually know what's
                             // happening
                             while (line.find(";") == std::string::npos)
@@ -1122,7 +1134,7 @@ void instrumentor::instrument_file(std::ifstream &og_file, std::ofstream &inst_f
                             }
                             make_end_func_code(curr_inst_loc, inst_code, line, yaml_tree);
                             inst_file << inst_code;
-                            inst_file << "#line " << lineno << "\n";
+                            inst_file << "#line " << lineno + curr_inst_loc->line_shift << "\n";
                             if (line.find("return", curr_inst_loc->col) != std::string::npos &&
                                 line.find(";", line.find("return", curr_inst_loc->col)) != std::string::npos)
                             {

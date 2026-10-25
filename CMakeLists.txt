@@ -3043,6 +3043,26 @@ if(TEST_FORTRAN)
     LOG "ERROR: Instrumentation points of ${CMAKE_SOURCE_DIR}/tests/line_directive/include_return"
     "include_return.f90 are not in line order, as when an included file holds instrumented code")
 endif()
+# The lines after each block that saltfm inserts keep the file and line
+# that the `#line` lines of the input give them (#112). Adds test
+# line_directive_map_<name>: tests/check_line_map.cmake on `src` in
+# tests/line_directive with its config.yaml, run in
+# test-output/instrument, with the preprocessor of `compiler`.
+function(_salt_add_line_map_test name src compiler label)
+  set(dir ${CMAKE_SOURCE_DIR}/tests/line_directive)
+  get_filename_component(ext ${src} LAST_EXT)
+  add_test(NAME line_directive_map_${name}
+    COMMAND ${CMAKE_COMMAND}
+      -DSALTFM=${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+      -DCONFIG=${dir}/config.yaml -DCOMPILER=${compiler}
+      -DSRC=${dir}/${src} -DOUT=line_directive_map_${name}.inst${ext}
+      -P ${CMAKE_SOURCE_DIR}/tests/check_line_map.cmake)
+  set_tests_properties(line_directive_map_${name} PROPERTIES
+    LABELS "${label};phase:instrument")
+  _salt_in_test_output(instrument line_directive_map_${name})
+endfunction()
+_salt_add_line_map_test(c map.c ${CMAKE_C_COMPILER} "lang:C")
+_salt_add_line_map_test(cxx map.cpp ${CMAKE_CXX_COMPILER} "lang:CXX")
 
 # Unless --tau_excluded_main_setup=file, the main program of a source
 # that the file lists exclude gets no setup code, and saltfm warns about
