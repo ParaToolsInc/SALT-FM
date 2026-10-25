@@ -2990,8 +2990,8 @@ if(TEST_FORTRAN)
 endif()
 
 # A `#line` line in the input moves no TAU call off its line of the
-# input, and a Fortran timer name gives the file and lines that the
-# `#line` lines give, as compiler messages do (#112). Adds test
+# input, and a timer name gives the file and lines that the `#line`
+# lines give, as compiler messages do (#112). Adds test
 # line_directive_<name>: saltfm, run in test-output/instrument (for
 # module files) on `src` in tests/line_directive with its config.yaml,
 # must write the output `expected`, which leaves out the `#line` lines
@@ -3015,6 +3015,9 @@ function(_salt_add_line_directive_test name src expected label)
 endfunction()
 _salt_add_line_directive_test(c mid.c mid.c.expected "lang:C")
 _salt_add_line_directive_test(cxx mid.cpp mid.cpp.expected "lang:CXX")
+# A linemarker, a `#line` line with no file, which keeps the file, and a
+# file with a `"` and a `\`, which the C string of the name escapes
+_salt_add_line_directive_test(c_names names.c names.c.expected "lang:C")
 if(TEST_FORTRAN)
   _salt_add_line_directive_test(top top.f90 top.f90.expected "lang:Fortran")
   _salt_add_line_directive_test(top_hash top_hash.f90 top_hash.f90.expected

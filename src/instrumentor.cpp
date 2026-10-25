@@ -63,8 +63,8 @@ static std::vector<inst_loc *> inst_locs;
 std::vector<std::string> files_to_go;
 std::vector<std::string> files_skipped;
 
-void makeFuncAndTimerNames(FunctionDecl *func, ASTContext *context, SourceManager &src_mgr, std::string &func_name,
-                         std::string &timer_name);
+std::string makeFuncAndTimerNames(FunctionDecl *func, ASTContext *context, SourceManager &src_mgr,
+                                  std::string &func_name, std::string &timer_name);
 
 // Exit with an error naming `file` and the reason when `failed`.
 static void exit_if_io_failed(bool failed, const char *what, const std::string &file)
@@ -618,8 +618,11 @@ static bool useSpelledSignature(const FunctionDecl *func)
     return false;
 }
 
-void makeFuncAndTimerNames(FunctionDecl *func, ASTContext *context, SourceManager &src_mgr, std::string &func_name,
-                         std::string &timer_name)
+// Sets the name of `func` and its timer name, which has the file and lines
+// that the `#line` lines give, as in compiler messages, and returns the file
+// that holds `func`, whose lines the instrumentation keeps
+std::string makeFuncAndTimerNames(FunctionDecl *func, ASTContext *context, SourceManager &src_mgr,
+                                  std::string &func_name, std::string &timer_name)
 {
     // PDT TAU instrumentor convention: timer source-range spans from the
     // function declaration head (return type / signature start) to the
@@ -629,13 +632,10 @@ void makeFuncAndTimerNames(FunctionDecl *func, ASTContext *context, SourceManage
     Stmt *func_body = func->getBody();
     SourceRange body_range = func_body->getSourceRange();
 
-    FullSourceLoc start_loc = context->getFullLoc(func->getSourceRange().getBegin());
-    FullSourceLoc end_loc = context->getFullLoc(body_range.getEnd());
-
-    unsigned int start_line = start_loc.getSpellingLineNumber();
-    unsigned int start_col = start_loc.getSpellingColumnNumber();
-    unsigned int end_line = end_loc.getSpellingLineNumber();
-    unsigned int end_col = end_loc.getSpellingColumnNumber();
+    SourceLocation begin = func->getSourceRange().getBegin();
+    // At the spelling location, as before, in a macro too
+    PresumedLoc start_loc = src_mgr.getPresumedLoc(src_mgr.getSpellingLoc(begin));
+    PresumedLoc end_loc = src_mgr.getPresumedLoc(src_mgr.getSpellingLoc(body_range.getEnd()));
 
     func_name = func->getQualifiedNameAsString();
     QualType type = func->getType();
@@ -681,10 +681,10 @@ void makeFuncAndTimerNames(FunctionDecl *func, ASTContext *context, SourceManage
     //     lang_string = "unknown";
     // }
 
-    std::string current_file = src_mgr.getFilename(start_loc).str();
-
-    timer_name = sig + " " + lang_string + " [{" + current_file + "} {" + std::to_string(start_line) + "," +
-               std::to_string(start_col) + "}-{" + std::to_string(end_line) + "," + std::to_string(end_col) + "}]";
+    timer_name = sig + " " + lang_string + " [{" + start_loc.getFilename() + "} {" +
+                 std::to_string(start_loc.getLine()) + "," + std::to_string(start_loc.getColumn()) + "}-{" +
+                 std::to_string(end_loc.getLine()) + "," + std::to_string(end_loc.getColumn()) + "}]";
+    return src_mgr.getFilename(begin).str();
 }
 
 class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
@@ -735,13 +735,16 @@ class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
 
         std::string func_name;
         std::string timer_name;
-        makeFuncAndTimerNames(encl_function, context, src_mgr, func_name, timer_name);
+        std::string file = makeFuncAndTimerNames(encl_function, context, src_mgr, func_name, timer_name);
 
         char *func_name_c = new char[func_name.length() + 1];
         std::strcpy(func_name_c, func_name.c_str());
 
         char *timer_name_c = new char[timer_name.length() + 1];
         std::strcpy(timer_name_c, timer_name.c_str());
+
+        char *file_c = new char[file.length() + 1];
+        std::strcpy(file_c, file.c_str());
 
         std::string ret_name = encl_function->getReturnType().getAsString();
         if (encl_function->getReturnType().getTypePtr()->isBooleanType() && ret_name.find("_Bool") != std::string::npos)
@@ -780,6 +783,7 @@ class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
         ret->func_name = func_name_c;
         ret->return_type = ret_name_c;
         ret->full_timer_name = timer_name_c;
+        ret->file = file_c;
         ret->has_args = encl_function->getNumParams() > 0;
         ret->is_return_ptr = encl_function->getReturnType()->isPointerType();
         ret->needs_move = needs_move;
@@ -837,13 +841,16 @@ class FindFunctionVisitor : public RecursiveASTVisitor<FindFunctionVisitor>
         std::string func_name;
         std::string timer_name;
 
-        makeFuncAndTimerNames(func, context, src_mgr, func_name, timer_name);
+        std::string file = makeFuncAndTimerNames(func, context, src_mgr, func_name, timer_name);
 
         char *func_name_c = new char[func_name.length() + 1];
         std::strcpy(func_name_c, func_name.c_str());
 
         char *timer_name_c = new char[timer_name.length() + 1];
         std::strcpy(timer_name_c, timer_name.c_str());
+
+        char *file_c = new char[file.length() + 1];
+        std::strcpy(file_c, file.c_str());
 
         std::string ret_name = func->getReturnType().getAsString();
         // why
@@ -882,6 +889,7 @@ class FindFunctionVisitor : public RecursiveASTVisitor<FindFunctionVisitor>
         start->return_type = ret_name_c;
         start->func_name = func_name_c;
         start->full_timer_name = timer_name_c;
+        start->file = file_c;
         start->has_args = func->getNumParams() > 0;
         start->is_return_ptr = func->getReturnType()->isPointerType();
         start->needs_move = needs_move;
@@ -895,6 +903,7 @@ class FindFunctionVisitor : public RecursiveASTVisitor<FindFunctionVisitor>
         end->return_type = ret_name_c;
         end->func_name = func_name_c;
         end->full_timer_name = timer_name_c;
+        end->file = file_c;
         end->has_args = func->getNumParams() > 0;
         end->is_return_ptr = func->getReturnType()->isPointerType();
         end->needs_move = needs_move;
@@ -1180,14 +1189,7 @@ void instrumentor::instrument()
         // filter on fname
         for (inst_loc *loc : inst_locs)
         {
-            std::string timer_name = std::string(loc->full_timer_name);
-            // The file name, between " [{" and the "} {" before the line
-            // numbers, which may itself hold braces
-            const size_t fname_start = timer_name.find(" [{") + 3;
-            std::string loc_fname = timer_name.substr(fname_start, timer_name.rfind("} {") - fname_start);
-            // printf("loc file %s\n", loc_fname.c_str());
-            // printf("cur file %s\n", fname.c_str());
-            if (normal_path(loc_fname) == abs_fname)
+            if (normal_path(loc->file) == abs_fname)
             {
                 loc->skip = loc->skip || skipped;
                 // A routine the lists leave out keeps its lines as written,

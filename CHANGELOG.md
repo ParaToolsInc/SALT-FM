@@ -31,6 +31,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   which instrumented code in an included file can cause, `saltfm` stops
   with an error and exit status 1 and writes no output, instead of
   aborting ([#112](https://github.com/ParaToolsInc/SALT-FM/issues/112)).
+- C and C++ timer names give the file and lines of the `#line` lines
+  and line markers, as Fortran timer names and compiler messages do.
+  The TAU calls stay on their lines of the source. Timers in sources
+  with `#line` lines, such as the output of bison or flex, get new
+  names.
 - The new `--tau_build_uses_salt_flang` option of `saltfm` and
   `fparse-llvm`, or the `SALT_BUILD_USES_SALT_FLANG` environment
   variable set to any value except empty, `0`, `false`, `no`, or `off`,

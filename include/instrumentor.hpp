@@ -47,6 +47,8 @@ typedef struct inst_loc {
     const char* return_type;
     const char* func_name;
     const char* full_timer_name;
+    // The file that holds the function, not the one of `#line` lines
+    const char* file;
     bool has_args = false;
     bool is_return_ptr = false;
     bool needs_move = false;

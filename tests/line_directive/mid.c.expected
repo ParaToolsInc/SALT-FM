@@ -4,11 +4,11 @@ int first(void) {
 }
 #line 1 "block.h"
 int second(void) {
-    timer_start("int second(void)  [{mid.c} {5,1}-{7,1}]");
+    timer_start("int second(void)  [{block.h} {1,1}-{3,1}]");
 	{ int inst_ret_val =  2; timer_stop(); return inst_ret_val; }
 }
 #line 4 "mid.c"
 int main(void) {
-    timer_start("int main(void)  [{mid.c} {9,1}-{11,1}]");
+    timer_start("int main(void)  [{mid.c} {4,1}-{6,1}]");
 	{ int inst_ret_val =  first() + second(); timer_stop(); return inst_ret_val; }
 }
