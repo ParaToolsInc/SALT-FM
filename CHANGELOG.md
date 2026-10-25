@@ -36,7 +36,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and line markers, as Fortran timer names and compiler messages do.
   The TAU calls stay on their lines of the source. Timers in sources
   with `#line` lines, such as the output of bison or flex, get new
-  names.
+  names ([#112](https://github.com/ParaToolsInc/SALT-FM/issues/112)).
+- Compiler messages and debug info for instrumented C, C++, and
+  Fortran code give the original file and line when the source has
+  `#line` lines or line markers. Before, the `#line` lines that
+  `saltfm` writes after each TAU call gave the line of the source
+  file, so the code after it got a wrong line, and in Fortran the name
+  of the source instead of the file of the `#line` lines
+  ([#112](https://github.com/ParaToolsInc/SALT-FM/issues/112)).
 - The new `--tau_build_uses_salt_flang` option of `saltfm` and
   `fparse-llvm`, or the `SALT_BUILD_USES_SALT_FLANG` environment
   variable set to any value except empty, `0`, `false`, `no`, or `off`,
