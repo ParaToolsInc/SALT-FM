@@ -1314,7 +1314,13 @@ add_test(NAME make_clang_error_outputs
     echo stale > no_path_dash_space_c.out &&
     echo stale > no_path_o_c.out &&
     echo stale > no_path_dashes_o_c.out &&
-    rm -f o_* multi_source_one.inst.* tau_output_twice_* &&
+    rm -f o_* multi_source_one.inst.* multi_source_no_output_* tau_output_twice_* &&
+    rm -f multi_source_lang_* repeated_source_fortran.* &&
+    cp ${_tests}/fortran/hello.f90 multi_source_no_output_a.f90 &&
+    cp ${_tests}/fortran/cubes.f multi_source_no_output_b.f &&
+    cp ${_tests}/fortran/hello.f90 multi_source_lang_a.inc &&
+    cp ${_tests}/fortran/hello.f90 multi_source_lang_b.inc &&
+    cp ${_tests}/fortran/hello.f90 repeated_source_fortran.f90 &&
     cp ${_tests}/hello.c o_after_dashes_c.c &&
     cp ${_tests}/fortran/hello.f90 o_after_dashes_fortran.f90 &&
     echo stale > o_joined_fortran.out &&
@@ -4730,6 +4736,57 @@ if(TEST_FORTRAN)
     TAIL ${CMAKE_SOURCE_DIR}/tests/fortran/cubes.f
     LOG "ERROR: -o or --tau_output needs exactly one source file; got 2"
     NOT_LOG "Running:")
+  # Unlike C, so is more than one source without an output option: Flang
+  # would parse only the last one, and the others would get no output.
+  _salt_add_clang_error_test(multi_source_no_output_fortran
+    multi_source_no_output_b.inst.F "lang:Fortran"
+    ${SALT_TEST_OUTPUT_DIR}/output_error/multi_source_no_output_a.f90
+    DEFAULT_OUTPUT
+    CHECK "! -e multi_source_no_output_a.inst.F90 -a ! -e multi_source_no_output_b.inst.F"
+    TAIL ${SALT_TEST_OUTPUT_DIR}/output_error/multi_source_no_output_b.f
+    LOG "ERROR: Fortran instrumentation needs exactly one source file; got 2"
+    NOT_LOG "Running:")
+  # So are sources with no Fortran extension, with --lang=fortran, with or
+  # without --tau_output.
+  _salt_add_clang_error_test(multi_source_lang_fortran
+    multi_source_lang_b.inst.inc "lang:Fortran"
+    ${SALT_TEST_OUTPUT_DIR}/output_error/multi_source_lang_a.inc
+    DEFAULT_OUTPUT
+    CHECK "! -e multi_source_lang_a.inst.inc -a ! -e multi_source_lang_b.inst.inc"
+    ARGS --lang=fortran
+    TAIL ${SALT_TEST_OUTPUT_DIR}/output_error/multi_source_lang_b.inc
+    LOG "ERROR: Fortran instrumentation needs exactly one source file; got 2"
+    NOT_LOG "Running:")
+  _salt_add_clang_error_test(multi_source_lang_one_output_fortran
+    multi_source_lang_one.inst.inc "lang:Fortran"
+    ${SALT_TEST_OUTPUT_DIR}/output_error/multi_source_lang_a.inc
+    ARGS --lang=fortran
+    TAIL ${SALT_TEST_OUTPUT_DIR}/output_error/multi_source_lang_b.inc
+    LOG "ERROR: -o or --tau_output needs exactly one source file; got 2"
+    NOT_LOG "Running:")
+  # The source again after `--`, here by another path, is not a second
+  # one, but another source after `--` is.
+  _salt_add_clang_error_test(repeated_source_fortran
+    repeated_source_fortran.inst.F90 "lang:Fortran"
+    ${SALT_TEST_OUTPUT_DIR}/output_error/repeated_source_fortran.f90
+    DEFAULT_OUTPUT EXIT_ZERO CHECK "-s repeated_source_fortran.inst.F90"
+    TAIL -- -c repeated_source_fortran.f90 OUT "TAU_PROFILE_START")
+  _salt_add_clang_error_test(other_source_after_dashes_fortran
+    multi_source_no_output_b.inst.F "lang:Fortran"
+    ${SALT_TEST_OUTPUT_DIR}/output_error/multi_source_no_output_a.f90
+    DEFAULT_OUTPUT
+    CHECK "! -e multi_source_no_output_a.inst.F90 -a ! -e multi_source_no_output_b.inst.F"
+    TAIL -- -c multi_source_no_output_b.f
+    LOG "ERROR: Fortran instrumentation needs exactly one source file; got 2")
+  # --version parses no source, so it takes more than one.
+  _salt_add_clang_error_test(version_multi_source_fortran
+    multi_source_no_output_b.inst.F "lang:Fortran"
+    ${SALT_TEST_OUTPUT_DIR}/output_error/multi_source_no_output_a.f90
+    DEFAULT_OUTPUT EXIT_ZERO
+    CHECK "! -e multi_source_no_output_a.inst.F90 -a ! -e multi_source_no_output_b.inst.F"
+    ARGS --version
+    TAIL ${SALT_TEST_OUTPUT_DIR}/output_error/multi_source_no_output_b.f
+    LOG "SALT-FM Version")
   _salt_add_clang_error_test(o_before_source_fortran
     o_before_source_fortran.inst.F90 "lang:Fortran" fortran/hello.f90
     DEFAULT_OUTPUT EXIT_ZERO CHECK "-s o_before_source_fortran.inst.F90"

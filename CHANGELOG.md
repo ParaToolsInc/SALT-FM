@@ -8,7 +8,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `saltfm` stops with an error, and writes no output, when
   `--tau_output` comes with more than one source, instead of writing
-  only the last source to the output
+  only the last source to the output. So does more than one Fortran
+  source without `--tau_output`, which instrumented only the last one
+  and ignored the others
   ([#111](https://github.com/ParaToolsInc/SALT-FM/issues/111)).
 - Before `--`, `-o <file>`, `-o=<file>`, `--o <file>`, and
   `--o=<file>` name the output file, as `--tau_output` does, and
