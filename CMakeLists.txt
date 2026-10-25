@@ -3042,6 +3042,19 @@ if(TEST_FORTRAN)
     ARGS --config_file=${CMAKE_SOURCE_DIR}/tests/line_directive/config.yaml
     LOG "ERROR: Instrumentation points of ${CMAKE_SOURCE_DIR}/tests/line_directive/include_return"
     "include_return.f90 are not in line order, as when an included file holds instrumented code")
+  # An if-return on the last line, with and without a final newline: the
+  # `#line` line after it gives a line past the end, and saltfm must not
+  # abort
+  foreach(name eof_return eof_return_nonl)
+    add_test(NAME line_directive_${name}
+      COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+        --config_file=${CMAKE_SOURCE_DIR}/tests/line_directive/config.yaml
+        --tau_output=line_directive_${name}.inst.f90
+        ${CMAKE_SOURCE_DIR}/tests/line_directive/${name}.f90)
+    set_tests_properties(line_directive_${name} PROPERTIES
+      LABELS "lang:Fortran;phase:instrument")
+    _salt_in_test_output(instrument line_directive_${name})
+  endforeach()
 endif()
 # The lines after each block that saltfm inserts keep the file and line
 # that the `#line` lines of the input give them (#112). Adds test
@@ -3063,6 +3076,26 @@ function(_salt_add_line_map_test name src compiler label)
 endfunction()
 _salt_add_line_map_test(c map.c ${CMAKE_C_COMPILER} "lang:C")
 _salt_add_line_map_test(cxx map.cpp ${CMAKE_CXX_COMPILER} "lang:CXX")
+# Also an insert after a `#line` line with a `\` and a `""` in the file
+# name, which Flang reads changed, and an if-return with a `#line` line
+# among its continuation lines
+if(TEST_FORTRAN AND _salt_test_flang)
+  _salt_add_line_map_test(fortran map.f90 ${_salt_test_flang}
+    "lang:Fortran")
+  # An if-return with `#include` lines among its continuation lines, whose
+  # text is in its condition, so the output must not include it again
+  add_test(NAME line_directive_include_cont
+    COMMAND sh -c "\"$0\" \"$@\" && \"${_salt_test_flang}\" -fsyntax-only \
+        -I${CMAKE_SOURCE_DIR}/tests/line_directive \
+        line_directive_include_cont.inst.F90"
+      ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+      --config_file=${CMAKE_SOURCE_DIR}/tests/line_directive/config.yaml
+      --tau_output=line_directive_include_cont.inst.F90
+      ${CMAKE_SOURCE_DIR}/tests/line_directive/include_cont.F90)
+  set_tests_properties(line_directive_include_cont PROPERTIES
+    LABELS "lang:Fortran;phase:instrument")
+  _salt_in_test_output(instrument line_directive_include_cont)
+endif()
 
 # Unless --tau_excluded_main_setup=file, the main program of a source
 # that the file lists exclude gets no setup code, and saltfm warns about
