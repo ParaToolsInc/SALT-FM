@@ -42,6 +42,8 @@ extern llvm::cl::opt<ExcludedMainSetup> excluded_main_setup;
 
 typedef struct inst_loc {
     int line = -1;
+    // The line that the `#line` lines give `line`, minus `line`
+    int line_shift = 0;
     int col = -1;
     int kind = -1;
     const char* return_type;
