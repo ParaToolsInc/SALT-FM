@@ -77,6 +77,25 @@ using namespace Fortran::frontend;
  * Visits each node in the parse tree.
  */
 namespace salt::fortran {
+    // The file name of `pos` as written: Flang doubles each `\` of the file name
+    // of a `#line` line, but not of the path of a source file
+    static std::string writtenPath(const Fortran::parser::SourcePosition &pos) {
+        // shortcut: a `#line` name with one `\` where the source path has `\\`
+        // doubles to the source path and stays doubled; upgrade if Flang keeps
+        // whether a name came from a `#line` line
+        if (*pos.path == pos.sourceFile->path()) {
+            return *pos.path;
+        }
+        std::string name;
+        for (std::size_t i{0}; i < pos.path->size(); ++i) {
+            name += (*pos.path)[i];
+            if ((*pos.path)[i] == '\\' && i + 1 < pos.path->size() && (*pos.path)[i + 1] == '\\') {
+                ++i;
+            }
+        }
+        return name;
+    }
+
     class SaltInstrumentAction final : public PluginParseTreeAction {
         struct SaltInstrumentParseTreeVisitor {
             explicit SaltInstrumentParseTreeVisitor(Fortran::parser::Parsing *parsing,
@@ -332,7 +351,7 @@ namespace salt::fortran {
                                   std::string &pathOut) const {
                 const auto pos{parsing->allCooked().GetSourcePositionRange(source)->first};
                 lineOut = pos.line;
-                pathOut = *pos.path;
+                pathOut = writtenPath(pos);
             }
 
             void Post(const Fortran::parser::ProgramStmt &program) {
@@ -390,7 +409,7 @@ namespace salt::fortran {
             // overhead.
             void notePureOrElementalSkip(const std::string &name, const Fortran::parser::CharBlock &source) const {
                 const auto pos = locationFromSource(parsing, source, false);
-                const std::string filePath = pos ? *pos->path : std::string{"<unknown>"};
+                const std::string filePath = pos ? writtenPath(*pos) : std::string{"<unknown>"};
                 const int line = pos ? pos->line : 0;
                 llvm::errs() << "[SALT] " << filePath << ":" << line << ": note: "
                         << "skipping instrumentation of pure or elemental procedure '" << name
@@ -563,9 +582,8 @@ namespace salt::fortran {
                     std::string procPath;
                     int procStartLine;
                     if (isInMainProgram_ && mainProgramName_.empty()) {
-                        procName = std::filesystem::path(*startLoc.path).stem().string()
-                                + "._implicit_main_";
-                        procPath = *startLoc.path;
+                        procPath = writtenPath(startLoc);
+                        procName = std::filesystem::path(procPath).stem().string() + "._implicit_main_";
                         procStartLine = startLoc.line;
                     } else {
                         procName = isInMainProgram_ ? mainProgramName_ : subprogramName_;
@@ -736,7 +754,7 @@ namespace salt::fortran {
             // so it is visible during a normal build.
             void noteAlternateReturn(const Fortran::parser::CharBlock &source, const bool insideIfStmt) const {
                 const auto pos = locationFromSource(parsing, source, false);
-                const std::string filePath = pos ? *pos->path : std::string{"<unknown>"};
+                const std::string filePath = pos ? writtenPath(*pos) : std::string{"<unknown>"};
                 const int line = pos ? pos->line : 0;
                 llvm::errs() << "[SALT] " << filePath << ":" << line << ": note: "
                         << (insideIfStmt

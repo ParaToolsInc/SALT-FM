@@ -3055,6 +3055,22 @@ if(TEST_FORTRAN)
       LABELS "lang:Fortran;phase:instrument")
     _salt_in_test_output(instrument line_directive_${name})
   endforeach()
+  # A raw `\` and an escaped `\\` in `#line` file names, which Flang reads
+  # with each `\` doubled, stay as written in the timer names and notes
+  _salt_add_line_directive_test(backslash backslash.f90
+    backslash.f90.expected "lang:Fortran")
+  add_test(NAME line_directive_backslash_notes
+    COMMAND sh -c "\"$0\" \"$@\" 2> line_directive_backslash_notes.err ||
+        { cat line_directive_backslash_notes.err; exit 1; }
+      grep -F '[SALT] /x/a\\b/n.f90:1: note: skipping' line_directive_backslash_notes.err &&
+      grep -F '[SALT] /x/a\\b/n.f90:4: note: instrumenting' line_directive_backslash_notes.err"
+      ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+      --config_file=${CMAKE_SOURCE_DIR}/tests/line_directive/config.yaml
+      --tau_output=line_directive_backslash_notes.inst.f90
+      ${CMAKE_SOURCE_DIR}/tests/line_directive/backslash_notes.f90)
+  set_tests_properties(line_directive_backslash_notes PROPERTIES
+    LABELS "lang:Fortran;phase:instrument")
+  _salt_in_test_output(instrument line_directive_backslash_notes)
 endif()
 # The lines after each block that saltfm inserts keep the file and line
 # that the `#line` lines of the input give them (#112). Adds test
@@ -4399,6 +4415,9 @@ if(TEST_FORTRAN)
     -DPAD=63)
   _salt_add_fortran_names_test(implicit_apostrophe ${_implicit}
     "-DSTEM=a'b")
+  # A `\\` in the real path, not of a `#line` line, stays as written
+  _salt_add_fortran_names_test(implicit_backslash ${_implicit}
+    [[-DSTEM=a\\b]])
   # A byte that is not valid in the locale's encoding, here Latin-1 in
   # UTF-8, does not hide the module.
   _salt_add_excluded_test(mod_latin1 excluded_mod_latin1.f90
