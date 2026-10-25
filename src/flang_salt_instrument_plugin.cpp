@@ -798,21 +798,31 @@ namespace salt::fortran {
          * flang/lib/Semantics/runtime-type-info.cpp for example
          * of getting the source file name.
          */
-        [[nodiscard]] static std::optional<std::string> getInputFilePath(Fortran::parser::Parsing &parsing) {
+        [[nodiscard]] static const Fortran::parser::SourceFile *getInputFile(Fortran::parser::Parsing &parsing) {
             const auto &allSources{parsing.allCooked().allSources()};
             if (const auto firstProv{allSources.GetFirstFileProvenance()}) {
-                if (const auto *srcFile{allSources.GetSourceFile(firstProv->start())}) {
-                    return srcFile->path();
-                }
+                return allSources.GetSourceFile(firstProv->start());
             }
-            return std::nullopt;
+            return nullptr;
         }
 
-        static std::string lineDirective(const int line, const std::string &file) {
-            return "#line " + std::to_string(line) + " \"" + file + "\"";
+        // The `#line` line for line `line` of `file`, with the line that the `#line`
+        // lines of `file` give it, as in compiler messages. It names `file` unless
+        // they give another file, which the copied `#line` lines of the input keep:
+        // Flang doubles each `\` of a name that it reads, so a copy would not match.
+        // A line past the end, after an insert on the last line, counts on from it.
+        static std::string lineDirective(const Fortran::parser::SourceFile &file, const int line) {
+            const int last{static_cast<int>(file.lines())};
+            if (last == 0) {
+                return "#line " + std::to_string(line) + " \"" + file.path() + "\"";
+            }
+            const int at{std::min(line, last)};
+            const Fortran::parser::SourcePosition pos{file.GetSourcePosition(file.GetLineStartOffset(at))};
+            const std::string directive{"#line " + std::to_string(pos.line + line - at)};
+            return *pos.path == file.path() ? directive + " \"" + file.path() + "\"" : directive;
         }
 
-        static void instrumentFile(const std::string &inputFilePath, std::ifstream &inputStream,
+        static void instrumentFile(const Fortran::parser::SourceFile &inputFile, std::ifstream &inputStream,
                                    llvm::raw_pwrite_stream &outputStream,
                                    const SaltInstrumentParseTreeVisitor &visitor,
                                    const InstrumentationMap &instMap) {
@@ -822,7 +832,7 @@ namespace salt::fortran {
 
             verboseStream() << "Will perform instrumentation:\n" << visitor.dumpInstrumentationPoints();
 
-            outputStream << lineDirective(1, inputFilePath) << "\n";
+            outputStream << lineDirective(inputFile, 1) << "\n";
 
             auto instIter{instPts.cbegin()};
             while (std::getline(inputStream, lineText)) {
@@ -847,7 +857,7 @@ namespace salt::fortran {
                 // continuation tail is not echoed after our synthesized replacement.
                 while (instIter != instPts.cend() && (*instIter)->line() == lineNum && (*instIter)->location() ==
                        InstrumentationLocation::REPLACE) {
-                    outputStream << lineDirective(lineNum, inputFilePath) << "\n";
+                    outputStream << lineDirective(inputFile, lineNum) << "\n";
                     outputStream << (*instIter)->instrumentationString(instMap, lineText) << "\n";
                     int replacedThroughLine{lineNum};
                     // SALT links against LLVM with -fno-rtti, so dynamic_cast is
@@ -864,6 +874,13 @@ namespace salt::fortran {
                             break;
                         }
                         ++lineNum;
+                        // Keep the preprocessor lines, such as a `#line` line, after the block,
+                        // except an `#include`, whose text is already in the condition.
+                        // shortcut: an indented one is dropped; check for blanks if one shows up.
+                        if (llvm::StringRef directive{discardedLine};
+                            directive.consume_front("#") && !directive.ltrim().starts_with("include")) {
+                            outputStream << discardedLine << "\n";
+                        }
                     }
                     lineWasInstrumentedAfter = true;
                     shouldOutputLine = false;
@@ -872,7 +889,7 @@ namespace salt::fortran {
 
                 // If line was instrumented, output a #line directive
                 if (lineWasInstrumentedBefore) {
-                    outputStream << lineDirective(lineNum, inputFilePath) << "\n";
+                    outputStream << lineDirective(inputFile, lineNum) << "\n";
                 }
 
                 // Output the current line, if not replaced.
@@ -890,7 +907,7 @@ namespace salt::fortran {
 
                 // If line was instrumented, output a #line directive
                 if (lineWasInstrumentedAfter) {
-                    outputStream << lineDirective(lineNum+1, inputFilePath) << "\n";
+                    outputStream << lineDirective(inputFile, lineNum+1) << "\n";
                 }
             }
         }
@@ -1033,16 +1050,16 @@ namespace salt::fortran {
             // and the source
             Fortran::parser::Parsing &parsing = getParsing();
 
-            // Get the path to the input file
-            const auto inputFilePathStr = getInputFilePath(parsing);
-            if (!inputFilePathStr) {
+            // Get the input file and its path
+            const Fortran::parser::SourceFile *inputFile{getInputFile(parsing)};
+            if (!inputFile) {
                 llvm::errs() << "ERROR: Unable to find input file name!\n";
                 std::exit(EXIT_FAILURE);
             }
 
-            verboseStream() << "Have input file: " << *inputFilePathStr << "\n";
+            verboseStream() << "Have input file: " << inputFile->path() << "\n";
 
-            const std::filesystem::path inputFilePath{inputFilePathStr.value()};
+            const std::filesystem::path inputFilePath{inputFile->path()};
 
             if (const auto selectPath{getSelectFilePath()}; selectPath.has_value()) {
                 if (processInstrumentationRequests(selectPath->c_str())) {
@@ -1134,7 +1151,7 @@ namespace salt::fortran {
             }
 
             // Use the instrumentation points stored in the Visitor to write the instrumented file.
-            instrumentFile(inputFilePath, inputStream, outputStream, visitor, instMap);
+            instrumentFile(*inputFile, inputStream, outputStream, visitor, instMap);
 
             outputStream.close();
             if (outputStream.has_error()) {
