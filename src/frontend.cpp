@@ -281,8 +281,8 @@ static bool prepareOutput(std::vector<std::string> inputs)
 }
 
 // The arguments that can name an input when the option parser fails and gives no source list:
-// all but the value of a separate --tau_output or -o, with response files expanded as the parser
-// does. `create` has already cut `argc` at `--`, as the parser reads it.
+// all but the value of a separate --tau_output or -o, with one or two dashes, with response files
+// expanded as the parser does. `create` has already cut `argc` at `--`, as the parser reads it.
 static std::vector<std::string> argumentInputs(int argc, const char *const *argv)
 {
     llvm::BumpPtrAllocator allocator;
@@ -290,13 +290,13 @@ static std::vector<std::string> argumentInputs(int argc, const char *const *argv
     llvm::SmallVector<const char *, 20> args;
     llvm::cl::expandResponseFiles(argc, argv, nullptr, saver, args);
     std::vector<std::string> inputs;
-    // shortcut: this skips the word after any --tau_output, -tau_output, or -o, even when that
+    // shortcut: this skips the word after any --tau_output, -tau_output, -o, or --o, even when that
     // word is the value of the option before it, as in `--tau_select_file --tau_output src.c`, so
     // an option error can remove src.c; fix it if real builds pass such arguments.
     for (size_t i = 0; i < args.size(); ++i)
     {
         llvm::StringRef previous = i > 0 ? args[i - 1] : "";
-        if (previous != "--tau_output" && previous != "-tau_output" && previous != "-o")
+        if (previous != "--tau_output" && previous != "-tau_output" && previous != "-o" && previous != "--o")
         {
             inputs.push_back(args[i]);
         }
