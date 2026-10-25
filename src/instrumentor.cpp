@@ -618,6 +618,28 @@ static bool useSpelledSignature(const FunctionDecl *func)
     return false;
 }
 
+// A file, line, and column, as compiler messages give them
+struct src_pos
+{
+    std::string file;
+    unsigned line;
+    unsigned col;
+};
+
+// The position that the `#line` lines give the spelling location of `loc`, as
+// in compiler messages, or, if Clang has none, its position in its file
+static src_pos presumedPos(const SourceManager &src_mgr, SourceLocation loc)
+{
+    const SourceLocation spelling = src_mgr.getSpellingLoc(loc);
+    const PresumedLoc presumed = src_mgr.getPresumedLoc(spelling);
+    if (presumed.isInvalid())
+    {
+        return {src_mgr.getFilename(spelling).str(), src_mgr.getSpellingLineNumber(spelling),
+                src_mgr.getSpellingColumnNumber(spelling)};
+    }
+    return {presumed.getFilename(), presumed.getLine(), presumed.getColumn()};
+}
+
 // Sets the name of `func` and its timer name, which has the file and lines
 // that the `#line` lines give, as in compiler messages, and returns the file
 // that holds `func`, whose lines the instrumentation keeps
@@ -634,8 +656,8 @@ std::string makeFuncAndTimerNames(FunctionDecl *func, ASTContext *context, Sourc
 
     SourceLocation begin = func->getSourceRange().getBegin();
     // At the spelling location, as before, in a macro too
-    PresumedLoc start_loc = src_mgr.getPresumedLoc(src_mgr.getSpellingLoc(begin));
-    PresumedLoc end_loc = src_mgr.getPresumedLoc(src_mgr.getSpellingLoc(body_range.getEnd()));
+    const src_pos start_loc = presumedPos(src_mgr, begin);
+    const src_pos end_loc = presumedPos(src_mgr, body_range.getEnd());
 
     func_name = func->getQualifiedNameAsString();
     QualType type = func->getType();
@@ -681,9 +703,9 @@ std::string makeFuncAndTimerNames(FunctionDecl *func, ASTContext *context, Sourc
     //     lang_string = "unknown";
     // }
 
-    timer_name = sig + " " + lang_string + " [{" + start_loc.getFilename() + "} {" +
-                 std::to_string(start_loc.getLine()) + "," + std::to_string(start_loc.getColumn()) + "}-{" +
-                 std::to_string(end_loc.getLine()) + "," + std::to_string(end_loc.getColumn()) + "}]";
+    timer_name = sig + " " + lang_string + " [{" + start_loc.file + "} {" + std::to_string(start_loc.line) + "," +
+                 std::to_string(start_loc.col) + "}-{" + std::to_string(end_loc.line) + "," +
+                 std::to_string(end_loc.col) + "}]";
     return src_mgr.getFilename(begin).str();
 }
 
