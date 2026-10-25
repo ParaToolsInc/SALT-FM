@@ -53,6 +53,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `return` and then `ONE;` on the next line, gets its TAU call right.
   Where a macro gives the start or the closing brace of a function, its
   timer name gives the line of the macro, not of its `#define`.
+- Fortran timer names and `[SALT]` notes give the file name of a
+  `#line` line as written; before, each `\` in it was doubled, as in
+  Flang's messages.
 - The new `--tau_build_uses_salt_flang` option of `saltfm` and
   `fparse-llvm`, or the `SALT_BUILD_USES_SALT_FLANG` environment
   variable set to any value except empty, `0`, `false`, `no`, or `off`,
