@@ -8,3 +8,4 @@ build-*/
 tau2/
 .envrc
 salt-install/
+graphify-out/
