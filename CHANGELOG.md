@@ -44,6 +44,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   file, so the code after it got a wrong line, and in Fortran the name
   of the source instead of the file of the `#line` lines
   ([#112](https://github.com/ParaToolsInc/SALT-FM/issues/112)).
+- C and C++ functions whose start comes from a macro, such as `DEF(f)`
+  after `#define DEF(n) int n(void)`, get timers; before, they got none.
+  `saltfm` warns about a function whose opening brace, or, with the C
+  API, closing brace or a return statement comes from a macro, and
+  leaves it uninstrumented, instead of writing its TAU calls on wrong
+  lines. A return statement whose last token is a macro, such as
+  `return` and then `ONE;` on the next line, gets its TAU call right.
+  Where a macro gives the start or the closing brace of a function, its
+  timer name gives the line of the macro, not of its `#define`.
 - The new `--tau_build_uses_salt_flang` option of `saltfm` and
   `fparse-llvm`, or the `SALT_BUILD_USES_SALT_FLANG` environment
   variable set to any value except empty, `0`, `false`, `no`, or `off`,

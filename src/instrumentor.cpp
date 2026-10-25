@@ -27,7 +27,9 @@
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <set>
 #include <string>
+#include <tuple>
 #include <vector>
 #include <sys/stat.h>
 
@@ -661,10 +663,12 @@ std::string makeFuncAndTimerNames(FunctionDecl *func, ASTContext *context, Sourc
     Stmt *func_body = func->getBody();
     SourceRange body_range = func_body->getSourceRange();
 
-    SourceLocation begin = func->getSourceRange().getBegin();
-    // At the spelling location, as before, in a macro too
+    // Where a macro gives the start or the end, the place of the macro in the
+    // file that holds the body, not of its definition, which may be in a header
+    SourceLocation begin = src_mgr.getExpansionLoc(func->getSourceRange().getBegin());
     const src_pos start_loc = presumedPos(src_mgr, begin);
-    const src_pos end_loc = presumedPos(src_mgr, body_range.getEnd());
+    // The end of a macro call, which may span lines
+    const src_pos end_loc = presumedPos(src_mgr, src_mgr.getExpansionRange(body_range.getEnd()).getEnd());
 
     func_name = func->getQualifiedNameAsString();
     QualType type = func->getType();
@@ -722,6 +726,8 @@ class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
     SourceManager &src_mgr;
     FunctionDecl *encl_function;
     std::vector<SourceRange> lambda_locs;
+    // Whether a macro gives the `return` of a return statement of `encl_function`
+    bool macro_return = false;
 
   public:
     explicit FindReturnVisitor(ASTContext *context, SourceManager &SM) : context(context), src_mgr(SM)
@@ -738,6 +744,7 @@ class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
                 return true;
             }
         }
+        macro_return = macro_return || ret->getReturnLoc().isMacroID();
         makeRetInstLoc(ret);
         return true;
     }
@@ -758,7 +765,9 @@ class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
 
         unsigned int start_line = start_loc.getSpellingLineNumber();
         unsigned int start_col = start_loc.getSpellingColumnNumber();
-        unsigned int end_line = end_loc.getSpellingLineNumber();
+        // The line of the last token in the source, or, where a macro gives it,
+        // of the end of the macro call, which may span lines
+        unsigned int end_line = src_mgr.getSpellingLineNumber(src_mgr.getExpansionRange(end_loc).getEnd());
         // unused
         // unsigned int end_col = end_loc.getSpellingColumnNumber();
 
@@ -847,9 +856,19 @@ class FindFunctionVisitor : public RecursiveASTVisitor<FindFunctionVisitor>
         if (func->hasBody() &&
             (!func->isInlined() || do_inline || check_func_against_list(includelist, func, context, src_mgr)))
         { //
+            const size_t first = inst_locs.size();
             makeFuncInstLoc(func);
             return_visitor.encl_function = func;
+            return_visitor.macro_return = false;
             return_visitor.TraverseDecl(func);
+            // The inserts go on the lines of the source text, so they cannot go
+            // where a macro gives the braces or a `return`
+            const SourceRange body = func->getBody()->getSourceRange();
+            for (size_t i = first; i < inst_locs.size(); i++)
+            {
+                inst_locs[i]->begin_in_macro = body.getBegin().isMacroID();
+                inst_locs[i]->end_in_macro = body.getEnd().isMacroID() || return_visitor.macro_return;
+            }
         }
         return true;
     }
@@ -1220,6 +1239,7 @@ void instrumentor::instrument()
         const std::string abs_fname = normal_path(fname);
 
         DPRINT0("filtering locations for file\n");
+        std::set<std::tuple<int, int, std::string>> warned;
         // filter on fname
         for (inst_loc *loc : inst_locs)
         {
@@ -1231,6 +1251,19 @@ void instrumentor::instrument()
                 if (loc->skip && (excluded_main_setup == ExcludedMainSetup::none || loc->kind != BEGIN_FUNC ||
                                   strcmp(loc->func_name, "main") != 0))
                 {
+                    continue;
+                }
+                // The C++ API inserts only at the opening brace
+                if (loc->begin_in_macro || (!use_cxx_api && loc->end_in_macro))
+                {
+                    // Once for each function: a prototype in the file gives it twice, as for
+                    // eq_inst_loc() below
+                    if (loc->kind == BEGIN_FUNC && warned.emplace(loc->line, loc->col, loc->func_name).second)
+                    {
+                        llvm::errs() << "WARNING: " << loc->file << ": SALT-FM does not instrument \""
+                                     << selectName(loc->full_timer_name) << "\",\n"
+                                     << "  since a macro gives its braces or a return statement\n";
+                    }
                     continue;
                 }
                 inst_locations.push_back(loc);

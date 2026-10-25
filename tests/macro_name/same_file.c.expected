@@ -1,0 +1,17 @@
+void timer_start(const char *name);
+void timer_stop(void);
+#define RET int
+#define DEF(n) int n(void)
+#define ONE 1
+RET f(void) {
+    timer_start("int f(void)  [{same_file.c} {6,1}-{8,1}]");
+	{ int inst_ret_val =  ONE; timer_stop(); return inst_ret_val; }
+}
+DEF(g) {
+    timer_start("int g(void)  [{same_file.c} {9,1}-{11,1}]");
+	{ int inst_ret_val =  2; timer_stop(); return inst_ret_val; }
+}
+int main(void) {
+    timer_start("int main(void)  [{same_file.c} {12,1}-{14,1}]");
+	{ int inst_ret_val =  f() + g(); timer_stop(); return inst_ret_val; }
+}

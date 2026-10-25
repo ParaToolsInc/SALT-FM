@@ -1,0 +1,2 @@
+WARNING: cxx_api.cpp: SALT-FM does not instrument "int k(void)",
+  since a macro gives its braces or a return statement
