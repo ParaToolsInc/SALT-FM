@@ -36,9 +36,8 @@ readonly _SCRIPT_DIR
 
 read -r -d '' _USAGE <<EOF || true
 OVERVIEW: Tool for adding TAU instrumentation to source files.
-C and C++ source files each get their own output. With more than one Fortran
-source file and no output option, only the last one is instrumented; the
-others are ignored. --tau_output and -o need exactly one source file.
+C and C++ source files each get their own output. Fortran, --tau_output, and
+-o need exactly one source file.
 USAGE: $0 [options] <source0> [... <sourceN>]
 
 OPTIONS:

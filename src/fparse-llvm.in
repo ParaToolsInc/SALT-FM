@@ -44,10 +44,8 @@ SALT_PLUGIN_SO="${_SCRIPT_DIR}/../@CMAKE_INSTALL_LIBDIR@/${_SALTFM_PLUGIN_SO}"
 
 read -r -d '' _USAGE <<EOF || true
 OVERVIEW: Tool for adding TAU instrumentation to source files.
-With more than one source file and no output option, only the last one is
-instrumented; the others are ignored. --tau_output and -o need exactly one
-source file.
-USAGE: $0 [options] <source0> [... <sourceN>]
+This instruments exactly one source file; more than one is an error.
+USAGE: $0 [options] <source>
 
 OPTIONS:
 
@@ -226,6 +224,10 @@ _WHITELISTED_OPT_ARG_REGEX="^(${_WHITELISTED_OPT_ARG_REGEX})$"
 inputs=()
 # The arguments that are not flags and have no Fortran extension
 others=()
+# The arguments with a Fortran extension, and the files in `others` before
+# `--`, which are the sources when no argument has a Fortran extension
+fortran_sources=()
+other_files=()
 args=()
 expecting_arg_to_forward=false
 expecting_output_file=false
@@ -237,9 +239,8 @@ expecting_parse_excluded_modules=false
 # After `--`, -o is a build option, not the output, and its value is no source
 after_dashes=false
 expecting_build_output=false
-# The numbers of -o and --tau_output options, and of sources
+# The number of -o and --tau_output options
 output_options=0
-sources=0
 unknown_o_option=
 # Only the arguments set these, not environment variables of the same names
 unset FORTRAN_CONFIG_FILE flang_exe input_file output_file select_file
@@ -353,7 +354,7 @@ for arg in "$@"; do
     # in a flag, such as -DSRC=util.f08
     elif [[ $arg != -* && $arg =~ \.(f|F|for|FOR|ftn|FTN|f77|fpp|FPP|[fF](90|95|03|08|18))$ ]]; then
         input_file="$arg"
-        sources=$((sources + 1))
+        fortran_sources+=("$arg")
         shift || true
         #echo "args remaining: $*"
     elif [[ $arg == --show ]]; then
@@ -401,6 +402,12 @@ for arg in "$@"; do
         # The first one is the input file if no argument has a Fortran
         # extension
         others+=("$arg")
+        # A file before `--` can be a source, unlike a word that names no
+        # file, such as the value of an unknown flag; after `--`, as in C,
+        # it is a build argument
+        if ! $after_dashes && [[ -f $arg ]]; then
+            other_files+=("$arg")
+        fi
         shift || true
     else
         echo "Removed unknown flag: $arg"
@@ -450,8 +457,28 @@ if [[ ${output_options} -gt 1 ]]; then
     echo "ERROR: give -o or --tau_output only once" >&2
     exit 1
 fi
-if [[ ${output_options} -gt 0 && ${sources} -gt 1 ]]; then
-    echo "ERROR: -o or --tau_output needs exactly one source file; got ${sources}" >&2
+# Such as with --lang=fortran for a .inc source
+if [[ ${#fortran_sources[@]} -eq 0 ]]; then
+    fortran_sources=(${other_files[@]+"${other_files[@]}"})
+fi
+# A source given again, such as after `--`, is still one source
+sources=()
+for arg in ${fortran_sources[@]+"${fortran_sources[@]}"}; do
+    for seen in ${sources[@]+"${sources[@]}"}; do
+        if [[ ${arg} == "${seen}" || ${arg} -ef ${seen} ]]; then
+            continue 2
+        fi
+    done
+    sources+=("$arg")
+done
+# Flang parses one source, so the others would get no output
+if ! $version && [[ ${#sources[@]} -gt 1 ]]; then
+    if [[ ${output_options} -gt 0 ]]; then
+        echo "ERROR: -o or --tau_output needs exactly one source file; got ${#sources[@]}" >&2
+    else
+        echo "ERROR: Fortran instrumentation needs exactly one source file; got ${#sources[@]}" >&2
+        echo "Run saltfm once for each Fortran source file." >&2
+    fi
     exit 1
 fi
 
