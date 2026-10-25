@@ -44,7 +44,8 @@ SALT_PLUGIN_SO="${_SCRIPT_DIR}/../@CMAKE_INSTALL_LIBDIR@/${_SALTFM_PLUGIN_SO}"
 
 read -r -d '' _USAGE <<EOF || true
 OVERVIEW: Tool for adding TAU instrumentation to source files.
-This instruments exactly one source file; more than one is an error.
+This instruments exactly one source file; more than one is an error. Give
+compiler flags after --.
 USAGE: $0 [options] <source>
 
 OPTIONS:
@@ -222,12 +223,11 @@ _WHITELISTED_OPT_ARG_REGEX="^(${_WHITELISTED_OPT_ARG_REGEX})$"
 # The arguments that can name an input: all but the output file and the
 # values forwarded after a flag
 inputs=()
-# The arguments that are not flags and have no Fortran extension
+# The sources: the arguments with a Fortran extension, and the files before
+# `--` that are not flags
+source_args=()
+# The other arguments that are not flags
 others=()
-# The arguments with a Fortran extension, and the files in `others` before
-# `--`, which are the sources when no argument has a Fortran extension
-fortran_sources=()
-other_files=()
 args=()
 expecting_arg_to_forward=false
 expecting_output_file=false
@@ -353,8 +353,7 @@ for arg in "$@"; do
     # The Fortran extensions that Flang or gfortran read, as saltfm, but not
     # in a flag, such as -DSRC=util.f08
     elif [[ $arg != -* && $arg =~ \.(f|F|for|FOR|ftn|FTN|f77|fpp|FPP|[fF](90|95|03|08|18))$ ]]; then
-        input_file="$arg"
-        fortran_sources+=("$arg")
+        source_args+=("$arg")
         shift || true
         #echo "args remaining: $*"
     elif [[ $arg == --show ]]; then
@@ -398,16 +397,15 @@ for arg in "$@"; do
         expecting_arg_to_forward=true
         shift || true
         #echo "Added whitelisted flag with argument: $arg"
+    # Before `--`, a file is a source, even as the value of an unknown flag,
+    # so build flags go after `--`; after it, as in C, a word is a build
+    # argument
+    elif [[ $arg != -* ]] && ! $after_dashes && [[ -f $arg ]]; then
+        source_args+=("$arg")
+        shift || true
     elif [[ $arg != -* ]]; then
-        # The first one is the input file if no argument has a Fortran
-        # extension
+        # The first one is the input file if there is no source
         others+=("$arg")
-        # A file before `--` can be a source, unlike a word that names no
-        # file, such as the value of an unknown flag; after `--`, as in C,
-        # it is a build argument
-        if ! $after_dashes && [[ -f $arg ]]; then
-            other_files+=("$arg")
-        fi
         shift || true
     else
         echo "Removed unknown flag: $arg"
@@ -452,18 +450,14 @@ if [[ -n ${unknown_o_option} ]]; then
     echo "ERROR: Unknown command line argument '${unknown_o_option}'" >&2
     exit 1
 fi
-# The loop keeps the last output and the last source
+# The loop keeps the last output
 if [[ ${output_options} -gt 1 ]]; then
     echo "ERROR: give -o or --tau_output only once" >&2
     exit 1
 fi
-# Such as with --lang=fortran for a .inc source
-if [[ ${#fortran_sources[@]} -eq 0 ]]; then
-    fortran_sources=(${other_files[@]+"${other_files[@]}"})
-fi
 # A source given again, such as after `--`, is still one source
 sources=()
-for arg in ${fortran_sources[@]+"${fortran_sources[@]}"}; do
+for arg in ${source_args[@]+"${source_args[@]}"}; do
     for seen in ${sources[@]+"${sources[@]}"}; do
         if [[ ${arg} == "${seen}" || ${arg} -ef ${seen} ]]; then
             continue 2
@@ -572,7 +566,9 @@ fi
 
 #echo "args: \"${args[*]}\""
 # print the argument list
-if [[ -z "${input_file:-}" && ${#others[@]} -gt 0 ]]; then
+if [[ ${#sources[@]} -gt 0 ]]; then
+    input_file="${sources[0]}"
+elif [[ ${#others[@]} -gt 0 ]]; then
     input_file="${others[0]}"
     others=("${others[@]:1}")
 fi

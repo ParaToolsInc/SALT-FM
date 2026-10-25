@@ -166,12 +166,13 @@ build/bin/saltfm tests/hello.c
 
 `saltfm` writes `hello.inst.c` in the working directory. To name the
 output file, use `--tau_output=<file>` or, before `--`, `-o <file>`,
-with exactly one source. A Fortran run takes exactly one source. A run
-that fails, for example on a full disk, leaves no partial output file.
-For all options, run `saltfm --help`. An option has priority over its
-environment variable. To turn on an on/off option with its environment
-variable, set the variable to any value except empty, `0`, `false`,
-`no`, or `off`, in any case.
+with exactly one source. A Fortran run takes exactly one source. Give
+compiler flags after `--`. A run that fails, for example on a full
+disk, leaves no partial output file. For all options, run
+`saltfm --help`. An option has priority over its environment variable.
+To turn on an on/off option with its environment variable, set the
+variable to any value except empty, `0`, `false`, `no`, or `off`, in
+any case.
 
 `saltfm` reads a source as Fortran if its extension is `.f`, `.for`,
 `.ftn`, `.f77`, `.fpp`, `.f90`, `.f95`, `.f03`, `.f08`, or `.f18`, in

@@ -1315,12 +1315,13 @@ add_test(NAME make_clang_error_outputs
     echo stale > no_path_o_c.out &&
     echo stale > no_path_dashes_o_c.out &&
     rm -f o_* multi_source_one.inst.* multi_source_no_output_* tau_output_twice_* &&
-    rm -f multi_source_lang_* repeated_source_fortran.* &&
+    rm -f multi_source_lang_* repeated_source_fortran.* unknown_value_fortran.* &&
     cp ${_tests}/fortran/hello.f90 multi_source_no_output_a.f90 &&
     cp ${_tests}/fortran/cubes.f multi_source_no_output_b.f &&
     cp ${_tests}/fortran/hello.f90 multi_source_lang_a.inc &&
     cp ${_tests}/fortran/hello.f90 multi_source_lang_b.inc &&
     cp ${_tests}/fortran/hello.f90 repeated_source_fortran.f90 &&
+    cp ${_tests}/fortran/hello.f90 unknown_value_fortran.inc &&
     cp ${_tests}/hello.c o_after_dashes_c.c &&
     cp ${_tests}/fortran/hello.f90 o_after_dashes_fortran.f90 &&
     echo stale > o_joined_fortran.out &&
@@ -4764,6 +4765,26 @@ if(TEST_FORTRAN)
     TAIL ${SALT_TEST_OUTPUT_DIR}/output_error/multi_source_lang_b.inc
     LOG "ERROR: -o or --tau_output needs exactly one source file; got 2"
     NOT_LOG "Running:")
+  # A file before `--` is a source, also with another source that has a
+  # Fortran extension.
+  _salt_add_clang_error_test(multi_source_mixed_fortran
+    multi_source_lang_b.inst.inc "lang:Fortran"
+    ${SALT_TEST_OUTPUT_DIR}/output_error/multi_source_no_output_a.f90
+    DEFAULT_OUTPUT
+    CHECK "! -e multi_source_no_output_a.inst.F90 -a ! -e multi_source_lang_b.inst.inc"
+    ARGS --lang=fortran
+    TAIL ${SALT_TEST_OUTPUT_DIR}/output_error/multi_source_lang_b.inc
+    LOG "ERROR: Fortran instrumentation needs exactly one source file; got 2"
+    NOT_LOG "Running:")
+  # A word that names no file, here the value of an unknown flag, is no
+  # source, so the file after it is the input.
+  _salt_add_clang_error_test(unknown_value_fortran
+    unknown_value_fortran.inst.inc "lang:Fortran"
+    ${SALT_TEST_OUTPUT_DIR}/output_error/unknown_value_fortran.inc
+    DEFAULT_OUTPUT EXIT_ZERO CHECK "-s unknown_value_fortran.inst.inc"
+    ARGS --lang=fortran -unknown unknown_value_fortran_ignored
+    LOG "Removed unknown flag: unknown_value_fortran_ignored"
+    OUT "TAU_PROFILE_START")
   # The source again after `--`, here by another path, is not a second
   # one, but another source after `--` is.
   _salt_add_clang_error_test(repeated_source_fortran
