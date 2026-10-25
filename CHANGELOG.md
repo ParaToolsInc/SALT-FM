@@ -10,8 +10,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--tau_output` comes with more than one source, instead of writing
   only the last source to the output. So does more than one Fortran
   source without `--tau_output`, which instrumented only the last one
-  and ignored the others. For Fortran, each file before `--` that is
-  not an option is a source, so give compiler flags after `--`
+  and ignored the others. For Fortran, each file before `--` is a
+  source, unless it is an option or the value of an option that
+  `saltfm` knows, so give compiler flags after `--`
   ([#111](https://github.com/ParaToolsInc/SALT-FM/issues/111)).
 - Before `--`, `-o <file>`, `-o=<file>`, `--o <file>`, and
   `--o=<file>` name the output file, as `--tau_output` does, and
