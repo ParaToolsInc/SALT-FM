@@ -7,6 +7,10 @@ function_begin_insert:
   - "    timer_start(\"${full_timer_name}\");"
 function_end_insert:
   - "timer_stop();"
+main_insert_scope:
+  - "    timer_scope t(\"${full_timer_name}\");"
+function_begin_insert_scope:
+  - "    timer_scope t(\"${full_timer_name}\");"
 
 Fortran:
   program_insert:

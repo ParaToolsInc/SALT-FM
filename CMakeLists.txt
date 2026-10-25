@@ -3097,6 +3097,52 @@ if(TEST_FORTRAN AND _salt_test_flang)
   _salt_in_test_output(instrument line_directive_include_cont)
 endif()
 
+# A C or C++ function whose start, braces, or return statement comes
+# from a macro. Adds test macro_name_<name> for source `src` in
+# tests/macro_name, with the saltfm options in ARGN: saltfm must give
+# <src>.expected, without its `#line` lines, and print the warnings of
+# <src>.warnings, or none, and its output must compile.
+function(_salt_add_macro_name_test name src)
+  set(dir ${CMAKE_SOURCE_DIR}/tests/macro_name)
+  get_filename_component(ext ${src} LAST_EXT)
+  set(out macro_name_${name}.inst${ext})
+  set(warnings /dev/null)
+  if(EXISTS ${dir}/${src}.warnings)
+    set(warnings ${dir}/${src}.warnings)
+  endif()
+  set(compiler ${CMAKE_C_COMPILER})
+  set(label "lang:C")
+  if(ext STREQUAL ".cpp")
+    set(compiler ${CMAKE_CXX_COMPILER})
+    set(label "lang:CXX")
+  endif()
+  add_test(NAME macro_name_${name}
+    COMMAND sh -c "\"$0\" \"$@\" 2> ${out}.err || { cat ${out}.err; exit 1; }
+      sed 's|${dir}/||g' ${out}.err | diff -u ${warnings} - &&
+      grep -Ev -e '^#line [0-9]+( \"${dir}/${src}\")?$' -e '^[[:space:]]*$' ${out} |
+        sed 's|${dir}/||g' | diff -u ${dir}/${src}.expected - &&
+      \"${compiler}\" -fsyntax-only -I${dir} ${out}"
+      ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+      --config_file=${CMAKE_SOURCE_DIR}/tests/line_directive/config.yaml
+      --tau_output=${out} ${ARGN} ${dir}/${src})
+  set_tests_properties(macro_name_${name} PROPERTIES
+    LABELS "${label};phase:instrument")
+  _salt_in_test_output(instrument macro_name_${name})
+endfunction()
+# The start of the function from a macro of the same file or a header
+_salt_add_macro_name_test(same_file same_file.c)
+_salt_add_macro_name_test(header header.c)
+# Braces or a return statement from a macro: no timers, and one warning
+# for each function, also with a prototype
+_salt_add_macro_name_test(body body.c)
+# A return statement whose last token is a macro, one on the next line
+# and the definition on the line of the `return`, or a macro call over
+# two lines
+_salt_add_macro_name_test(return_end return_end.c)
+# The C++ API inserts only at the opening brace, so only a macro that
+# gives it leaves the function out
+_salt_add_macro_name_test(cxx_api cxx_api.cpp --tau_use_cxx_api)
+
 # Unless --tau_excluded_main_setup=file, the main program of a source
 # that the file lists exclude gets no setup code, and saltfm warns about
 # it.

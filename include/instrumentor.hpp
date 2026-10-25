@@ -55,6 +55,10 @@ typedef struct inst_loc {
     bool is_return_ptr = false;
     bool needs_move = false;
     bool skip = false;
+    // Whether a macro gives the opening brace of the function
+    bool begin_in_macro = false;
+    // Whether a macro gives the closing brace or a `return` of the function
+    bool end_in_macro = false;
 } inst_loc;
 
 #endif
