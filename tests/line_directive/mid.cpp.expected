@@ -7,12 +7,12 @@ int first() {
 #line 1 "block.hpp"
 namespace m {
 int second() {
-    timer_start("int m::second(void)  [{mid.cpp} {8,1}-{10,1}]");
+    timer_start("int m::second(void)  [{block.hpp} {2,1}-{4,1}]");
 	{ int inst_ret_val =  2; timer_stop(); return inst_ret_val; }
 }
 }
 #line 4 "mid.cpp"
 int main() {
-    timer_start("int main(void)  [{mid.cpp} {13,1}-{15,1}]");
+    timer_start("int main(void)  [{mid.cpp} {4,1}-{6,1}]");
 	{ int inst_ret_val =  n::first() + m::second(); timer_stop(); return inst_ret_val; }
 }
