@@ -3008,16 +3008,18 @@ endif()
 # directives give, as compiler messages do (#112). Adds test
 # line_directive_<name>: saltfm, run in test-output/instrument (for
 # module files) on `src` in tests/line_directive with its config.yaml,
-# must write the output `expected`, which leaves out the `#line`
-# directives that saltfm writes (with no file, or the path of `src`),
-# the blank lines, and the path of that directory, but keeps those of
-# `src`.
+# must write the output <stem>.expected<ext> of `src`, which leaves out
+# the `#line` directives that saltfm writes (with no file, or the path
+# of `src`), the blank lines, and the path of that directory, but keeps
+# those of `src`.
 # Case is ignored, as Flang versions differ in the case of a program
 # name. The output must also compile, for C and C++ with the prototypes
 # of tests/line_directive/timer.h.
-function(_salt_add_line_directive_test name src expected label)
+function(_salt_add_line_directive_test name src label)
   set(dir ${CMAKE_SOURCE_DIR}/tests/line_directive)
   get_filename_component(ext ${src} LAST_EXT)
+  get_filename_component(stem ${src} NAME_WLE)
+  set(expected ${stem}.expected${ext})
   set(out ${SALT_TEST_OUTPUT_DIR}/instrument/line_directive_${name}.inst${ext})
   set(compile "\"${_salt_test_flang}\"")
   if(ext STREQUAL ".c")
@@ -3037,28 +3039,24 @@ function(_salt_add_line_directive_test name src expected label)
     LABELS "${label};phase:instrument")
   _salt_in_test_output(instrument line_directive_${name})
 endfunction()
-_salt_add_line_directive_test(c mid.c mid.c.expected "lang:C")
-_salt_add_line_directive_test(cxx mid.cpp mid.cpp.expected "lang:CXX")
+_salt_add_line_directive_test(c mid.c "lang:C")
+_salt_add_line_directive_test(cxx mid.cpp "lang:CXX")
 # A linemarker, a `#line` directive with no file, which keeps the file,
 # and a file with a `"` and a `\`, which the C string of the name
 # escapes
-_salt_add_line_directive_test(c_names names.c names.c.expected "lang:C")
+_salt_add_line_directive_test(c_names names.c "lang:C")
 if(TEST_FORTRAN)
-  _salt_add_line_directive_test(top top.f90 top.f90.expected "lang:Fortran")
-  _salt_add_line_directive_test(top_hash top_hash.f90 top_hash.f90.expected
-    "lang:Fortran")
-  _salt_add_line_directive_test(mid mid.f90 mid.f90.expected "lang:Fortran")
+  _salt_add_line_directive_test(top top.f90 "lang:Fortran")
+  _salt_add_line_directive_test(top_hash top_hash.f90 "lang:Fortran")
+  _salt_add_line_directive_test(mid mid.f90 "lang:Fortran")
   # A separate module procedure and a function
-  _salt_add_line_directive_test(procs procs.f90 procs.f90.expected
-    "lang:Fortran")
+  _salt_add_line_directive_test(procs procs.f90 "lang:Fortran")
   # Fixed form
-  _salt_add_line_directive_test(fixed fixed.f fixed.f.expected "lang:Fortran")
+  _salt_add_line_directive_test(fixed fixed.f "lang:Fortran")
   # A `#line` directive that changes only the file
-  _salt_add_line_directive_test(implicit implicit.f90 implicit.f90.expected
-    "lang:Fortran")
+  _salt_add_line_directive_test(implicit implicit.f90 "lang:Fortran")
   # An output of saltfm as the input
-  _salt_add_line_directive_test(instrumented hello.inst.F90
-    hello.inst.F90.expected "lang:Fortran")
+  _salt_add_line_directive_test(instrumented hello.inst.F90 "lang:Fortran")
   # The return statement of this included file puts the instrumentation
   # points out of line order, so saltfm must stop with an error.
   _salt_add_clang_error_test(line_directive_include_return
@@ -3083,8 +3081,7 @@ if(TEST_FORTRAN)
   endforeach()
   # A raw `\` and an escaped `\\` in `#line` file names, which Flang reads
   # with each `\` doubled, stay as written in the timer names and notes
-  _salt_add_line_directive_test(backslash backslash.f90
-    backslash.f90.expected "lang:Fortran")
+  _salt_add_line_directive_test(backslash backslash.f90 "lang:Fortran")
   add_test(NAME line_directive_backslash_notes
     COMMAND sh -c "\"$0\" \"$@\" 2> line_directive_backslash_notes.err ||
         { cat line_directive_backslash_notes.err; exit 1; }
@@ -3150,11 +3147,13 @@ endif()
 # A C or C++ function whose start, braces, or return statement comes
 # from a macro. Adds test macro_name_<name> for source `src` in
 # tests/macro_name, with the saltfm options in ARGN: saltfm must give
-# <src>.expected, without its `#line` directives, and print the warnings
-# of <src>.warnings, or none, and its output must compile.
+# <stem>.expected<ext> of `src`, without its `#line` directives, and
+# print the warnings of <src>.warnings, or none, and its output must
+# compile.
 function(_salt_add_macro_name_test name src)
   set(dir ${CMAKE_SOURCE_DIR}/tests/macro_name)
   get_filename_component(ext ${src} LAST_EXT)
+  get_filename_component(stem ${src} NAME_WLE)
   set(out macro_name_${name}.inst${ext})
   set(warnings /dev/null)
   if(EXISTS ${dir}/${src}.warnings)
@@ -3170,7 +3169,7 @@ function(_salt_add_macro_name_test name src)
     COMMAND sh -c "\"$0\" \"$@\" 2> ${out}.err || { cat ${out}.err; exit 1; }
       sed 's|${dir}/||g' ${out}.err | diff -u ${warnings} - &&
       grep -Ev -e '^#line [0-9]+( \"${dir}/${src}\")?$' -e '^[[:space:]]*$' ${out} |
-        sed 's|${dir}/||g' | diff -u ${dir}/${src}.expected - &&
+        sed 's|${dir}/||g' | diff -u ${dir}/${stem}.expected${ext} - &&
       \"${compiler}\" -fsyntax-only -I${dir} ${out}"
       ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
       --config_file=${CMAKE_SOURCE_DIR}/tests/line_directive/config.yaml
