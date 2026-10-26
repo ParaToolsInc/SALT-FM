@@ -3090,7 +3090,8 @@ endif()
 # that the `#line` lines of the input give them (#112). Adds test
 # line_directive_map_<name>: tests/check_line_map.cmake on `src` in
 # tests/line_directive with its config.yaml, run in
-# test-output/instrument, with the preprocessor of `compiler`.
+# test-output/instrument, with the preprocessor of `compiler`, and with
+# the options of check_line_map.cmake in ARGN.
 function(_salt_add_line_map_test name src compiler label)
   set(dir ${CMAKE_SOURCE_DIR}/tests/line_directive)
   get_filename_component(ext ${src} LAST_EXT)
@@ -3099,7 +3100,7 @@ function(_salt_add_line_map_test name src compiler label)
       -DSALTFM=${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
       -DCONFIG=${dir}/config.yaml -DCOMPILER=${compiler}
       -DSRC=${dir}/${src} -DOUT=line_directive_map_${name}.inst${ext}
-      -P ${CMAKE_SOURCE_DIR}/tests/check_line_map.cmake)
+      ${ARGN} -P ${CMAKE_SOURCE_DIR}/tests/check_line_map.cmake)
   set_tests_properties(line_directive_map_${name} PROPERTIES
     LABELS "${label};phase:instrument")
   _salt_in_test_output(instrument line_directive_map_${name})
@@ -3107,11 +3108,14 @@ endfunction()
 _salt_add_line_map_test(c map.c ${CMAKE_C_COMPILER} "lang:C")
 _salt_add_line_map_test(cxx map.cpp ${CMAKE_CXX_COMPILER} "lang:CXX")
 # Also an insert after a `#line` line with a `\` and a `""` in the file
-# name, which Flang reads changed, and an if-return with a `#line` line
-# among its continuation lines
+# name, which Flang reads changed, and an if-return with a `#line` line,
+# also indented, among its continuation lines; in fixed form, a `#` in
+# column 6 marks a continuation line instead; the output must compile
 if(TEST_FORTRAN AND _salt_test_flang)
   _salt_add_line_map_test(fortran map.f90 ${_salt_test_flang}
-    "lang:Fortran")
+    "lang:Fortran" -DSYNTAX=ON)
+  _salt_add_line_map_test(fortran_fixed map.f ${_salt_test_flang}
+    "lang:Fortran" -DSYNTAX=ON)
   # An if-return with `#include` lines among its continuation lines, whose
   # text is in its condition, so the output must not include it again
   add_test(NAME line_directive_include_cont

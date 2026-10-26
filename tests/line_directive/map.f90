@@ -30,6 +30,13 @@ subroutine cont(x)
     return
 #warning cont if-return with a line directive in it
 end subroutine cont
+subroutine indent(x)
+  logical, intent(in) :: x
+  if (x) &
+    #line 80 "r.inc"
+    return
+#warning indent if-return with an indented line directive in it
+end subroutine indent
 #line 20 "hello.fypp"
 program main
 #line 40
