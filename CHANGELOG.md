@@ -21,28 +21,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--o`, or `--output` and its value are build options, not a source.
   Giving the output file more than once, with `-o` or `--tau_output`,
   is an error ([#111](https://github.com/ParaToolsInc/SALT-FM/issues/111)).
-- `saltfm` puts each TAU call of a Fortran source on its line of the
-  source when the source has `#line` lines, such as `#line 100
-  "orig.f90"` or the `# 100 "orig.f90"` line markers of `cpp` and fypp.
-  Before, it used the line numbers of the `#line` lines, so it wrote no
-  TAU calls or put them on wrong lines, with exit status 0, or Flang
-  aborted, as with an instrumented output as the input. The timer
-  names give the file and lines of the `#line` lines, as compiler
-  messages do. When the instrumentation points are out of line order,
-  which instrumented code in an included file can cause, `saltfm` stops
-  with an error and exit status 1 and writes no output, instead of
-  aborting ([#112](https://github.com/ParaToolsInc/SALT-FM/issues/112)).
-- C and C++ timer names give the file and lines of the `#line` lines
-  and line markers, as Fortran timer names and compiler messages do.
-  The TAU calls stay on their lines of the source. Timers in sources
-  with `#line` lines, such as the output of bison or flex, get new
-  names ([#112](https://github.com/ParaToolsInc/SALT-FM/issues/112)).
+- `saltfm` puts each TAU call of a Fortran source on its physical line,
+  its position in the file, when the source has `#line` directives,
+  such as `#line 100 "orig.f90"`, or the `# 100 "orig.f90"` line
+  markers of `cpp` and fypp. Before, it used the computed line, the
+  line number that the `#line` directives give, so it wrote no TAU
+  calls or put them on wrong lines, with exit status 0, or Flang
+  aborted, as with an instrumented output as the input. The timer names
+  give the computed file and lines, as compiler messages do. When the
+  instrumentation points are out of line order, which instrumented code
+  in an included file can cause, `saltfm` stops with an error and exit
+  status 1 and writes no output, instead of aborting
+  ([#112](https://github.com/ParaToolsInc/SALT-FM/issues/112)).
+- C and C++ timer names give the computed file and lines, from `#line`
+  directives and line markers, as Fortran timer names and compiler
+  messages do. The TAU calls stay on their physical lines. Timers
+  in sources with `#line` directives, such as the output of bison or
+  flex, get new names
+  ([#112](https://github.com/ParaToolsInc/SALT-FM/issues/112)).
 - Compiler messages and debug info for instrumented C, C++, and
   Fortran code give the original file and line when the source has
-  `#line` lines or line markers. Before, the `#line` lines that
-  `saltfm` writes after each TAU call gave the line of the source
-  file, so the code after it got a wrong line, and in Fortran the name
-  of the source instead of the file of the `#line` lines
+  `#line` directives or line markers. Before, the `#line` directives
+  that `saltfm` writes after each TAU call gave the physical line, so
+  the code after it got a wrong line, and in Fortran the name of the
+  source instead of the computed file
   ([#112](https://github.com/ParaToolsInc/SALT-FM/issues/112)).
 - C and C++ functions whose start comes from a macro, such as `DEF(f)`
   after `#define DEF(n) int n(void)`, get timers; before, they got none.
@@ -62,8 +64,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as other inline functions do; before, `--tau_use_cxx_api` timed it,
   and the C API wrote a timer start with no stop.
 - Fortran timer names and `[SALT]` notes give the file name of a
-  `#line` line as written; before, each `\` in it was doubled, as in
-  Flang's messages.
+  `#line` directive as written; before, each `\` in it was doubled, as
+  in Flang's messages.
 - The new `--tau_build_uses_salt_flang` option of `saltfm` and
   `fparse-llvm`, or the `SALT_BUILD_USES_SALT_FLANG` environment
   variable set to any value except empty, `0`, `false`, `no`, or `off`,
@@ -180,13 +182,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it copied the links, which did not resolve in the build tree, and
   `use, intrinsic` failed.
 - When the file lists of a selective instrumentation file exclude a C or
-  C++ source file, `saltfm` writes the source to the output file after a
-  `#line 1 "<source>"` line, as the Fortran instrumentor does, so TAU's
-  compiler wrappers compile it without timers. Before, it wrote no
-  output file, so the wrappers compiled the original source instead.
+  C++ source file, `saltfm` writes the source to the output file after
+  a `#line 1 "<source>"` directive, as the Fortran instrumentor does, so
+  TAU's compiler wrappers compile it without timers. Before, it wrote
+  no output file, so the wrappers compiled the original source instead.
   C and C++ file list entries now match the source path as given to
-  `saltfm`, as the Fortran instrumentor does, and the `#line` lines of
-  the output name that path; before, both used Clang's absolute path
+  `saltfm`, as the Fortran instrumentor does, and the `#line` directives
+  of the output name that path; before, both used Clang's absolute path
   ([#71](https://github.com/ParaToolsInc/SALT-FM/issues/71)).
 - The selective instrumentation file parser removes the whitespace at
   the two ends of each line, as TAU does. Before, it removed only the
@@ -268,10 +270,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ([#71](https://github.com/ParaToolsInc/SALT-FM/issues/71)).
 - By default, SALT-FM no longer parses a source that the file lists of
   a selective instrumentation file exclude: it copies the source after
-  a `#line 1` line, so a Clang or Flang error in the source no longer
-  makes `saltfm` fail, and excluding a file works around a source that
-  SALT-FM cannot parse. The main program in such a source gets no
-  setup code, so a program run without MPI or `tau_exec` writes
+  a `#line 1` directive, so a Clang or Flang error in the source no
+  longer makes `saltfm` fail, and excluding a file works around a
+  source that SALT-FM cannot parse. The main program in such a source
+  gets no setup code, so a program run without MPI or `tau_exec` writes
   `profile.-1.0.0`; SALT-FM warns when an excluded source seems to
   contain the main program (in Fortran, a `program` statement). The
   new option `--tau_excluded_main_setup=<none|routine|file>` (or
@@ -296,13 +298,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `dirname` program, and also when the path they are run by uses `\`
   separators, as under MSYS
   ([#88](https://github.com/ParaToolsInc/SALT-FM/issues/88)).
-- In C and C++ output, the file name of the `#line` lines escapes `\`
-  and `"`, and writes a line break as `\n`, so that compiler messages,
-  `__FILE__`, and debug information name a source whose path holds
-  them. Before, a `"` broke the `#line` line, and the compiler read a
-  `\` as the start of an escape. Fortran output keeps the name as
-  written, since Flang and ifx read it that way; gfortran reads
-  escapes, and Flang rejects a `"`
+- In C and C++ output, the file name of the `#line` directives escapes
+  `\` and `"`, and writes a line break as `\n`, so that compiler
+  messages, `__FILE__`, and debug information name a source whose path
+  holds them. Before, a `"` broke the `#line` directive, and the
+  compiler read a `\` as the start of an escape. Fortran output keeps
+  the name as written, since Flang and ifx read it that way; gfortran
+  reads escapes, and Flang rejects a `"`
   ([#88](https://github.com/ParaToolsInc/SALT-FM/issues/88),
   [#97](https://github.com/ParaToolsInc/SALT-FM/issues/97)).
 - `${full_timer_name}` is written for its string literal. In C and C++,

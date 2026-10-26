@@ -1,5 +1,5 @@
 # Checks that each block that saltfm inserts keeps the file and line
-# that the `#line` lines of SRC give the lines after it: the
+# that the `#line` directives of SRC give the lines after it: the
 # preprocessor `COMPILER -E` must report each `#warning` line of SRC at
 # the same file, line, and column in the output OUT, which saltfm writes
 # with CONFIG, as in SRC. OUT must also compile.

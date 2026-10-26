@@ -3003,14 +3003,15 @@ if(TEST_FORTRAN)
     LOG "undeclared_name")
 endif()
 
-# A `#line` line in the input moves no TAU call off its line of the
-# input, and a timer name gives the file and lines that the `#line`
-# lines give, as compiler messages do (#112). Adds test
+# A `#line` directive in the input moves no TAU call off its line of
+# the input, and a timer name gives the file and lines that the `#line`
+# directives give, as compiler messages do (#112). Adds test
 # line_directive_<name>: saltfm, run in test-output/instrument (for
 # module files) on `src` in tests/line_directive with its config.yaml,
-# must write the output `expected`, which leaves out the `#line` lines
-# that saltfm writes (with no file, or the path of `src`), the blank
-# lines, and the path of that directory, but keeps those of `src`.
+# must write the output `expected`, which leaves out the `#line`
+# directives that saltfm writes (with no file, or the path of `src`),
+# the blank lines, and the path of that directory, but keeps those of
+# `src`.
 # Case is ignored, as Flang versions differ in the case of a program
 # name. The output must also compile, for C and C++ with the prototypes
 # of tests/line_directive/timer.h.
@@ -3038,8 +3039,9 @@ function(_salt_add_line_directive_test name src expected label)
 endfunction()
 _salt_add_line_directive_test(c mid.c mid.c.expected "lang:C")
 _salt_add_line_directive_test(cxx mid.cpp mid.cpp.expected "lang:CXX")
-# A linemarker, a `#line` line with no file, which keeps the file, and a
-# file with a `"` and a `\`, which the C string of the name escapes
+# A linemarker, a `#line` directive with no file, which keeps the file,
+# and a file with a `"` and a `\`, which the C string of the name
+# escapes
 _salt_add_line_directive_test(c_names names.c names.c.expected "lang:C")
 if(TEST_FORTRAN)
   _salt_add_line_directive_test(top top.f90 top.f90.expected "lang:Fortran")
@@ -3051,7 +3053,7 @@ if(TEST_FORTRAN)
     "lang:Fortran")
   # Fixed form
   _salt_add_line_directive_test(fixed fixed.f fixed.f.expected "lang:Fortran")
-  # A `#line` line that changes only the file
+  # A `#line` directive that changes only the file
   _salt_add_line_directive_test(implicit implicit.f90 implicit.f90.expected
     "lang:Fortran")
   # An output of saltfm as the input
@@ -3066,8 +3068,8 @@ if(TEST_FORTRAN)
     LOG "ERROR: Instrumentation points of ${CMAKE_SOURCE_DIR}/tests/line_directive/include_return"
     "include_return.f90 are not in line order, as when an included file holds instrumented code")
   # An if-return on the last line, with and without a final newline: the
-  # `#line` line after it gives a line past the end, and saltfm must not
-  # abort
+  # `#line` directive after it gives a line past the end, and saltfm must
+  # not abort
   # The output is not compiled until #118 is fixed.
   foreach(name eof_return eof_return_nonl)
     add_test(NAME line_directive_${name}
@@ -3097,7 +3099,7 @@ if(TEST_FORTRAN)
   _salt_in_test_output(instrument line_directive_backslash_notes)
 endif()
 # The lines after each block that saltfm inserts keep the file and line
-# that the `#line` lines of the input give them (#112). Adds test
+# that the `#line` directives of the input give them (#112). Adds test
 # line_directive_map_<name>: tests/check_line_map.cmake on `src` in
 # tests/line_directive with its config.yaml, run in
 # test-output/instrument, with `compiler`, which must also compile the
@@ -3117,11 +3119,11 @@ function(_salt_add_line_map_test name src compiler label)
 endfunction()
 _salt_add_line_map_test(c map.c ${CMAKE_C_COMPILER} "lang:C")
 _salt_add_line_map_test(cxx map.cpp ${CMAKE_CXX_COMPILER} "lang:CXX")
-# Also an insert after a `#line` line with a `\` and a `""` in the file
-# name, which Flang reads changed, and if-returns with a `#line` line,
-# also indented, `#warning` lines, or a `#define` continued with `\`
-# among their continuation lines; in fixed form, a `#` in column 6 marks
-# a continuation line instead
+# Also an insert after a `#line` directive with a `\` and a `""` in the
+# file name, which Flang reads changed, and if-returns with a `#line`
+# directive, also indented, `#warning` lines, or a `#define` continued
+# with `\` among their continuation lines; in fixed form, a `#` in
+# column 6 marks a continuation line instead
 if(TEST_FORTRAN AND _salt_test_flang)
   _salt_add_line_map_test(fortran map.f90 ${_salt_test_flang}
     "lang:Fortran")
@@ -3148,8 +3150,8 @@ endif()
 # A C or C++ function whose start, braces, or return statement comes
 # from a macro. Adds test macro_name_<name> for source `src` in
 # tests/macro_name, with the saltfm options in ARGN: saltfm must give
-# <src>.expected, without its `#line` lines, and print the warnings of
-# <src>.warnings, or none, and its output must compile.
+# <src>.expected, without its `#line` directives, and print the warnings
+# of <src>.warnings, or none, and its output must compile.
 function(_salt_add_macro_name_test name src)
   set(dir ${CMAKE_SOURCE_DIR}/tests/macro_name)
   get_filename_component(ext ${src} LAST_EXT)
@@ -4448,7 +4450,8 @@ if(TEST_FORTRAN)
     -DPAD=63)
   _salt_add_fortran_names_test(implicit_apostrophe ${_implicit}
     "-DSTEM=a'b")
-  # A `\\` in the real path, not of a `#line` line, stays as written
+  # A `\\` in the real path, not of a `#line` directive, stays as
+  # written
   _salt_add_fortran_names_test(implicit_backslash ${_implicit}
     [[-DSTEM=a\\b]])
   # A byte that is not valid in the locale's encoding, here Latin-1 in
