@@ -1,3 +1,5 @@
+void timer_start(const char *name);
+void timer_stop(void);
 #line 10 "gen.y"
 int first(void) {
 #warning first begin

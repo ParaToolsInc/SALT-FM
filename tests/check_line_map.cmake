@@ -2,11 +2,10 @@
 # that the `#line` lines of SRC give the lines after it: the
 # preprocessor `COMPILER -E` must report each `#warning` line of SRC at
 # the same file, line, and column in the output OUT, which saltfm writes
-# with CONFIG, as in SRC. With SYNTAX on, OUT must also compile.
+# with CONFIG, as in SRC. OUT must also compile.
 #
 # Usage: cmake -DSALTFM=<saltfm> -DCONFIG=<config> -DCOMPILER=<compiler>
-#          -DSRC=<source> -DOUT=<output> [-DSYNTAX=ON]
-#          -P check_line_map.cmake
+#          -DSRC=<source> -DOUT=<output> -P check_line_map.cmake
 
 # Sets `var` to the list of warnings that `COMPILER -E` reports for
 # `file`, each with its position.
@@ -41,11 +40,9 @@ if(NOT _out_text STREQUAL _in_text)
   message(FATAL_ERROR
     "Warnings for ${SRC}:\n${_in_text}\nbut for ${OUT}:\n${_out_text}")
 endif()
-if(SYNTAX)
-  execute_process(COMMAND "${COMPILER}" -fsyntax-only "${OUT}"
-    ERROR_VARIABLE _err RESULT_VARIABLE _rc)
-  if(NOT _rc EQUAL 0)
-    message(FATAL_ERROR
-      "exit status ${_rc}: ${COMPILER} -fsyntax-only ${OUT}\n${_err}")
-  endif()
+execute_process(COMMAND "${COMPILER}" -fsyntax-only "${OUT}"
+  ERROR_VARIABLE _err RESULT_VARIABLE _rc)
+if(NOT _rc EQUAL 0)
+  message(FATAL_ERROR
+    "exit status ${_rc}: ${COMPILER} -fsyntax-only ${OUT}\n${_err}")
 endif()

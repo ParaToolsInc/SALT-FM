@@ -3012,14 +3012,23 @@ endif()
 # that saltfm writes (with no file, or the path of `src`), the blank
 # lines, and the path of that directory, but keeps those of `src`.
 # Case is ignored, as Flang versions differ in the case of a program
-# name.
+# name. The output must also compile, for C and C++ with the prototypes
+# of tests/line_directive/timer.h.
 function(_salt_add_line_directive_test name src expected label)
   set(dir ${CMAKE_SOURCE_DIR}/tests/line_directive)
-  set(out ${SALT_TEST_OUTPUT_DIR}/instrument/line_directive_${name}.out)
+  get_filename_component(ext ${src} LAST_EXT)
+  set(out ${SALT_TEST_OUTPUT_DIR}/instrument/line_directive_${name}.inst${ext})
+  set(compile "\"${_salt_test_flang}\"")
+  if(ext STREQUAL ".c")
+    set(compile "\"${CMAKE_C_COMPILER}\" -include ${dir}/timer.h")
+  elseif(ext STREQUAL ".cpp")
+    set(compile "\"${CMAKE_CXX_COMPILER}\" -include ${dir}/timer.h")
+  endif()
   add_test(NAME line_directive_${name}
     COMMAND sh -c "\"$0\" \"$@\" || exit 1
       grep -Ev -e '^#line [0-9]+( \"${dir}/${src}\")?$' -e '^[[:space:]]*$' ${out} |
-        sed 's|${dir}/||g' | diff -iu ${dir}/${expected} -"
+        sed 's|${dir}/||g' | diff -iu ${dir}/${expected} - &&
+      ${compile} -fsyntax-only ${out}"
       ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
       --config_file=${dir}/config.yaml --tau_output=${out} ${dir}/${src})
   set_tests_properties(line_directive_${name} PROPERTIES
@@ -3059,6 +3068,7 @@ if(TEST_FORTRAN)
   # An if-return on the last line, with and without a final newline: the
   # `#line` line after it gives a line past the end, and saltfm must not
   # abort
+  # The output is not compiled until #118 is fixed.
   foreach(name eof_return eof_return_nonl)
     add_test(NAME line_directive_${name}
       COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
@@ -3090,8 +3100,8 @@ endif()
 # that the `#line` lines of the input give them (#112). Adds test
 # line_directive_map_<name>: tests/check_line_map.cmake on `src` in
 # tests/line_directive with its config.yaml, run in
-# test-output/instrument, with the preprocessor of `compiler`, and with
-# the options of check_line_map.cmake in ARGN.
+# test-output/instrument, with `compiler`, which must also compile the
+# output.
 function(_salt_add_line_map_test name src compiler label)
   set(dir ${CMAKE_SOURCE_DIR}/tests/line_directive)
   get_filename_component(ext ${src} LAST_EXT)
@@ -3100,7 +3110,7 @@ function(_salt_add_line_map_test name src compiler label)
       -DSALTFM=${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
       -DCONFIG=${dir}/config.yaml -DCOMPILER=${compiler}
       -DSRC=${dir}/${src} -DOUT=line_directive_map_${name}.inst${ext}
-      ${ARGN} -P ${CMAKE_SOURCE_DIR}/tests/check_line_map.cmake)
+      -P ${CMAKE_SOURCE_DIR}/tests/check_line_map.cmake)
   set_tests_properties(line_directive_map_${name} PROPERTIES
     LABELS "${label};phase:instrument")
   _salt_in_test_output(instrument line_directive_map_${name})
@@ -3111,15 +3121,15 @@ _salt_add_line_map_test(cxx map.cpp ${CMAKE_CXX_COMPILER} "lang:CXX")
 # name, which Flang reads changed, and if-returns with a `#line` line,
 # also indented, `#warning` lines, or a `#define` continued with `\`
 # among their continuation lines; in fixed form, a `#` in column 6 marks
-# a continuation line instead; the output must compile
+# a continuation line instead
 if(TEST_FORTRAN AND _salt_test_flang)
   _salt_add_line_map_test(fortran map.f90 ${_salt_test_flang}
-    "lang:Fortran" -DSYNTAX=ON)
+    "lang:Fortran")
   _salt_add_line_map_test(fortran_fixed map.f ${_salt_test_flang}
-    "lang:Fortran" -DSYNTAX=ON)
+    "lang:Fortran")
   # The `#define` in a file with CRLF line ends
   _salt_add_line_map_test(fortran_crlf map_crlf.f90 ${_salt_test_flang}
-    "lang:Fortran" -DSYNTAX=ON)
+    "lang:Fortran")
   # An if-return with `#include` lines among its continuation lines, whose
   # text is in its condition, so the output must not include it again
   add_test(NAME line_directive_include_cont
