@@ -843,7 +843,7 @@ namespace salt::fortran {
         static void instrumentFile(const Fortran::parser::SourceFile &inputFile, std::ifstream &inputStream,
                                    llvm::raw_pwrite_stream &outputStream,
                                    const SaltInstrumentParseTreeVisitor &visitor,
-                                   const InstrumentationMap &instMap) {
+                                   const InstrumentationMap &instMap, const bool fixedForm) {
             std::string lineText;
             int lineNum{0};
             const auto &instPts{visitor.getInstrumentationPoints()};
@@ -893,9 +893,11 @@ namespace salt::fortran {
                         }
                         ++lineNum;
                         // Keep the preprocessor lines, such as a `#line` line, after the block,
-                        // except an `#include`, whose text is already in the condition.
-                        // shortcut: an indented one is dropped; check for blanks if one shows up.
-                        if (llvm::StringRef directive{discardedLine};
+                        // except an `#include`, whose text is already in the condition. As for
+                        // Flang, one starts with a `#` after blanks, except that in fixed form a
+                        // `#` in column 6 after spaces marks a continuation line.
+                        if (llvm::StringRef directive{llvm::StringRef{discardedLine}.ltrim(" \t")};
+                            !(fixedForm && llvm::StringRef{discardedLine}.starts_with("     #")) &&
                             directive.consume_front("#") && !directive.ltrim().starts_with("include")) {
                             outputStream << discardedLine << "\n";
                         }
@@ -1169,7 +1171,11 @@ namespace salt::fortran {
             }
 
             // Use the instrumentation points stored in the Visitor to write the instrumented file.
-            instrumentFile(*inputFile, inputStream, outputStream, visitor, instMap);
+            // The source form, as Flang's prescan takes it
+            const FortranForm form{getInstance().getFrontendOpts().fortranForm};
+            const bool fixedForm{form == FortranForm::Unknown ? getCurrentInput().getIsFixedForm()
+                                                              : form == FortranForm::FixedForm};
+            instrumentFile(*inputFile, inputStream, outputStream, visitor, instMap, fixedForm);
 
             outputStream.close();
             if (outputStream.has_error()) {
