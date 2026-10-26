@@ -4,6 +4,7 @@ subroutine s(x, y)
   if (x &
 #include "include_cont.inc"
 #  include "include_cont.inc"
+#INCLUDE "include_cont.inc"
     ) return
   print *, 2
 end subroutine s

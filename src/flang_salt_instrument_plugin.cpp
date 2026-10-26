@@ -902,7 +902,8 @@ namespace salt::fortran {
                         }
                         ++lineNum;
                         // Keep the directives, such as a `#line` directive, after the block,
-                        // except an `#include` directive, whose text is already in the condition.
+                        // except an `#include` directive (in any case, as for Flang), whose text
+                        // is already in the condition.
                         // As for Flang, a directive starts with a `#` after blanks, except that in
                         // fixed form a `#` in column 6 after spaces marks a continuation line.
                         // Each kept directive gets a `#line` directive with its own computed line,
@@ -910,7 +911,8 @@ namespace salt::fortran {
                         if (llvm::StringRef directive{llvm::StringRef{discardedLine}.ltrim(" \t")};
                             continuedDirective ||
                             (!(fixedForm && llvm::StringRef{discardedLine}.starts_with("     #")) &&
-                             directive.consume_front("#") && !directive.ltrim().starts_with("include"))) {
+                             directive.consume_front("#") &&
+                             !directive.ltrim().starts_with_insensitive("include"))) {
                             if (!continuedDirective) {
                                 outputStream << lineDirective(inputFile, lineNum) << "\n";
                             }

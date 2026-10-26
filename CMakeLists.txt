@@ -3129,8 +3129,9 @@ if(TEST_FORTRAN AND _salt_test_flang)
   # The `#define` in a file with CRLF line ends
   _salt_add_line_map_test(fortran_crlf map_crlf.f90 ${_salt_test_flang}
     "lang:Fortran")
-  # An if-return with `#include` lines among its continuation lines, whose
-  # text is in its condition, so the output must not include it again
+  # An if-return with `#include` directives, also in uppercase, among its
+  # continuation lines, whose text is in its condition, so the output must
+  # not include it again
   add_test(NAME line_directive_include_cont
     COMMAND sh -c "\"$0\" \"$@\" && \"${_salt_test_flang}\" -fsyntax-only \
         -I${CMAKE_SOURCE_DIR}/tests/line_directive \
