@@ -37,6 +37,25 @@ subroutine indent(x)
     return
 #warning indent if-return with an indented line directive in it
 end subroutine indent
+subroutine warn(x)
+  logical, intent(in) :: x
+  if (x) &
+#warning warn if-return with a warning line in it
+#line 90 "s.inc"
+    ! a comment line
+#warning warn if-return with a warning line after a line directive
+    return
+end subroutine warn
+subroutine defs(x)
+  logical, intent(in) :: x
+  if (x) &
+#define TWO \
+  1 + \
+  1
+    return
+  print *, TWO
+#warning defs after a macro of three lines in an if-return
+end subroutine defs
 #line 20 "hello.fypp"
 program main
 #line 40

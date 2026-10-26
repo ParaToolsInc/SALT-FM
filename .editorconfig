@@ -5,3 +5,7 @@ trim_trailing_whitespace = false
 # Test SIF whose CRLF line endings are deliberate
 [tests/sif/crlf.tau]
 end_of_line = crlf
+
+# Fortran test source whose CRLF line endings are deliberate
+[tests/line_directive/map_crlf.f90]
+end_of_line = crlf
