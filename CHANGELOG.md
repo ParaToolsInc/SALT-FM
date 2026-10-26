@@ -53,6 +53,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `return` and then `ONE;` on the next line, gets its TAU call right.
   Where a macro gives the start or the closing brace of a function, its
   timer name gives the line of the macro, not of its `#define`.
+- The timer name of a C or C++ function declared earlier in the file
+  comes from the definition: its line, and its signature, such as
+  `int f(void)` instead of `int f()`, which changes the TAU name and
+  what selective instrumentation files match. Before, it could come
+  from the declaration. An `inline` definition after a declaration
+  without `inline` gets a timer only with `--tau_instrument_inline`,
+  as other inline functions do; before, `--tau_use_cxx_api` timed it,
+  and the C API wrote a timer start with no stop.
 - Fortran timer names and `[SALT]` notes give the file name of a
   `#line` line as written; before, each `\` in it was doubled, as in
   Flang's messages.

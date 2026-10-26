@@ -6,6 +6,7 @@ void timer_stop(void);
 #define BEGIN {
 int f(void);
 int f(void) BODY
+int g(void);
 int g(void) {
   RETURN2
 }

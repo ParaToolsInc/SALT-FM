@@ -12,9 +12,15 @@ inline int free_fn_marked_inline() {
     return 1234;
 }
 
+int declared_then_inline();
+inline int declared_then_inline() {
+    return 2;
+}
+
 int main() {
     Widget w;
     w.method_in_class_body(1);
     std::cout << free_fn_marked_inline() << std::endl;
+    std::cout << declared_then_inline() << std::endl;
     return 0;
 }
