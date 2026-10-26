@@ -886,6 +886,7 @@ namespace salt::fortran {
                                 static_cast<const IfReturnStmtInstrumentationPoint *>(instIter->get());
                         replacedThroughLine = ifReturnPt->endLine();
                     }
+                    bool continuedDirective{false};
                     while (lineNum < replacedThroughLine) {
                         std::string discardedLine;
                         if (!std::getline(inputStream, discardedLine)) {
@@ -895,11 +896,17 @@ namespace salt::fortran {
                         // Keep the preprocessor lines, such as a `#line` line, after the block,
                         // except an `#include`, whose text is already in the condition. As for
                         // Flang, one starts with a `#` after blanks, except that in fixed form a
-                        // `#` in column 6 after spaces marks a continuation line.
+                        // `#` in column 6 after spaces marks a continuation line. Each keeps its
+                        // own line, and the lines that continue one after a `\` follow it.
                         if (llvm::StringRef directive{llvm::StringRef{discardedLine}.ltrim(" \t")};
-                            !(fixedForm && llvm::StringRef{discardedLine}.starts_with("     #")) &&
-                            directive.consume_front("#") && !directive.ltrim().starts_with("include")) {
+                            continuedDirective ||
+                            (!(fixedForm && llvm::StringRef{discardedLine}.starts_with("     #")) &&
+                             directive.consume_front("#") && !directive.ltrim().starts_with("include"))) {
+                            if (!continuedDirective) {
+                                outputStream << lineDirective(inputFile, lineNum) << "\n";
+                            }
                             outputStream << discardedLine << "\n";
+                            continuedDirective = llvm::StringRef{discardedLine}.rtrim("\r").ends_with("\\");
                         }
                     }
                     lineWasInstrumentedAfter = true;

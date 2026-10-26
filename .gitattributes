@@ -54,6 +54,8 @@ tests/sif/trailing_whitespace.tau -whitespace
 tests/sif/tau/14_whitespace.tau -whitespace
 # Test SIF whose CRLF line endings are deliberate; keep them
 tests/sif/crlf.tau -text -whitespace
+# Fortran test source whose CRLF line endings are deliberate; keep them
+tests/line_directive/map_crlf.f90 -text -whitespace
 
 # Windows-only scripts (none today, but reserve correct EOL if added)
 *.bat           text eol=crlf

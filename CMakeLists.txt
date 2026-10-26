@@ -3108,13 +3108,17 @@ endfunction()
 _salt_add_line_map_test(c map.c ${CMAKE_C_COMPILER} "lang:C")
 _salt_add_line_map_test(cxx map.cpp ${CMAKE_CXX_COMPILER} "lang:CXX")
 # Also an insert after a `#line` line with a `\` and a `""` in the file
-# name, which Flang reads changed, and an if-return with a `#line` line,
-# also indented, among its continuation lines; in fixed form, a `#` in
-# column 6 marks a continuation line instead; the output must compile
+# name, which Flang reads changed, and if-returns with a `#line` line,
+# also indented, `#warning` lines, or a `#define` continued with `\`
+# among their continuation lines; in fixed form, a `#` in column 6 marks
+# a continuation line instead; the output must compile
 if(TEST_FORTRAN AND _salt_test_flang)
   _salt_add_line_map_test(fortran map.f90 ${_salt_test_flang}
     "lang:Fortran" -DSYNTAX=ON)
   _salt_add_line_map_test(fortran_fixed map.f ${_salt_test_flang}
+    "lang:Fortran" -DSYNTAX=ON)
+  # The `#define` in a file with CRLF line ends
+  _salt_add_line_map_test(fortran_crlf map_crlf.f90 ${_salt_test_flang}
     "lang:Fortran" -DSYNTAX=ON)
   # An if-return with `#include` lines among its continuation lines, whose
   # text is in its condition, so the output must not include it again
