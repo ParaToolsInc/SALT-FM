@@ -6,6 +6,7 @@ void timer_stop(void);
 #define BEGIN {
 int f(void);
 int f(void) BODY
+int g(void);
 int g(void) {
   RETURN2
 }
@@ -16,6 +17,6 @@ int k(void) BEGIN
   return 4;
 }
 int main(void) {
-    timer_start("int main(void)  [{body.c} {18,1}-{20,1}]");
+    timer_start("int main(void)  [{body.c} {19,1}-{21,1}]");
 	{ int inst_ret_val =  f() + g() + h() + k(); timer_stop(); return inst_ret_val; }
 }

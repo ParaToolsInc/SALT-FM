@@ -852,8 +852,9 @@ class FindFunctionVisitor : public RecursiveASTVisitor<FindFunctionVisitor>
         // if (func->isInlined()) {
         //     printf("Function %s is inline\n", func->getQualifiedNameAsString().c_str());
         // }
-        // short circuit on hasBody() first to protect check_func_against_list (and makeFuncInstLoc) from segfaults
-        if (func->hasBody() &&
+        // short circuit on the body first to protect check_func_against_list (and makeFuncInstLoc) from segfaults;
+        // only the declaration with the body, since a prototype does not visit its returns
+        if (func->doesThisDeclarationHaveABody() &&
             (!func->isInlined() || do_inline || check_func_against_list(includelist, func, context, src_mgr)))
         { //
             const size_t first = inst_locs.size();
@@ -1256,8 +1257,7 @@ void instrumentor::instrument()
                 // The C++ API inserts only at the opening brace
                 if (loc->begin_in_macro || (!use_cxx_api && loc->end_in_macro))
                 {
-                    // Once for each function: a prototype in the file gives it twice, as for
-                    // eq_inst_loc() below
+                    // Once for each function, as eq_inst_loc() below keeps one insert
                     if (loc->kind == BEGIN_FUNC && warned.emplace(loc->line, loc->col, loc->func_name).second)
                     {
                         llvm::errs() << "WARNING: " << loc->file << ": SALT-FM does not instrument \""

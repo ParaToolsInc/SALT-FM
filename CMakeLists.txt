@@ -1099,13 +1099,16 @@ set_tests_properties(instrument_inline_off
 
 add_test(NAME check_inline_off_skips_inline
   COMMAND ${CMAKE_COMMAND} -E cat instrument_inline_off.inst.cpp)
+set(_inline_fail
+  "TAU_PROFILE_TIMER[^\n]*method_in_class_body"
+  "TAU_PROFILE_TIMER[^\n]*free_fn_marked_inline"
+  "TAU_PROFILE_TIMER[^\n]*declared_then_inline")
 set_tests_properties(check_inline_off_skips_inline
   PROPERTIES
   FIXTURES_REQUIRED instrument_inline_off
   LABELS "lang:CXX;phase:check"
   PASS_REGULAR_EXPRESSION "TAU_PROFILE_SET_NODE"
-  FAIL_REGULAR_EXPRESSION
-    "TAU_PROFILE_TIMER[^\n]*method_in_class_body;TAU_PROFILE_TIMER[^\n]*free_fn_marked_inline"
+  FAIL_REGULAR_EXPRESSION "${_inline_fail}"
 )
 
 add_test(NAME instrument_inline_on
@@ -1138,6 +1141,16 @@ set_tests_properties(check_inline_on_instruments_free_fn
   FIXTURES_REQUIRED instrument_inline_on
   LABELS "lang:CXX;phase:check"
   PASS_REGULAR_EXPRESSION "TAU_PROFILE_TIMER[^\n]*free_fn_marked_inline"
+)
+# An inline definition after a declaration without `inline`
+add_test(NAME check_inline_on_instruments_declared_then_inline
+  COMMAND ${CMAKE_COMMAND} -E cat instrument_inline_on.inst.cpp)
+set_tests_properties(check_inline_on_instruments_declared_then_inline
+  PROPERTIES
+  FIXTURES_REQUIRED instrument_inline_on
+  LABELS "lang:CXX;phase:check"
+  PASS_REGULAR_EXPRESSION
+    "declared_then_inline[(]void[)] [^\n]*\n *TAU_PROFILE_START[^}]*TAU_PROFILE_STOP"
 )
 # A source named relative to the working directory, with or without a
 # leading `./`, gets its timers, and a header whose path contains the
@@ -1195,7 +1208,8 @@ _salt_in_test_output(instrument
   check_forward_decl_skips_bodyless check_pure_virtual_skips_bodyless
   instrument_inline_off check_inline_off_skips_inline
   instrument_inline_on check_inline_on_instruments_method
-  check_inline_on_instruments_free_fn)
+  check_inline_on_instruments_free_fn
+  check_inline_on_instruments_declared_then_inline)
 
 # saltfm must fail with an error naming its output file when it cannot
 # write it. These failures hit root too, so the tests run in CI's
@@ -3145,7 +3159,8 @@ function(_salt_add_macro_name_test name src)
     LABELS "${label};phase:instrument")
   _salt_in_test_output(instrument macro_name_${name})
 endfunction()
-# The start of the function from a macro of the same file or a header
+# The start of the function from a macro of the same file or a header,
+# and a name from the definition, not from a prototype before it
 _salt_add_macro_name_test(same_file same_file.c)
 _salt_add_macro_name_test(header header.c)
 # Braces or a return statement from a macro: no timers, and one warning

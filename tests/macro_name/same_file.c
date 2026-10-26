@@ -6,6 +6,7 @@ void timer_stop(void);
 RET f(void) {
   return ONE;
 }
+int g(void);
 DEF(g) {
   return 2;
 }
