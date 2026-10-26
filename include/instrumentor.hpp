@@ -42,14 +42,16 @@ extern llvm::cl::opt<ExcludedMainSetup> excluded_main_setup;
 
 typedef struct inst_loc {
     int line = -1;
-    // The line that the `#line` lines give `line`, minus `line`
+    // The computed line number minus the physical line number: add it to a
+    // physical line near `line` to get its computed line; 0 with no `#line`
+    // directives
     int line_shift = 0;
     int col = -1;
     int kind = -1;
     const char* return_type;
     const char* func_name;
     const char* full_timer_name;
-    // The file that holds the function, not the one of `#line` lines
+    // The file that holds the function, not its computed file
     const char* file;
     bool has_args = false;
     bool is_return_ptr = false;

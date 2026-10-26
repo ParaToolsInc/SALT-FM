@@ -628,8 +628,11 @@ struct src_pos
     unsigned col;
 };
 
-// The position that the `#line` lines give the spelling location of `loc`, as
-// in compiler messages, or, if Clang has none, its position in its file
+// The computed file, line, and column of the place where the text of `loc` is
+// written, as in compiler messages, or, if Clang has none, its file and
+// physical line and column. Clang calls that place the spelling location: in
+// the `#define` directive for a token of a macro body, at the macro call for a
+// token of a macro argument, else `loc` itself.
 static src_pos presumedPos(const SourceManager &src_mgr, SourceLocation loc)
 {
     const SourceLocation spelling = src_mgr.getSpellingLoc(loc);
@@ -642,16 +645,17 @@ static src_pos presumedPos(const SourceManager &src_mgr, SourceLocation loc)
     return {presumed.getFilename(), presumed.getLine(), presumed.getColumn()};
 }
 
-// The line that the `#line` lines give the spelling location of `loc`, minus
-// its line in its file
+// The computed line number minus the physical line number of the place where
+// the text of `loc` is written (see `presumedPos`): add it to a physical line
+// near `loc` to get its computed line; 0 with no `#line` directives
 static int lineShift(const SourceManager &src_mgr, SourceLocation loc)
 {
     return static_cast<int>(presumedPos(src_mgr, loc).line) - static_cast<int>(src_mgr.getSpellingLineNumber(loc));
 }
 
-// Sets the name of `func` and its timer name, which has the file and lines
-// that the `#line` lines give, as in compiler messages, and returns the file
-// that holds `func`, whose lines the instrumentation keeps
+// Sets the name of `func` and its timer name, which has the computed file and
+// lines, as in compiler messages, and returns the file that holds `func`,
+// whose physical lines the instrumentation uses
 std::string makeFuncAndTimerNames(FunctionDecl *func, ASTContext *context, SourceManager &src_mgr,
                                   std::string &func_name, std::string &timer_name)
 {
@@ -1115,8 +1119,9 @@ void instrumentor::instrument_file(std::ifstream &og_file, std::ofstream &inst_f
                         inst_file << start;
                     }
                     std::string inst_code = "";
-                    // Each `#line` gives the line that the `#line` lines of the input
-                    // give it; the input's own `#line` lines, copied, set the file
+                    // Each `#line` directive written here gives only the computed line
+                    // number; the input's own `#line` directives, which the output keeps,
+                    // set the file, or else the `#line 1` directive at the top
                     switch (curr_inst_loc->kind)
                     {
                     case BEGIN_FUNC:

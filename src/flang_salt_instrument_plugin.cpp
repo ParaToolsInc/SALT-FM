@@ -78,11 +78,11 @@ using namespace Fortran::frontend;
  */
 namespace salt::fortran {
     // The file name of `pos` as written: Flang doubles each `\` of the file name
-    // of a `#line` line, but not of the path of a source file
+    // of a `#line` directive, but not of the path of a source file
     static std::string writtenPath(const Fortran::parser::SourcePosition &pos) {
         // shortcut: a `#line` name with one `\` where the source path has `\\`
         // doubles to the source path and stays doubled; upgrade if Flang keeps
-        // whether a name came from a `#line` line
+        // whether a name came from a `#line` directive
         if (*pos.path == pos.sourceFile->path()) {
             return *pos.path;
         }
@@ -824,11 +824,19 @@ namespace salt::fortran {
             return nullptr;
         }
 
-        // The `#line` line for line `line` of `file`, with the line that the `#line`
-        // lines of `file` give it, as in compiler messages. It names `file` unless
-        // they give another file, which the copied `#line` lines of the input keep:
-        // Flang doubles each `\` of a name that it reads, so a copy would not match.
-        // A line past the end, after an insert on the last line, counts on from it.
+        // Returns the `#line` directive to insert in the output before physical line
+        // `line` of `file`. A physical line is a line's position in `file`. Its
+        // computed line is the line number, and maybe the file, that the `#line`
+        // directives above it give it, as compiler messages report it.
+        // The returned `#line` directive gives the computed line number of `line`.
+        // It also names `file` when the computed file of `line` is `file`.
+        // Otherwise it gives only the number, so the compiler keeps the file of
+        // the last `#line` directive that it read with a file name: one of the
+        // input's, as the output keeps all of them. SALT-FM does not write that
+        // file name itself, as Flang reports it with each `\` doubled.
+        // `line` may be one past the last physical line, after an insert on the
+        // last line; its computed line number is then that of the last physical
+        // line plus 1.
         static std::string lineDirective(const Fortran::parser::SourceFile &file, const int line) {
             const int last{static_cast<int>(file.lines())};
             if (last == 0) {
@@ -893,11 +901,12 @@ namespace salt::fortran {
                             break;
                         }
                         ++lineNum;
-                        // Keep the preprocessor lines, such as a `#line` line, after the block,
-                        // except an `#include`, whose text is already in the condition. As for
-                        // Flang, one starts with a `#` after blanks, except that in fixed form a
-                        // `#` in column 6 after spaces marks a continuation line. Each keeps its
-                        // own line, and the lines that continue one after a `\` follow it.
+                        // Keep the directives, such as a `#line` directive, after the block,
+                        // except an `#include` directive, whose text is already in the condition.
+                        // As for Flang, a directive starts with a `#` after blanks, except that in
+                        // fixed form a `#` in column 6 after spaces marks a continuation line.
+                        // Each kept directive gets a `#line` directive with its own computed line,
+                        // and the lines that continue a directive after a `\` follow it.
                         if (llvm::StringRef directive{llvm::StringRef{discardedLine}.ltrim(" \t")};
                             continuedDirective ||
                             (!(fixedForm && llvm::StringRef{discardedLine}.starts_with("     #")) &&
