@@ -6,6 +6,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- `saltfm` keeps all of the code on a C or C++ line that holds more
+  than one place for timer code: the opening brace of a routine, a
+  `return` statement, or the closing brace. A one-line routine always
+  has more than one. Before, the code between those places was lost,
+  so, for example, `int kept() { return 33; }` lost its `return` with
+  `--tau_use_cxx_api`, and a one-line `void` routine lost its body
+  without it. The output often compiled with no error, but the program
+  gave wrong results
+  ([#82](https://github.com/ParaToolsInc/SALT-FM/issues/82)).
+- Each `return` statement gets its own value in the timer code. Before,
+  without `--tau_use_cxx_api`, each `return` on a line took the value
+  of the first one, and a name holding `return`, as in
+  `int return_code = 3; return return_code;`, gave an output that did
+  not compile. So did a `return;` in a string, as in
+  `const char *x = "return;"; return x;`. A `return` statement over
+  more than one line got its timer code twice when the closing brace
+  was on its last line, and gave an output that did not compile when a
+  `;` came before it on its first line. Its timer code also lost the
+  line ends of the statement, so `return -` with `-x;` on the next
+  line became `--x`, and a `//` comment at the end of a line hid the
+  rest of the timer code
+  ([#82](https://github.com/ParaToolsInc/SALT-FM/issues/82)).
+- `saltfm` no longer reads past the end of its list of places for
+  timer code in each C or C++ source. The read did not change the
+  output, but stopped a `saltfm` built with AddressSanitizer
+  ([#84](https://github.com/ParaToolsInc/SALT-FM/issues/84)).
 - The Fortran write error tests turn off LLVM symbolization, so they
   also pass when Flang can find an `llvm-symbolizer`, such as one next
   to `flang-new` or on `PATH`. Before, they failed there: the
