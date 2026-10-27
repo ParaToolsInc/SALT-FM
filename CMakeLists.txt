@@ -5027,6 +5027,10 @@ if(TEST_FORTRAN)
     ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90 write_error.inst.F90)
   _salt_add_write_error_test(write_error_percent_fortran "lang:Fortran"
     ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90 a%2Fb/write_error.inst.F90)
+  # Flang's crash handler would run llvm-symbolizer, whose temporary file
+  # fails under `ulimit -f 0` before saltfm reports the write error.
+  set_tests_properties(write_error_fortran write_error_percent_fortran
+    PROPERTIES ENVIRONMENT "LLVM_DISABLE_SYMBOLIZATION=1")
   # salt-selectfile copies a source that the file lists exclude.
   _salt_add_write_error_test(write_error_fortran_copy "lang:Fortran;sif"
     ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90 write_error.inst.F90
