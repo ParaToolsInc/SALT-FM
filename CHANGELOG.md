@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- The Fortran write error tests pass when Flang can find an
+  `llvm-symbolizer`, such as one next to `flang-new` or on `PATH`.
+  Before, the symbolizer failed to write its temporary file under the
+  tests' file size limit, and Flang stopped with
+  `LLVM ERROR: IO failure on output stream` before `saltfm` reported
+  the write error.
+
 ## [0.6.0] - 2026-10-26
 
 - `saltfm` stops with an error, and writes no output, when
