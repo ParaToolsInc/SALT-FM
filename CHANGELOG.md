@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-26
+
 - `saltfm` stops with an error, and writes no output, when
   `--tau_output` comes with more than one source, instead of writing
   only the last source to the output. So does more than one Fortran
@@ -629,7 +631,8 @@ tag, ending with the v0.2.0 SALT-FM milestone.
 - Build fixed under Clang 15 with stricter pedantic diagnostics
   ([#13](https://github.com/ParaToolsInc/salt/pull/13) by @khuck).
 
-[Unreleased]: https://github.com/ParaToolsInc/SALT-FM/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/ParaToolsInc/SALT-FM/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/ParaToolsInc/SALT-FM/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/ParaToolsInc/SALT-FM/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/ParaToolsInc/SALT-FM/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/ParaToolsInc/SALT-FM/compare/v0.3.0...v0.4.0
