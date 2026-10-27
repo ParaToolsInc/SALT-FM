@@ -26,9 +26,24 @@ namespace salt::fortran {
         PROGRAM_BEGIN, // Setup code, then start the main program's timer
         PROGRAM_SETUP, // Setup code, for a main program without a timer
         PROCEDURE_BEGIN, // Declare profiler, start timer
-        PROCEDURE_END, // Stop timer on the line after
-        RETURN_STMT, // Stop timer on the line before
-        IF_RETURN // Transform if to if-then-endif, stop timer before return
+        PROCEDURE_END, // Stop timer on the line after, or directly before the End statement
+        RETURN_STMT, // Stop timer directly before the return
+        IF_RETURN, // Transform if to if-then-endif, stop timer before return
+        PROCEDURE_SKIPPED // A comment that SALT-FM could not instrument the procedure
+    };
+
+    // A place in the input: a physical line and a column, which counts
+    // bytes from 1
+    struct InputPosition {
+        int line;
+        int column;
+    };
+
+    // The label of a statement, and where the statement goes on after it,
+    // maybe on a continuation line
+    struct StatementLabel {
+        long number;
+        InputPosition text;
     };
 
     enum class InstrumentationLocation {
@@ -135,6 +150,24 @@ namespace salt::fortran {
         const std::string timerName_;
     };
 
+    // A comment, `comment`, where the timer declarations and start of a
+    // procedure would go, that SALT-FM could not instrument the procedure
+    class ProcedureSkippedInstrumentationPoint final : public InstrumentationPoint {
+    public:
+        ProcedureSkippedInstrumentationPoint(const int line, std::string comment) : InstrumentationPoint(
+                InstrumentationPointType::PROCEDURE_SKIPPED, line, InstrumentationLocation::BEFORE),
+            comment_(std::move(comment)) {
+        }
+
+        [[nodiscard]] std::string instrumentationString(const InstrumentationMap &,
+                                                        const std::string &) const override {
+            return comment_;
+        }
+
+    private:
+        const std::string comment_;
+    };
+
     class ProcedureEndInstrumentationPoint final : public InstrumentationPoint {
     public:
         explicit ProcedureEndInstrumentationPoint(const int line) : InstrumentationPoint(
@@ -142,51 +175,38 @@ namespace salt::fortran {
         }
     };
 
-    class ReturnStmtInstrumentationPoint final : public InstrumentationPoint {
+    // A `return` statement, an if-return, or the End statement of a
+    // procedure without internal procedures, which replaces its text in
+    // the input with the TAU stop-timer call and its text. The statement
+    // spans the input from `start` to just before `end`, maybe over
+    // continuation lines. `next` is the first character of the statement
+    // after it on the same Fortran line, if any, so the output can put
+    // that statement on a line of its own. With `label`, the label of the
+    // statement, the label goes on a `continue` before the stop-timer
+    // call, as labels are local to a procedure, so a branch to the
+    // statement also stops the timer.
+    class ReturnInstrumentationPoint : public InstrumentationPoint {
     public:
-        explicit ReturnStmtInstrumentationPoint(const int line) : InstrumentationPoint(
-            InstrumentationPointType::RETURN_STMT, line, InstrumentationLocation::BEFORE) {
-        }
-    };
-
-    class IfReturnStmtInstrumentationPoint final : public InstrumentationPoint {
-    public:
-        // Replaces the physical source range [startLine, endLine] (covering
-        // a possibly continuation-spanned `if (<cond>) return [<expr>]`)
-        // with a multi-line `if (<cond>) then ... end if` block that wraps
-        // the TAU stop-timer call before the return.
-        //
-        // `conditionText` is the cooked-source text of the logical
-        // expression (line continuations resolved, comments stripped).
-        // `returnExprText` is empty for a plain `return`, or the cooked
-        // text of the `<scalar-int-expr>` for the obsolescent alternate-
-        // return form (issue #32).
-        // `label` is the numeric statement label on the original
-        // if-stmt (F2018 R601), or std::nullopt if unlabeled.  Preserved
-        // verbatim on the synthesized `if (cond) then` line so any
-        // `goto N` references continue to resolve.
-        IfReturnStmtInstrumentationPoint(const int startLine, const int endLine,
-                                         std::string conditionText,
-                                         std::string returnExprText,
-                                         std::optional<long> label) : InstrumentationPoint(
-                InstrumentationPointType::IF_RETURN, startLine, InstrumentationLocation::REPLACE),
-            endLine_(endLine), conditionText_(std::move(conditionText)),
-            returnExprText_(std::move(returnExprText)), label_(std::move(label)) {
+        ReturnInstrumentationPoint(const InstrumentationPointType type, const InputPosition start,
+                                   const InputPosition end, const std::optional<InputPosition> next,
+                                   const std::optional<StatementLabel> label) : InstrumentationPoint(
+                type, start.line, InstrumentationLocation::REPLACE),
+            start_(start), end_(end), next_(next), label_(label) {
         }
 
-        [[nodiscard]] int endLine() const {
-            return endLine_;
+        [[nodiscard]] InputPosition start() const {
+            return start_;
         }
 
-        [[nodiscard]] const std::string &conditionText() const {
-            return conditionText_;
+        [[nodiscard]] InputPosition end() const {
+            return end_;
         }
 
-        [[nodiscard]] const std::string &returnExprText() const {
-            return returnExprText_;
+        [[nodiscard]] const std::optional<InputPosition> &next() const {
+            return next_;
         }
 
-        [[nodiscard]] const std::optional<long> &label() const {
+        [[nodiscard]] const std::optional<StatementLabel> &label() const {
             return label_;
         }
 
@@ -196,10 +216,55 @@ namespace salt::fortran {
                                                         const std::string &lineText) const override;
 
     private:
-        const int endLine_;
-        const std::string conditionText_;
-        const std::string returnExprText_;
-        const std::optional<long> label_;
+        const InputPosition start_;
+        const InputPosition end_;
+        const std::optional<InputPosition> next_;
+        const std::optional<StatementLabel> label_;
+    };
+
+    // A `return` statement: the output keeps its text, after the TAU
+    // stop-timer call
+    class ReturnStmtInstrumentationPoint final : public ReturnInstrumentationPoint {
+    public:
+        ReturnStmtInstrumentationPoint(const InputPosition start, const InputPosition end,
+                                       const std::optional<InputPosition> next,
+                                       const std::optional<StatementLabel> label) : ReturnInstrumentationPoint(
+            InstrumentationPointType::RETURN_STMT, start, end, next, label) {
+        }
+    };
+
+    // An `if (<cond>) return [<expr>]`, maybe over continuation lines,
+    // which the output turns into an `if (<cond>) then ... end if` block:
+    // the text of the if-statement, with `then` in place of its
+    // `return [<expr>]`, which starts at `returnStart`, then the TAU
+    // stop-timer call, the text of the `return [<expr>]`, and `end if`.
+    // So the condition, with its comments, character literals, label,
+    // and continuation lines, stays as written. Its label stays in its
+    // text, so the stop-timer call gets none. `returnSplit` tells whether
+    // the `return` keyword goes on in a continuation line.
+    class IfReturnStmtInstrumentationPoint final : public ReturnInstrumentationPoint {
+    public:
+        IfReturnStmtInstrumentationPoint(const InputPosition start, const InputPosition end,
+                                         const std::optional<InputPosition> next,
+                                         const InputPosition returnStart,
+                                         const bool returnSplit) : ReturnInstrumentationPoint(
+                InstrumentationPointType::IF_RETURN, start, end, next, std::nullopt),
+            returnStart_(returnStart), returnSplit_(returnSplit) {
+        }
+
+        [[nodiscard]] InputPosition returnStart() const {
+            return returnStart_;
+        }
+
+        [[nodiscard]] bool returnSplit() const {
+            return returnSplit_;
+        }
+
+        [[nodiscard]] std::string toString() const override;
+
+    private:
+        const InputPosition returnStart_;
+        const bool returnSplit_;
     };
 }
 
