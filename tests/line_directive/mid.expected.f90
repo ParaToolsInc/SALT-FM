@@ -12,9 +12,10 @@ subroutine middle(n)
       call timer_start("&
      &middle [{block.inc} {1,1}-{7,21}]&
      &")
-      if (n > 0) then
+  if (n > 0) &
+    then
       call timer_stop()
-        return
+    return
       end if
   print *, "middle"
       call timer_stop()
