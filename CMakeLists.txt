@@ -4062,6 +4062,82 @@ if(TEST_FORTRAN)
   _salt_in_test_output(instrument
     check-internal-func.f90 check_implicit_main_timer_name)
 
+  if(_salt_test_flang)
+    # A `return`, an if-return, or an End statement that shares its line
+    # with other statements, or has a label (#118). Adds test
+    # fortran_same_line_<name>: tests/check_same_line.cmake on `src` in
+    # tests/fortran/same_line, whose output must compile with the TAU
+    # stand-ins of tau_stub.f90, print what `src` prints, fit the line
+    # width, and equal <stem>.expected<ext>. ARGN are more -D options of
+    # the script.
+    function(_salt_add_fortran_same_line_test name src)
+      set(dir ${CMAKE_SOURCE_DIR}/tests/fortran/same_line)
+      get_filename_component(ext ${src} LAST_EXT)
+      get_filename_component(stem ${src} NAME_WLE)
+      string(TOUPPER ${ext} out_ext)
+      set(test fortran_same_line_${name})
+      add_test(NAME ${test}
+        COMMAND ${CMAKE_COMMAND}
+          -DSALTFM=${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+          -DCOMPILER=${_salt_test_flang} -DSTUB=${dir}/tau_stub.f90
+          -DSRC=${dir}/${src} -DOUT=${test}.inst${out_ext}
+          -DEXPECTED=${dir}/${stem}.expected${ext} ${ARGN}
+          -P ${CMAKE_SOURCE_DIR}/tests/check_same_line.cmake)
+      set_tests_properties(${test} PROPERTIES
+        LABELS "lang:Fortran;phase:run")
+      _salt_in_test_output(instrument ${test})
+    endfunction()
+    # The cases of #118
+    _salt_add_fortran_same_line_test(issue issue.f90)
+    # An if-return followed by statements or a comment
+    _salt_add_fortran_same_line_test(suffix suffix.f90)
+    # Two returns on one line
+    _salt_add_fortran_same_line_test(two two.f90)
+    # A `go to` to a labeled if-return, `return`, or End statement, or to
+    # a statement on the line of an if-return
+    _salt_add_fortran_same_line_test(labels labels.f90)
+    # The same in fixed form, also from an arithmetic IF, a computed or
+    # assigned GO TO, an alternate return, and `end=` and `err=`
+    _salt_add_fortran_same_line_test(labels_fixed labels.f)
+    # The same, with a timer stop text that starts with a directive
+    _salt_add_fortran_same_line_test(directive directive.f90
+      -DCONFIG=${CMAKE_SOURCE_DIR}/tests/fortran/same_line/directive.yaml)
+    # Fixed form, also a tab-format line, if-returns whose condition or
+    # return expression would pass column 72 on one line, also with a
+    # character literal, and a `return` split at column 72, compiled with
+    # the default line length
+    _salt_add_fortran_same_line_test(fixed fixed.f)
+    # An End statement on the line of other statements
+    _salt_add_fortran_same_line_test(end_line end_line.f90)
+    # A statement before a return on a continuation line, after a `;`
+    _salt_add_fortran_same_line_test(semi semi.f90)
+    # An if-return whose condition or return expression would pass
+    # column 132 on one line, and a `return` split at column 132
+    _salt_add_fortran_same_line_test(wide wide.f90)
+    # Fixed form at a line length of 132, with an if-return past column
+    # 72, and one with a character literal that would cross column 72
+    _salt_add_fortran_same_line_test(wide_fixed wide.f
+      -DFLAGS=-ffixed-line-length=132 -DWIDTH=132)
+    # A procedure whose first executable statement shares its line with a
+    # declaration or the procedure statement: a warning that names the
+    # file, the line, and the procedure, and no timer
+    set(_warning "warning: [^']*")
+    string(CONCAT _warnings "_unsplit[.]f90:4: ${_warning}'one_line'.*"
+      "_unsplit[.]f90:8: ${_warning}'decl_line'.*"
+      "_unsplit[.]f90:14: ${_warning}'outer'.*"
+      "_unsplit[.]f90:31: ${_warning}'semi_continued'")
+    _salt_add_fortran_same_line_test(unsplit unsplit.f90
+      "-DWARNING=${_warnings}")
+    string(CONCAT _warnings "_unsplit_fixed[.]f:5: ${_warning}'s'.*"
+      "_unsplit_fixed[.]f:15: ${_warning}'abcdefghijklmnopqrstuvwxyz"
+      "abcdefghijklmnopqrstuvwxyzabcdefghijk'.*"
+      "_unsplit_fixed[.]f:18: ${_warning}'(main|MAIN)'")
+    _salt_add_fortran_same_line_test(unsplit_fixed unsplit.f
+      "-DWARNING=${_warnings}")
+    # Code after an unconditional `return` on its line never runs
+    _salt_add_fortran_same_line_test(dead dead.f90 -DNO_RUN=ON)
+  endif()
+
   # Per-form skip checks: each minimal source contains exactly one
   # pure / elemental / impure-elemental / module-procedure body and
   # nothing else.  The companion check_no_tau_<src> test reads back
