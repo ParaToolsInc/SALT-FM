@@ -9,7 +9,10 @@
 # prints. OUT must also equal EXPECTED, without the `#line` directives
 # that saltfm writes (with no file, or the name of the copy) and the
 # blank lines, in any case, as Flang versions differ in the case of a
-# program name.
+# program name. Flang 19-22 write `./` before the name of the copy, in
+# `#line` directives and timer names, which moves where a timer name
+# splits over lines, so the comparison drops that `./` and joins each
+# line that ends with `&` to a next line that starts with `     &`.
 # No line of OUT but a directive may pass column WIDTH, by default 72 for
 # a `.f` SRC (fixed form) and 132 otherwise. FLAGS are compiler flags
 # for saltfm and COMPILER. With NO_RUN, OUT is only compiled, not run.
@@ -79,10 +82,20 @@ if(_long)
   message(FATAL_ERROR "${OUT} has lines past column ${WIDTH}:\n${_long}")
 endif()
 
+set(_compared)
+foreach(path "${OUT}" "${EXPECTED}")
+  file(READ "${path}" _text)
+  string(REPLACE "&\n     &" "" _text "${_text}")
+  string(REPLACE "{./${_copy}}" "{${_copy}}" _text "${_text}")
+  string(REPLACE "\"./${_copy}\"" "\"${_copy}\"" _text "${_text}")
+  get_filename_component(_base "${path}" NAME)
+  file(WRITE "${_name}.compared.${_base}" "${_text}")
+  list(APPEND _compared "${_name}.compared.${_base}")
+endforeach()
 execute_process(COMMAND sh -c
   "grep -Ev -e '^#line [0-9]+( \"${_copy}\")?$' -e '^[[:space:]]*$' \"$1\" |
     diff -iu \"$2\" -"
-  sh "${OUT}" "${EXPECTED}" RESULT_VARIABLE _rc)
+  sh ${_compared} RESULT_VARIABLE _rc)
 if(NOT _rc EQUAL 0)
   message(FATAL_ERROR "${OUT} differs from ${EXPECTED}")
 endif()
