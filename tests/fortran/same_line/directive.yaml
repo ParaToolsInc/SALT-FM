@@ -1,0 +1,19 @@
+# A configuration file whose timer stop text starts with a directive
+Fortran:
+  instrumentation: tauFortran
+  program_setup_insert:
+    - "      integer, save :: tauProfileTimer(2) = [0, 0]"
+    - "      call TAU_PROFILE_INIT()"
+  program_insert:
+    - "      call TAU_PROFILE_TIMER(tauProfileTimer, \"${full_timer_name}&"
+    - "     &\")"
+    - "      call TAU_PROFILE_START(tauProfileTimer)"
+  procedure_begin_insert:
+    - "      integer, save :: tauProfileTimer(2) = [0, 0]"
+    - "      call TAU_PROFILE_TIMER(tauProfileTimer, \"${full_timer_name}&"
+    - "     &\")"
+    - "      call TAU_PROFILE_START(tauProfileTimer)"
+  procedure_end_insert:
+    - "#ifndef NO_TAU"
+    - "      call TAU_PROFILE_STOP(tauProfileTimer)"
+    - "#endif"

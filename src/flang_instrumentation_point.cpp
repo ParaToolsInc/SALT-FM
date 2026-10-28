@@ -42,6 +42,8 @@ std::string salt::fortran::InstrumentationPoint::typeString() const {
             return "RETURN_STMT"s;
         case InstrumentationPointType::IF_RETURN:
             return "IF_RETURN"s;
+        case InstrumentationPointType::PROCEDURE_SKIPPED:
+            return "PROCEDURE_SKIPPED"s;
         default:
             CRASH_NO_CASE;
     }
@@ -100,39 +102,41 @@ std::string salt::fortran::ProcedureBeginInstrumentationPoint::instrumentationSt
                          SALT_FORTRAN_TIMER_NAME_TEMPLATE, timerName());
 }
 
-std::string salt::fortran::IfReturnStmtInstrumentationPoint::toString() const {
+// `pos` as line:column
+static std::string positionString(const std::optional<salt::fortran::InputPosition> &pos) {
+    return pos ? std::to_string(pos->line) + ":" + std::to_string(pos->column) : "-"s;
+}
+
+std::string salt::fortran::ReturnInstrumentationPoint::toString() const {
     std::stringstream ss;
     ss << InstrumentationPoint::toString();
-    ss << endLine() << "\t";
+    ss << positionString(start()) << "-" << positionString(end()) << "\t";
+    ss << "next=" << positionString(next()) << "\t";
     if (label().has_value()) {
-        ss << "label=" << label().value() << "\t";
-    }
-    ss << "\"" << conditionText() << "\"\t";
-    if (!returnExprText().empty()) {
-        ss << "\"return " << returnExprText() << "\"\t";
+        ss << "label=" << label()->number << "\t";
     }
     return ss.str();
 }
 
-std::string salt::fortran::IfReturnStmtInstrumentationPoint::instrumentationString(
-    const InstrumentationMap &instMap, [[maybe_unused]] const std::string &lineText) const {
+// The label goes on a `continue` statement of its own, so the stop-timer
+// text may start with a directive or a comment, or be empty.
+// F2018 R601: numeric labels occupy cols 1-5 (fixed form) followed by
+// whitespace before the statement; free form accepts the same layout.
+// Right-justify in a 5-col field so the line is valid for both forms.
+std::string salt::fortran::ReturnInstrumentationPoint::instrumentationString(
+    const InstrumentationMap &instMap, const std::string &lineText) const {
+    const std::string text{InstrumentationPoint::instrumentationString(instMap, lineText)};
+    if (!label().has_value()) {
+        return text;
+    }
     std::stringstream ss;
-    // F2018 R601: numeric labels occupy cols 1-5 (fixed form) followed
-    // by whitespace before the statement; free form accepts the same
-    // layout.  Right-justify in a 5-col field so the synthesized header
-    // remains valid for both forms.  Without a label, the standard
-    // 6-space prefix.
-    if (label().has_value()) {
-        ss << std::setw(5) << label().value() << " if (" << conditionText() << ") then\n";
-    } else {
-        ss << "      if (" << conditionText() << ") then\n";
-    }
-    ss << InstrumentationPoint::instrumentationString(instMap, lineText) << "\n";
-    if (returnExprText().empty()) {
-        ss << "        return\n";
-    } else {
-        ss << "        return " << returnExprText() << "\n";
-    }
-    ss << "      end if\n";
+    ss << std::setw(5) << label()->number << " continue\n" << text;
+    return ss.str();
+}
+
+std::string salt::fortran::IfReturnStmtInstrumentationPoint::toString() const {
+    std::stringstream ss;
+    ss << ReturnInstrumentationPoint::toString();
+    ss << "return=" << positionString(returnStart()) << (returnSplit() ? " split" : "") << "\t";
     return ss.str();
 }

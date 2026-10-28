@@ -6,6 +6,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- `saltfm` keeps the other statements on the line of a Fortran
+  `return` or `if (<cond>) return`, such as `y = 1; if (x > 0) return`
+  or `if (x > 0) return; y = 3`, in their order, and puts the
+  `TAU_PROFILE_STOP` call directly before the `return`, so it runs only
+  when the `return` runs. Before, the output lost the statements before
+  and after an `if (<cond>) return` on its line, also over continuation
+  lines, with exit status 0, and the stop of a `return` with other
+  statements on its line ran before the line, as in
+  `if (x > 0) then; return; end if`, which stopped the timer twice when
+  the `return` did not run. A comment after an `if (<cond>) return`
+  stays, and `if (x > 0) return; return` no longer stops `saltfm` with
+  an error. The `if (<cond>) then` that replaces an
+  `if (<cond>) return` keeps the condition as written, on the same
+  lines, so its lines get no longer, and a character literal keeps its
+  text at any fixed-form line length, such as with
+  `-ffixed-line-length=132`. Before, the condition went on one line,
+  which could pass column 132, or in fixed form the line length, past
+  which the compiler ignores the text
+  ([#118](https://github.com/ParaToolsInc/SALT-FM/issues/118)).
+- A branch to a labeled Fortran `return`, as from `go to 20` to
+  `20 return`, now stops the timer: the label moves to a `continue`
+  statement before the `TAU_PROFILE_STOP` call and the `return`.
+  Before, the branch skipped the stop. In a procedure without internal
+  procedures, the stop of the procedure end goes directly before the
+  End statement, and gets its label in the same way. Before, an End
+  statement on the line of an `if (<cond>) return` or a `return`, as in
+  `if (x > 0) return; end subroutine s`, stopped `saltfm` with an error
+  about points out of line order, the stop ran before the other
+  statements on the line of an End statement, and a `go to` to a
+  labeled End statement skipped it. A `;` at the start of a
+  continuation line, before a `return` or an `if (<cond>) return`, as
+  after `y = 1 &`, is no longer lost, which made the output fail to
+  compile.
+- A Fortran procedure or main program whose first executable statement
+  shares its line with the procedure statement or a declaration, as in
+  `subroutine s(y); integer y; y = 1; end subroutine s`, gets no timer:
+  `saltfm` prints a warning that names the file, the line, and the
+  procedure, writes a comment in place of the timer, and exits with
+  status 0. The other procedures keep their timers. Before, `saltfm`
+  stopped with an error about points out of line order, or wrote the
+  timer before the line, so the output did not compile.
 - The Fortran write error tests turn off LLVM symbolization, so they
   also pass when Flang can find an `llvm-symbolizer`, such as one next
   to `flang-new` or on `PATH`. Before, they failed there: the

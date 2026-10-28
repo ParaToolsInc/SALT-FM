@@ -56,6 +56,7 @@ limitations under the License.
 #include "flang/Frontend/FrontendPluginRegistry.h"
 #include "flang/Parser/dump-parse-tree.h"
 #include "flang/Parser/parsing.h"
+#include "flang/Parser/tools.h"
 #include "flang/Parser/source.h"
 #include "flang/Common/indirection.h"
 #include "flang/Semantics/symbol.h"
@@ -136,23 +137,85 @@ namespace salt::fortran {
                 }
             }
 
-            void addReturnStmtInstrumentation(const int end_line) {
+            // The input positions of a statement and its label, as
+            // ReturnInstrumentationPoint takes them
+            struct StatementPositions {
+                InputPosition start;
+                InputPosition end;
+                std::optional<InputPosition> next;
+                std::optional<StatementLabel> label;
+            };
+
+            // The timer stop directly before the End statement at `pos`
+            void addProcedureEndInstrumentation(const StatementPositions &pos) {
                 if (shouldInstrument()) {
-                    instrumentationPoints_.emplace_back(std::make_unique<ReturnStmtInstrumentationPoint>(end_line));
+                    instrumentationPoints_.emplace_back(std::make_unique<ReturnInstrumentationPoint>(
+                        InstrumentationPointType::PROCEDURE_END, pos.start, pos.end, pos.next, pos.label));
                 }
             }
 
-            void addIfReturnStmtInstrumentation(const int start_line, const int end_line,
-                                                std::string condition_text,
-                                                std::string return_expr_text,
-                                                std::optional<long> label) {
+            void addReturnStmtInstrumentation(const StatementPositions &pos) {
                 if (shouldInstrument()) {
-                    instrumentationPoints_.emplace_back(
-                        std::make_unique<IfReturnStmtInstrumentationPoint>(start_line, end_line,
-                                                                           std::move(condition_text),
-                                                                           std::move(return_expr_text),
-                                                                           std::move(label)));
+                    instrumentationPoints_.emplace_back(std::make_unique<ReturnStmtInstrumentationPoint>(
+                        pos.start, pos.end, pos.next, pos.label));
                 }
+            }
+
+            void addIfReturnStmtInstrumentation(const StatementPositions &pos, const InputPosition returnStart,
+                                                const bool returnSplit) {
+                if (shouldInstrument()) {
+                    instrumentationPoints_.emplace_back(std::make_unique<IfReturnStmtInstrumentationPoint>(
+                        pos.start, pos.end, pos.next, returnStart, returnSplit));
+                }
+            }
+
+            // The input position of the start, or with `end` the end, of
+            // `chars`.
+            //
+            // If locationFromSource fails to map a CharBlock we DIE rather
+            // than skip: dropping a single instrumentation point would leave
+            // a TAU_PROFILE_TIMER_START without a matching TAU_PROFILE_STOP
+            // at runtime.
+            InputPosition inputPosition(const Fortran::parser::CharBlock &chars, const bool end) const {
+                const auto pos{locationFromSource(parsing, chars, end)};
+                if (!pos.has_value()) {
+                    DIE("SALT: cooked-source mapping unavailable for a return or End statement; "
+                        "refusing to emit unbalanced TAU timers");
+                }
+                return InputPosition{pos->trueLineNumber, pos->column};
+            }
+
+            // The input positions of `stmt`, from its label, if any, and of
+            // the statement after it on its Fortran line, which the cooked
+            // text separates from it with `;`.
+            template<typename A>
+            StatementPositions statementPositions(const Fortran::parser::Statement<A> &stmt) const {
+                const Fortran::parser::CharBlock &source{stmt.source};
+                const Fortran::parser::CharBlock cooked{DEREF(parsing->allCooked().Find(source)).AsCharBlock()};
+                const auto isBlank = [](const char c) { return c == ' ' || c == '\t'; };
+                std::optional<InputPosition> next;
+                const char *after{source.end()};
+                while (after < cooked.end() && isBlank(*after)) {
+                    ++after;
+                }
+                if (after < cooked.end() && *after == ';') {
+                    while (after < cooked.end() && (isBlank(*after) || *after == ';')) {
+                        ++after;
+                    }
+                    if (after < cooked.end() && *after != '\n') {
+                        next = inputPosition({after, 1}, false);
+                    }
+                }
+                std::optional<StatementLabel> label;
+                if (stmt.label.has_value()) {
+                    // The statement goes on after the label and blanks
+                    const char *text{source.begin()};
+                    while (text < source.end() && ((*text >= '0' && *text <= '9') || isBlank(*text))) {
+                        ++text;
+                    }
+                    label = StatementLabel{static_cast<long>(stmt.label.value()), inputPosition({text, 1}, false)};
+                }
+                return {inputPosition(source, false), inputPosition(source, true), next, label};
             }
 
             [[nodiscard]] const auto &getInstrumentationPoints() const {
@@ -222,10 +285,12 @@ namespace salt::fortran {
             // endLineOut and containsLineOut are physical lines of the
             // input, where the TAU calls go.  nameEndLineOut is the line
             // of the body's end as `#line` directives number it, for the
-            // timer name.
+            // timer name.  Without a `contains`, endStmtOut gets the input
+            // positions of the End statement, where the timer stop goes.
             template <typename SubprogramT, typename EndStmtT>
             void captureBodyEndLines(const SubprogramT &subprogram, int &endLineOut, int &endColOut,
-                                     int &containsLineOut, int &nameEndLineOut) {
+                                     int &containsLineOut, int &nameEndLineOut,
+                                     std::optional<StatementPositions> &endStmtOut) {
                 // Reset so a procedure that has no `contains` does not inherit
                 // its parent's containsLine bookkeeping.  Without this, an
                 // internal procedure walked from inside an outer procedure
@@ -237,6 +302,7 @@ namespace salt::fortran {
                 endColOut = 1;
                 containsLineOut = 0;
                 nameEndLineOut = 0;
+                endStmtOut.reset();
                 const auto &endStmt = std::get<Fortran::parser::Statement<EndStmtT> >(subprogram.t);
                 if (const auto pos = locationFromSource(parsing, endStmt.source, false); pos.has_value()) {
                     endLineOut = pos.value().trueLineNumber;
@@ -255,6 +321,8 @@ namespace salt::fortran {
                         containsLineOut = pos.value().trueLineNumber;
                         nameEndLineOut = pos.value().line;
                     }
+                } else if (endLineOut > 0) {
+                    endStmtOut = statementPositions(endStmt);
                 }
             }
 
@@ -292,7 +360,7 @@ namespace salt::fortran {
                 isInMainProgram_ = true;
                 captureBodyEndLines<Fortran::parser::MainProgram, Fortran::parser::EndProgramStmt>(
                     mainProgram, mainProgramEndLine_, mainProgramEndCol_, mainProgramContainsLine_,
-                    mainProgramNameEndLine_);
+                    mainProgramNameEndLine_, mainProgramEndStmt_);
                 mainProgramStartCol_ = captureMainProgramStartCol(mainProgram);
                 return true;
             }
@@ -300,7 +368,7 @@ namespace salt::fortran {
             bool Pre(const Fortran::parser::SubroutineSubprogram &subprogram) {
                 captureBodyEndLines<Fortran::parser::SubroutineSubprogram, Fortran::parser::EndSubroutineStmt>(
                     subprogram, subProgramEndLine_, subProgramEndCol_, subProgramContainsLine_,
-                    subProgramNameEndLine_);
+                    subProgramNameEndLine_, subProgramEndStmt_);
                 subProgramStartCol_ =
                     captureStartCol<Fortran::parser::SubroutineSubprogram, Fortran::parser::SubroutineStmt>(
                         subprogram);
@@ -310,7 +378,7 @@ namespace salt::fortran {
             bool Pre(const Fortran::parser::FunctionSubprogram &subprogram) {
                 captureBodyEndLines<Fortran::parser::FunctionSubprogram, Fortran::parser::EndFunctionStmt>(
                     subprogram, subProgramEndLine_, subProgramEndCol_, subProgramContainsLine_,
-                    subProgramNameEndLine_);
+                    subProgramNameEndLine_, subProgramEndStmt_);
                 subProgramStartCol_ =
                     captureStartCol<Fortran::parser::FunctionSubprogram, Fortran::parser::FunctionStmt>(subprogram);
                 return true;
@@ -327,7 +395,7 @@ namespace salt::fortran {
                     Fortran::parser::SeparateModuleSubprogram,
                     Fortran::parser::EndMpSubprogramStmt>(
                     subprogram, subProgramEndLine_, subProgramEndCol_, subProgramContainsLine_,
-                    subProgramNameEndLine_);
+                    subProgramNameEndLine_, subProgramEndStmt_);
                 subProgramStartCol_ =
                     captureStartCol<Fortran::parser::SeparateModuleSubprogram,
                         Fortran::parser::MpSubprogramStmt>(subprogram);
@@ -623,7 +691,25 @@ namespace salt::fortran {
                     if (isInMainProgram_ && mainSetup_) {
                         warnIfMainNotIncluded(procName, /*ignoreCase=*/true);
                     }
-                    if (isInMainProgram_ && (skipInstrumentFile_ || !shouldInstrumentSubprogram(procName))) {
+                    const bool excludedMain{
+                        isInMainProgram_ && (skipInstrumentFile_ || !shouldInstrumentSubprogram(procName))
+                    };
+                    if ((excludedMain ? mainSetup_ : shouldInstrument()) && followsStatement(block.front())) {
+                        // The timer declarations and start, or the setup code, would go before
+                        // the line, so before the statement before them on the line. The flag
+                        // also drops the timer stops. The name, of up to 63 characters, goes
+                        // on a comment line of its own to fit in column 72.
+                        llvm::errs() << "[SALT] " << writtenPath(startLoc) << ":" << startLoc.line
+                                << ": warning: not instrumenting procedure '" << procName
+                                << "': its first executable statement shares the line with the "
+                                << "procedure statement or a declaration\n";
+                        instrumentationPoints_.emplace_back(std::make_unique<ProcedureSkippedInstrumentationPoint>(
+                            startLoc.trueLineNumber, "! SALT-FM could not split line " +
+                                                     std::to_string(startLoc.line) + " to instrument\n! " +
+                                                     procName));
+                        skipInstrumentSubprogram_ = true;
+                        lineNotSplit_ = true;
+                    } else if (excludedMain) {
                         // Keep the setup code, if any, but not the timer; the
                         // flag also drops the timer stop
                         verboseStream() << "Skipping the timer of " << procName <<
@@ -642,13 +728,48 @@ namespace salt::fortran {
                         addProcedureBeginInstrumentation(startLoc.trueLineNumber, splitTimerName);
                     }
                 } else {
-                    verboseStream() << "End at line " << endLine << "\n";
-                    addProcedureEndInstrumentation(endLine);
-                    if (isInMainProgram_) {
+                    if (const auto &endStmt{isInMainProgram_ ? mainProgramEndStmt_ : subProgramEndStmt_};
+                        endStmt.has_value()) {
+                        verboseStream() << "End statement at line " << endStmt->start.line << "\n";
+                        addProcedureEndInstrumentation(*endStmt);
+                    } else {
+                        verboseStream() << "End at line " << endLine << "\n";
+                        addProcedureEndInstrumentation(endLine);
+                    }
+                    if (isInMainProgram_ || lineNotSplit_) {
                         // Its internal subprograms choose for themselves
                         skipInstrumentSubprogram_ = false;
+                        lineNotSplit_ = false;
                     }
                 }
+            }
+
+            // Whether a statement comes before `stmt` on its line: the cooked
+            // text, which joins continuation lines, has a `;` before it, and
+            // text other than `;` and blanks before that on its line. The
+            // source of a construct can start after a directive sentinel, such
+            // as `!$omp`, on its line.
+            template<typename A>
+            bool followsStatement(const A &stmt) const {
+                const std::optional<Fortran::parser::CharBlock> source{Fortran::parser::GetSource(stmt)};
+                // The source of an `!$omp atomic` construct can be empty, in no cooked
+                // text, as on Flang 19; no statement can come before a directive on its
+                // line.
+                const Fortran::parser::CookedSource *cookedSource{
+                    source.has_value() ? parsing->allCooked().Find(*source) : nullptr
+                };
+                if (cookedSource == nullptr) {
+                    return false;
+                }
+                const Fortran::parser::CharBlock cooked{cookedSource->AsCharBlock()};
+                const char *before{source->begin()};
+                bool semicolon{false};
+                while (before > cooked.begin() &&
+                       (before[-1] == ' ' || before[-1] == '\t' || before[-1] == ';')) {
+                    semicolon |= before[-1] == ';';
+                    --before;
+                }
+                return semicolon && before > cooked.begin() && before[-1] != '\n';
             }
 
             // A ReturnStmt does not have a source, so we instead need to get access to the wrapper Statement that does.
@@ -657,18 +778,15 @@ namespace salt::fortran {
             // The same wrapper Statement<ActionStmt> covers an `if (<cond>) return` IfStmt.  Detecting the
             // if-return form here (rather than in Pre(IfStmt&)) gives us access to the wrapper's source
             // CharBlock, which spans the full physical extent of the if-stmt -- including any `&` line
-            // continuations inside the condition or between the condition and the action.  The cooked
-            // text of that range (and of the embedded ScalarLogicalExpr) is continuation-free.
+            // continuations inside the condition or between the condition and the action.
             //
-            // If locationFromSource fails to map either CharBlock we DIE
-            // rather than skip: dropping a single instrumentation point
-            // would leave a TAU_PROFILE_TIMER_START without a matching
-            // TAU_PROFILE_STOP at runtime.  Possible causes of an
-            // unmapped CharBlock include non-conforming Fortran (e.g.
-            // a deleted construct -- see F2018 Annex B.2.2 / R813 /
-            // R823 for the labeled-DO terminator rules), upstream
-            // flang source-mapping bugs (cf. llvm-project#196291), or
-            // other situations that haven't been characterised yet.
+            // inputPosition() DIEs when it cannot map a CharBlock.
+            // Possible causes of an unmapped CharBlock include
+            // non-conforming Fortran (e.g. a deleted construct -- see
+            // F2018 Annex B.2.2 / R813 / R823 for the labeled-DO
+            // terminator rules), upstream flang source-mapping bugs (cf.
+            // llvm-project#196291), or other situations that haven't been
+            // characterized yet.
             bool Pre(const Fortran::parser::ExecutableConstruct &execConstruct) {
                 if (const auto actionStmt = std::get_if<Fortran::parser::Statement<Fortran::parser::ActionStmt> >(
                     &execConstruct.u)) {
@@ -677,19 +795,14 @@ namespace salt::fortran {
                                 &actionStmt->statement.u)) {
                         // Both plain `return` and the obsolescent alternate-return
                         // form `return <scalar-int-expr>` are handled identically:
-                        // we inject TAU_PROFILE_STOP on the line before, and the
-                        // user's `return [<expr>]` is echoed unchanged.  Issue #32.
+                        // we inject TAU_PROFILE_STOP directly before the statement,
+                        // and the user's `return [<expr>]` is echoed unchanged.  Issue #32.
                         if (retInd->value().v.has_value()) {
                             noteAlternateReturn(actionStmt->source, /*insideIfStmt=*/false);
                         }
-                        const std::optional returnPos{locationFromSource(parsing, actionStmt->source, false)};
-                        if (!returnPos.has_value()) {
-                            DIE("SALT: cooked-source mapping unavailable for ReturnStmt; "
-                                "refusing to emit unbalanced TAU timers");
-                        }
-                        const int returnLine{returnPos->trueLineNumber};
-                        verboseStream() << "Return statement at " << returnLine << "\n";
-                        addReturnStmtInstrumentation(returnLine);
+                        const StatementPositions pos{statementPositions(*actionStmt)};
+                        verboseStream() << "Return statement at " << pos.start.line << "\n";
+                        addReturnStmtInstrumentation(pos);
                     } else if (const auto ifInd = std::get_if<Fortran::common::Indirection<Fortran::parser::IfStmt> >(
                         &actionStmt->statement.u)) {
                         const Fortran::parser::IfStmt &ifStmt{ifInd->value()};
@@ -700,42 +813,29 @@ namespace salt::fortran {
                                 std::get_if<Fortran::common::Indirection<Fortran::parser::ReturnStmt> >(
                                     &innerAction.statement.u)) {
                             // The wrapping Statement<ActionStmt>'s source covers the entire `if (...) return`
-                            // including continuations.  Use it to compute the physical line range to replace.
-                            const auto startPosOpt{locationFromSource(parsing, actionStmt->source, false)};
-                            const auto endPosOpt{locationFromSource(parsing, actionStmt->source, true)};
-                            if (!startPosOpt.has_value() || !endPosOpt.has_value()) {
-                                DIE("SALT: cooked-source mapping unavailable for `if (cond) return`; "
-                                    "refusing to emit unbalanced TAU timers");
-                            }
-                            const auto &startPos{*startPosOpt};
-                            const auto &endPos{*endPosOpt};
-                            // Pull the cooked-source text of the logical condition.  CharBlock::ToString()
-                            // yields the post-continuation, comment-stripped representation that flang's
-                            // parser already worked with, so the synthesized replacement is syntactically
-                            // sound regardless of how the user wrote the condition physically.
-                            const std::string conditionText{
-                                std::get<Fortran::parser::ScalarLogicalExpr>(ifStmt.t).thing.thing.value().source.
-                                ToString()
-                            };
-                            // Alternate-return form `if (cond) return <expr>`: capture
-                            // the int-expression's cooked text so the synthesized
-                            // `if-then-endif` replays `return <expr>` faithfully.
-                            // Empty text means a plain `return`. Issue #32.
-                            std::string returnExprText;
+                            // including continuations.  Use it to compute the physical range to replace, and
+                            // the source of the inner `return [<expr>]` for the part that `then` replaces.
+                            const StatementPositions pos{statementPositions(*actionStmt)};
                             if (innerRet->value().v.has_value()) {
-                                returnExprText =
-                                    innerRet->value().v.value().thing.thing.value().source.ToString();
                                 noteAlternateReturn(actionStmt->source, /*insideIfStmt=*/true);
                             }
-                            verboseStream() << "If-return spans lines " << startPos.trueLineNumber << "-"
-                                    << endPos.trueLineNumber << ", condition: " << conditionText
-                                    << (returnExprText.empty() ? "" : ", return expr: " + returnExprText)
+                            verboseStream() << "If-return spans lines " << pos.start.line << "-"
+                                    << pos.end.line
                                     << (actionStmt->label.has_value()
                                             ? ", label: " + std::to_string(actionStmt->label.value())
                                             : "")
                                     << "\n";
-                            addIfReturnStmtInstrumentation(startPos.trueLineNumber, endPos.trueLineNumber,
-                                                           conditionText, returnExprText, actionStmt->label);
+                            // The last letter of the `return` keyword, after blanks in fixed form
+                            const Fortran::parser::CharBlock &returnSource{innerAction.source};
+                            const char *last{returnSource.begin()};
+                            for (int letters{1}; letters < 6 && last + 1 < returnSource.end();) {
+                                if (*++last != ' ') {
+                                    ++letters;
+                                }
+                            }
+                            const InputPosition returnStart{inputPosition(returnSource, false)};
+                            addIfReturnStmtInstrumentation(pos, returnStart,
+                                                           inputPosition({last, 1}, false).line != returnStart.line);
                         }
                     }
                 }
@@ -780,6 +880,9 @@ namespace salt::fortran {
             // ExecutionPartConstruct's source mapping (issue #31).
             int mainProgramEndLine_{0};
             int mainProgramContainsLine_{0};
+            // Without a `contains`, the input positions of the End
+            // statement, where the timer stop goes
+            std::optional<StatementPositions> mainProgramEndStmt_;
             // Columns for the TAU timer name source-range field.  Captured
             // from the wrapping Statement<StartStmt>::source for start
             // (keyword position; defaults to 1 for the implicit-main form
@@ -794,11 +897,14 @@ namespace salt::fortran {
             int subProgramNameEndLine_{0};
             int subProgramEndLine_{0};
             int subProgramContainsLine_{0};
+            std::optional<StatementPositions> subProgramEndStmt_;
             int subProgramStartCol_{1};
             int subProgramEndCol_{1};
 
             bool skipInstrumentFile_;
             bool skipInstrumentSubprogram_{false};
+            // Whether the procedure has no timers as a line cannot be split
+            bool lineNotSplit_{false};
             // Whether a main program that the lists leave out gets its setup code
             bool mainSetup_;
 
@@ -848,6 +954,17 @@ namespace salt::fortran {
             return *pos.path == file.path() ? directive + " \"" + file.path() + "\"" : directive;
         }
 
+        // `text` with each character before index `from` made a blank, but a tab,
+        // so the rest keeps its columns, also in a fixed-form line that has a tab
+        static std::string blankBefore(std::string text, const std::size_t from) {
+            for (std::size_t i{0}; i < std::min(from, text.size()); ++i) {
+                if (text[i] != '\t') {
+                    text[i] = ' ';
+                }
+            }
+            return text;
+        }
+
         static void instrumentFile(const Fortran::parser::SourceFile &inputFile, std::ifstream &inputStream,
                                    llvm::raw_pwrite_stream &outputStream,
                                    const SaltInstrumentParseTreeVisitor &visitor,
@@ -860,11 +977,55 @@ namespace salt::fortran {
 
             outputStream << lineDirective(inputFile, 1) << "\n";
 
+            // Reads the input through line `last`, the continuation of a Fortran line
+            // up to the statement after a return statement, or up to the text of a
+            // statement after its label. Keeps the directives, such as a `#line`
+            // directive, except an `#include` directive (in any case, as for Flang),
+            // whose text is part of the line.
+            // As for Flang, a directive starts with a `#` after blanks, except that in
+            // fixed form a `#` in column 6 after spaces marks a continuation line.
+            // Each kept directive gets a `#line` directive with its own computed line,
+            // and the lines that continue a directive after a `\` follow it.
+            const auto skipThrough = [&](const int last) {
+                bool continuedDirective{false};
+                while (lineNum < last && std::getline(inputStream, lineText)) {
+                    ++lineNum;
+                    if (llvm::StringRef directive{llvm::StringRef{lineText}.ltrim(" \t")};
+                        continuedDirective ||
+                        (!(fixedForm && llvm::StringRef{lineText}.starts_with("     #")) &&
+                         directive.consume_front("#") &&
+                         !directive.ltrim().starts_with_insensitive("include"))) {
+                        if (!continuedDirective) {
+                            outputStream << lineDirective(inputFile, lineNum) << "\n";
+                        }
+                        outputStream << lineText << "\n";
+                        continuedDirective = llvm::StringRef{lineText}.rtrim("\r").ends_with("\\");
+                    }
+                }
+            };
+
+            // Writes the input from index `from` of the current line to just before
+            // `to`, without the final newline. The text before `from` is made blank,
+            // and the lines between, such as comment lines and directives, stay as
+            // written.
+            const auto writeThrough = [&](std::size_t from, const InputPosition to) {
+                outputStream << lineDirective(inputFile, lineNum) << "\n";
+                while (lineNum < to.line) {
+                    outputStream << blankBefore(lineText, from) << "\n";
+                    from = 0;
+                    if (!std::getline(inputStream, lineText)) {
+                        return;
+                    }
+                    ++lineNum;
+                }
+                outputStream << blankBefore(lineText.substr(0, to.column - 1), from);
+            };
+
             auto instIter{instPts.cbegin()};
             while (std::getline(inputStream, lineText)) {
                 bool lineWasInstrumentedBefore{false};
                 bool lineWasInstrumentedAfter{false};
-                bool shouldOutputLine{true};
+                bool replaced{false};
 
                 ++lineNum;
 
@@ -876,62 +1037,82 @@ namespace salt::fortran {
                     ++instIter;
                 }
 
-                // Then, process instrumentation points that REPLACE this line.  An
-                // IfReturnStmtInstrumentationPoint can span multiple physical lines
-                // when the if-stmt's condition is split via `&` continuation; in that
-                // case we must consume input lines through endLine() so the original
-                // continuation tail is not echoed after our synthesized replacement.
+                // Then, process the return and End statements that start on this line,
+                // which the output replaces with the TAU stop-timer call and their text.
+                // They can span lines, as when an if-stmt's condition is split via `&`
+                // continuation. The text before them on their lines, such as statements
+                // and the `;` after them, and the statements after them go on lines of
+                // their own, with the text before them made blank, so they keep their
+                // columns and labels; in fixed form, they keep the label field, the
+                // continuation column, and the line length. `rest` is the index in
+                // lineText of the text that is left to write, if any.
+                std::size_t rest{0};
                 while (instIter != instPts.cend() && (*instIter)->line() == lineNum && (*instIter)->location() ==
                        InstrumentationLocation::REPLACE) {
-                    outputStream << lineDirective(inputFile, lineNum) << "\n";
-                    outputStream << (*instIter)->instrumentationString(instMap, lineText) << "\n";
-                    int replacedThroughLine{lineNum};
                     // SALT links against LLVM with -fno-rtti, so dynamic_cast is
-                    // unavailable.  Use the instrumentation-type tag to recover the
-                    // concrete subclass.
-                    if ((*instIter)->instrumentationType() == InstrumentationPointType::IF_RETURN) {
-                        const auto *ifReturnPt =
-                                static_cast<const IfReturnStmtInstrumentationPoint *>(instIter->get());
-                        replacedThroughLine = ifReturnPt->endLine();
+                    // unavailable; only return and End statements replace their text.
+                    const auto &pt{static_cast<const ReturnInstrumentationPoint &>(**instIter)};
+                    if (const std::string before{blankBefore(lineText.substr(0, pt.start().column - 1), rest)};
+                        before.find_first_not_of(" \t") != std::string::npos) {
+                        outputStream << lineDirective(inputFile, lineNum) << "\n";
+                        outputStream << llvm::StringRef{before}.rtrim(" \t") << "\n";
                     }
-                    bool continuedDirective{false};
-                    while (lineNum < replacedThroughLine) {
-                        std::string discardedLine;
-                        if (!std::getline(inputStream, discardedLine)) {
-                            break;
+                    std::size_t from{static_cast<std::size_t>(pt.start().column - 1)};
+                    if (pt.instrumentationType() == InstrumentationPointType::IF_RETURN) {
+                        const auto &ifReturn{static_cast<const IfReturnStmtInstrumentationPoint &>(pt)};
+                        const InputPosition returnStart{ifReturn.returnStart()};
+                        writeThrough(from, returnStart);
+                        // `then` goes on a continuation line after the start of a `return`
+                        // keyword split over lines, where it could pass the line length
+                        if (ifReturn.returnSplit()) {
+                            outputStream << (fixedForm ? "\n     &" : "&\n     &");
                         }
-                        ++lineNum;
-                        // Keep the directives, such as a `#line` directive, after the block,
-                        // except an `#include` directive (in any case, as for Flang), whose text
-                        // is already in the condition.
-                        // As for Flang, a directive starts with a `#` after blanks, except that in
-                        // fixed form a `#` in column 6 after spaces marks a continuation line.
-                        // Each kept directive gets a `#line` directive with its own computed line,
-                        // and the lines that continue a directive after a `\` follow it.
-                        if (llvm::StringRef directive{llvm::StringRef{discardedLine}.ltrim(" \t")};
-                            continuedDirective ||
-                            (!(fixedForm && llvm::StringRef{discardedLine}.starts_with("     #")) &&
-                             directive.consume_front("#") &&
-                             !directive.ltrim().starts_with_insensitive("include"))) {
-                            if (!continuedDirective) {
-                                outputStream << lineDirective(inputFile, lineNum) << "\n";
-                            }
-                            outputStream << discardedLine << "\n";
-                            continuedDirective = llvm::StringRef{discardedLine}.rtrim("\r").ends_with("\\");
+                        outputStream << "then\n";
+                        outputStream << pt.instrumentationString(instMap, lineText) << "\n";
+                        writeThrough(returnStart.column - 1, pt.end());
+                        outputStream << "\n      end if\n";
+                    } else {
+                        outputStream << lineDirective(inputFile, lineNum) << "\n";
+                        outputStream << pt.instrumentationString(instMap, lineText) << "\n";
+                        // The `continue` before the stop-timer call has the label, so the
+                        // statement goes on from its text after the label, whose line becomes
+                        // its first line: the lines before go, and the text before it, such as
+                        // a continuation mark, is made blank
+                        if (const auto &label{pt.label()}; label) {
+                            skipThrough(label->text.line);
+                            from = label->text.column - 1;
                         }
+                        writeThrough(from, pt.end());
+                        outputStream << "\n";
+                    }
+                    if (const auto &next{pt.next()}; next) {
+                        skipThrough(next->line);
+                        rest = next->column - 1;
+                    } else {
+                        // A comment after the statement, if any
+                        rest = lineText.find('!', pt.end().column - 1);
                     }
                     lineWasInstrumentedAfter = true;
-                    shouldOutputLine = false;
+                    replaced = true;
                     ++instIter;
                 }
 
-                // If line was instrumented, output a #line directive
-                if (lineWasInstrumentedBefore) {
-                    outputStream << lineDirective(inputFile, lineNum) << "\n";
-                }
-
-                // Output the current line, if not replaced.
-                if (shouldOutputLine) {
+                if (replaced) {
+                    // The points on the lines that a statement's Fortran line continued
+                    // over, as the end of a procedure whose `contains` follows it
+                    while (instIter != instPts.cend() && (*instIter)->line() < lineNum) {
+                        outputStream << (*instIter)->instrumentationString(instMap, lineText) << "\n";
+                        ++instIter;
+                    }
+                    if (rest < lineText.size()) {
+                        outputStream << lineDirective(inputFile, lineNum) << "\n";
+                        outputStream << blankBefore(lineText, rest) << "\n";
+                    }
+                } else {
+                    // If line was instrumented, output a #line directive
+                    if (lineWasInstrumentedBefore) {
+                        outputStream << lineDirective(inputFile, lineNum) << "\n";
+                    }
                     outputStream << lineText << "\n";
                 }
 
