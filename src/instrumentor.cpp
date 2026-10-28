@@ -21,7 +21,6 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 #include <algorithm>
-#include <cctype>
 #include <cerrno>
 #include <cstring>
 #include <fstream>
@@ -240,10 +239,18 @@ void make_begin_func_code(inst_loc *loc, std::string &code, ryml::Tree yaml_tree
     }
 }
 
-// returns true if we can/should skip putting the line after this into the inst file
+// Whether a `return` statement starts at column `col` of `line`; else the
+// point is the closing brace of the function
+static bool is_return_at(const std::string &line, size_t col)
+{
+    return line.find("return", col) == col;
+}
+
+// Appends the code for the end point `loc`: a `return` statement, which
+// runs from column `loc->col` of `line` to the next `;`, or the closing brace
 void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, ryml::Tree yaml_tree)
 {
-    if (line.find("return", loc->col) == std::string::npos)
+    if (!is_return_at(line, loc->col))
     {
         // don't put anything in for non-void functions missing explicit return
         // if we have int main() with no explicit return, use -optDisable hack
@@ -270,9 +277,10 @@ void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, rym
     // types are harder, need to pull the arg to return before the stop in case it does things
     else
     {
-        std::string temp = line;
-        temp.erase(std::remove_if(temp.begin(), temp.end(), isspace), temp.end());
-        if (temp.find("return;") != std::string::npos)
+        // The text of the statement after `return`
+        const size_t first_pos = loc->col + 6;
+        const size_t last_pos = line.find(";", first_pos);
+        if (line.find_first_not_of(" \t\r\n\v\f", first_pos) == last_pos)
         {
             // also throw in brackets in case SOMEONE didn't put brackets around their if
             // Insert on function begin insert
@@ -293,8 +301,6 @@ void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, rym
             if (std::string(loc->return_type).find("void") != std::string::npos && !loc->is_return_ptr)
             {
                 code += "\t{ ";
-                int first_pos = line.find("return") + 6;
-                int last_pos = line.find(";", first_pos);
                 code += line.substr(first_pos, last_pos - first_pos + 1);
 
                 // Insert on function begin insert
@@ -314,8 +320,6 @@ void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, rym
                 code += "\t{ ";
                 code += loc->return_type;
                 code += " inst_ret_val = std::move(";
-                int first_pos = line.find("return") + 6;
-                int last_pos = line.find(";", first_pos);
                 // no +1, don't want semicolon
                 code += line.substr(first_pos, last_pos - first_pos);
                 code += "); ";
@@ -337,8 +341,6 @@ void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, rym
                 code += "\t{ ";
                 code += loc->return_type;
                 code += " inst_ret_val = ";
-                int first_pos = line.find("return") + 6;
-                int last_pos = line.find(";", first_pos);
                 // +1 to catch the semicolon too
                 code += line.substr(first_pos, last_pos - first_pos + 1);
 
@@ -1093,99 +1095,63 @@ void instrumentor::instrument_file(std::ifstream &og_file, std::ofstream &inst_f
     while (getline(og_file, line))
     {
         lineno++;
-        // short circuit if we run out of inst locations to avoid segfaults :)
-        // need the if and the while because sometimes 2+ inst locations are on the same line
-        if (inst_loc_iter != inst_locations.end())
+        // The first character of `line` not yet written
+        size_t pos = 0;
+        // The points of this line, in column order: write the text before
+        // each, then its code
+        for (; inst_loc_iter != inst_locations.end() && (*inst_loc_iter)->line == lineno; inst_loc_iter++)
         {
             inst_loc *curr_inst_loc = *inst_loc_iter;
-            if (lineno == curr_inst_loc->line)
+            const size_t col = std::clamp<size_t>(curr_inst_loc->col, pos, line.size());
+            inst_file << line.substr(pos, col - pos);
+            pos = col;
+            std::string inst_code = "";
+            // Each `#line` directive written here gives only the computed line
+            // number; the input's own `#line` directives, which the output keeps,
+            // set the file, or else the `#line 1` directive at the top
+            switch (curr_inst_loc->kind)
             {
-                curr_inst_loc = *inst_loc_iter;
-                int num_inst_locs_this_line = 0;
-                std::string start = line.substr(0, curr_inst_loc->col);
-                std::string end;
-                while (inst_loc_iter != inst_locations.end() && lineno == curr_inst_loc->line)
+            case BEGIN_FUNC:
+                inst_file << "\n#line " << lineno + curr_inst_loc->line_shift << "\n";
+                make_begin_func_code(curr_inst_loc, inst_code, yaml_tree, use_cxx_api);
+                inst_file << inst_code;
+                inst_file << "#line " << lineno + curr_inst_loc->line_shift << "\n";
+                break;
+            case RETURN_FUNC:
+            case MULTILINE_RETURN_FUNC:
+                if (!use_cxx_api)
                 {
-                    if (curr_inst_loc->col < line.size())
+                    inst_file << "\n#line " << lineno + curr_inst_loc->line_shift << "\n";
+                    // A `return` statement may end on a later line: join the lines
+                    // up to its `;` so make_end_func_code sees all of it, with the
+                    // line ends, which end `//` comments and separate tokens
+                    std::string text = line;
+                    std::string next;
+                    while (is_return_at(text, curr_inst_loc->col) &&
+                           text.find(";", curr_inst_loc->col) == std::string::npos && getline(og_file, next))
                     {
-                        end = line.substr(curr_inst_loc->col);
+                        text += "\n" + next;
+                        line = next;
+                        lineno++;
                     }
-                    else
+                    make_end_func_code(curr_inst_loc, inst_code, text, yaml_tree);
+                    inst_file << inst_code;
+                    inst_file << "#line " << lineno + curr_inst_loc->line_shift << "\n";
+                    // The code replaces the statement: go on after its `;`, on the
+                    // last line of the statement
+                    const size_t semi = text.find(";", curr_inst_loc->col);
+                    if (is_return_at(text, curr_inst_loc->col) && semi != std::string::npos)
                     {
-                        end = "";
+                        pos = semi + 1 - (text.size() - line.size());
                     }
-                    if (num_inst_locs_this_line == 0)
-                    {
-                        inst_file << start;
-                    }
-                    std::string inst_code = "";
-                    // Each `#line` directive written here gives only the computed line
-                    // number; the input's own `#line` directives, which the output keeps,
-                    // set the file, or else the `#line 1` directive at the top
-                    switch (curr_inst_loc->kind)
-                    {
-                    case BEGIN_FUNC:
-                        inst_file << "\n#line " << lineno + curr_inst_loc->line_shift << "\n";
-                        make_begin_func_code(curr_inst_loc, inst_code, yaml_tree, use_cxx_api);
-                        inst_file << inst_code;
-                        inst_file << "#line " << lineno + curr_inst_loc->line_shift << "\n";
-                        break;
-                    case RETURN_FUNC:
-                        if (!use_cxx_api)
-                        {
-                            inst_file << "\n#line " << lineno + curr_inst_loc->line_shift << "\n";
-                            make_end_func_code(curr_inst_loc, inst_code, line, yaml_tree);
-                            inst_file << inst_code;
-                            inst_file << "#line " << lineno + curr_inst_loc->line_shift << "\n";
-                            if (line.find("return", curr_inst_loc->col) != std::string::npos &&
-                                line.find(";", line.find("return", curr_inst_loc->col)) != std::string::npos)
-                            {
-                                end = line.substr(line.find(";", line.find("return", curr_inst_loc->col)) + 1);
-                            }
-                        }
-                        break;
-                    case MULTILINE_RETURN_FUNC:
-                        if (!use_cxx_api)
-                        {
-                            inst_file << "\n#line " << lineno + curr_inst_loc->line_shift << "\n";
-                            // join all the lines together into one so make_end_func_code can actually know what's
-                            // happening
-                            while (line.find(";") == std::string::npos)
-                            {
-                                std::string templine;
-                                getline(og_file, templine);
-                                line += templine;
-                                lineno++;
-                            }
-                            make_end_func_code(curr_inst_loc, inst_code, line, yaml_tree);
-                            inst_file << inst_code;
-                            inst_file << "#line " << lineno + curr_inst_loc->line_shift << "\n";
-                            if (line.find("return", curr_inst_loc->col) != std::string::npos &&
-                                line.find(";", line.find("return", curr_inst_loc->col)) != std::string::npos)
-                            {
-                                end = line.substr(line.find(";", line.find("return", curr_inst_loc->col)) + 1);
-                            }
-                        }
-                    default:
-                        break;
-                    }
-
-                    inst_loc_iter++;
-                    curr_inst_loc = *inst_loc_iter;
-                    num_inst_locs_this_line++;
+                    pos = std::min(pos, line.size());
                 }
-
-                inst_file << end << "\n";
-            }
-            else
-            {
-                inst_file << line << "\n";
+                break;
+            default:
+                break;
             }
         }
-        else
-        {
-            inst_file << line << "\n";
-        }
+        inst_file << line.substr(pos) << "\n";
     }
 }
 
