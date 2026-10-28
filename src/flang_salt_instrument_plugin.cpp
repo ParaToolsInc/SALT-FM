@@ -752,10 +752,16 @@ namespace salt::fortran {
             template<typename A>
             bool followsStatement(const A &stmt) const {
                 const std::optional<Fortran::parser::CharBlock> source{Fortran::parser::GetSource(stmt)};
-                if (!source.has_value()) {
+                // The source of an `!$omp atomic` construct can be empty, in no cooked
+                // text, as on Flang 19; no statement can come before a directive on its
+                // line.
+                const Fortran::parser::CookedSource *cookedSource{
+                    source.has_value() ? parsing->allCooked().Find(*source) : nullptr
+                };
+                if (cookedSource == nullptr) {
                     return false;
                 }
-                const Fortran::parser::CharBlock cooked{DEREF(parsing->allCooked().Find(*source)).AsCharBlock()};
+                const Fortran::parser::CharBlock cooked{cookedSource->AsCharBlock()};
                 const char *before{source->begin()};
                 bool semicolon{false};
                 while (before > cooked.begin() &&
