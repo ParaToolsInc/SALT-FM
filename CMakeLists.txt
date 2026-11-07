@@ -3197,49 +3197,63 @@ _salt_add_macro_name_test(cxx_api cxx_api.cpp --tau_use_cxx_api)
 
 # A line with two or more instrumentation points keeps all of its text,
 # in order, and each `return` statement keeps its own value (#82). Adds
-# tests same_line_<stem>_c and same_line_<stem>_cxx for C++ source `src`
-# in tests/same_line: saltfm, run in test-output/instrument with
-# tests/line_directive/config.yaml, without and with --tau_use_cxx_api.
-# The output, compiled with the timer calls of timer.h there, must exit
-# with the status of the compiled `src`. With EXPECTED, the output must
-# also be <stem>.expected.cpp, or <stem>.cxx.expected.cpp with
+# tests same_line_<stem>_<lang>_capi for C or C++ source `src` in
+# tests/same_line, where <lang> is its extension, c or cpp, and, for
+# C++, same_line_<stem>_cpp_cxxapi: saltfm, run in
+# test-output/instrument with tests/line_directive/config.yaml, without
+# and with --tau_use_cxx_api. The output, compiled with the timer calls
+# of timer.h there by the compiler of the language, must exit with the
+# status of the compiled `src`. With EXPECTED, the output must also be
+# <stem>.expected<ext> of `src`, or <stem>.cxx.expected.cpp with
 # --tau_use_cxx_api, without the `#line` directives that saltfm writes
 # and the blank lines.
 function(_salt_add_same_line_test src)
   cmake_parse_arguments(PARSE_ARGV 1 ARG "EXPECTED" "" "")
   set(dir ${CMAKE_SOURCE_DIR}/tests/same_line)
   get_filename_component(stem ${src} NAME_WLE)
-  foreach(api c cxx)
-    set(name same_line_${stem}_${api})
+  get_filename_component(ext ${src} LAST_EXT)
+  set(compiler ${CMAKE_C_COMPILER})
+  set(label "lang:C")
+  set(lang c)
+  # The C++ API is for C++ only
+  set(apis capi)
+  if(ext STREQUAL ".cpp")
+    set(compiler ${CMAKE_CXX_COMPILER})
+    set(label "lang:CXX")
+    set(lang cpp)
+    set(apis capi cxxapi)
+  endif()
+  foreach(api IN LISTS apis)
+    set(name same_line_${stem}_${lang}_${api})
     set(args "")
-    set(expected ${stem}.expected.cpp)
-    if(api STREQUAL "cxx")
+    set(expected ${stem}.expected${ext})
+    if(api STREQUAL "cxxapi")
       set(args --tau_use_cxx_api)
       set(expected ${stem}.cxx.expected.cpp)
     endif()
     set(diff "")
     if(ARG_EXPECTED)
       set(diff "grep -Ev -e '^#line [0-9]+( \"${dir}/${src}\")?$' \
-        -e '^[[:space:]]*$' ${name}.inst.cpp |
+        -e '^[[:space:]]*$' ${name}.inst${ext} |
         sed -e 's|${dir}/||g' -e 's/[[:space:]]*$//' |
         diff -u ${dir}/${expected} - || exit 1")
     endif()
     add_test(NAME ${name}
       COMMAND sh -c "\"$0\" \"$@\" || exit 1
         ${diff}
-        \"${CMAKE_CXX_COMPILER}\" -o ${name}.orig ${dir}/${src} &&
-        \"${CMAKE_CXX_COMPILER}\" -o ${name}.inst \
+        \"${compiler}\" -o ${name}.orig ${dir}/${src} &&
+        \"${compiler}\" -o ${name}.inst \
           -include ${CMAKE_SOURCE_DIR}/tests/line_directive/timer.h \
-          ${name}.inst.cpp || exit 1
+          ${name}.inst${ext} || exit 1
         ./${name}.orig; orig=$?
         ./${name}.inst; inst=$?
         test $inst -eq $orig || { echo \"exit status $inst, not $orig\"; exit 1; }"
         ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
         --config_file=${CMAKE_SOURCE_DIR}/tests/line_directive/config.yaml
-        --tau_output=${name}.inst.cpp ${args} ${dir}/${src})
+        --tau_output=${name}.inst${ext} ${args} ${dir}/${src})
     set_tests_properties(${name} PROPERTIES
       REQUIRED_FILES ${dir}/${src}
-      LABELS "lang:CXX;phase:run")
+      LABELS "${label};phase:run")
     _salt_in_test_output(instrument ${name})
   endforeach()
 endfunction()
@@ -3248,7 +3262,7 @@ _salt_add_same_line_test(void_body.cpp)
 _salt_add_same_line_test(nested_block.cpp EXPECTED)
 _salt_add_same_line_test(return_lines.cpp EXPECTED)
 _salt_add_same_line_test(return_if_lines.cpp EXPECTED)
-# The C++ API joins no lines, so these _cxx tests only guard lost text
+# The C++ API joins no lines, so these _cpp_cxxapi tests only guard lost text
 _salt_add_same_line_test(return_neg.cpp)
 _salt_add_same_line_test(return_comment.cpp)
 _salt_add_same_line_test(return_code.cpp)
@@ -3256,6 +3270,17 @@ _salt_add_same_line_test(return_string.cpp EXPECTED)
 _salt_add_same_line_test(void_return.cpp)
 _salt_add_same_line_test(move_return.cpp)
 _salt_add_same_line_test(two_routines.cpp EXPECTED)
+# The same cases as C sources, without those that need C++
+_salt_add_same_line_test(oneline.c EXPECTED)
+_salt_add_same_line_test(void_body.c)
+_salt_add_same_line_test(nested_block.c EXPECTED)
+_salt_add_same_line_test(return_lines.c EXPECTED)
+_salt_add_same_line_test(return_if_lines.c EXPECTED)
+_salt_add_same_line_test(return_neg.c)
+_salt_add_same_line_test(return_comment.c)
+_salt_add_same_line_test(return_code.c)
+_salt_add_same_line_test(return_string.c EXPECTED)
+_salt_add_same_line_test(two_routines.c EXPECTED)
 
 # Unless --tau_excluded_main_setup=file, the main program of a source
 # that the file lists exclude gets no setup code, and saltfm warns about
