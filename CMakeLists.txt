@@ -4226,7 +4226,7 @@ if(TEST_FORTRAN)
     _salt_add_fortran_same_line_test(unsplit_fixed unsplit.f
       "-DWARNING=${_warnings}")
     # Code after an unconditional `return` on its line never runs
-    _salt_add_fortran_same_line_test(dead dead.f90 -DNO_RUN=ON)
+    _salt_add_fortran_same_line_test(dead dead.f90)
   endif()
 
   # Per-form skip checks: each minimal source contains exactly one

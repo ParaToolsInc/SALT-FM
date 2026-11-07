@@ -67,12 +67,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   compile.
 - A Fortran procedure or main program whose first executable statement
   shares its line with the procedure statement or a declaration, as in
-  `subroutine s(y); integer y; y = 1; end subroutine s`, gets no timer:
-  `saltfm` prints a warning that names the file, the line, and the
-  procedure, writes a comment in place of the timer, and exits with
-  status 0. The other procedures keep their timers. Before, `saltfm`
-  stopped with an error about points out of line order, or wrote the
-  timer before the line, so the output did not compile.
+  `subroutine s(y); integer y; y = 1; end subroutine s`, gets no timer,
+  and a main program no setup code, as both would go before that line,
+  so before the other statements on it. When `saltfm` would instrument
+  the procedure, or give the main program setup code, it prints a
+  warning that names the file, the line, and the procedure, writes a
+  comment in place of the timer, and exits with status 0. The other
+  procedures keep their timers. Before, `saltfm` stopped with an error
+  about points out of line order, or wrote the timer before the line,
+  so the output did not compile.
 - The Fortran write error tests turn off LLVM symbolization, so they
   also pass when Flang can find an `llvm-symbolizer`, such as one next
   to `flang-new` or on `PATH`. Before, they failed there: the

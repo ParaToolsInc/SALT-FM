@@ -1,5 +1,5 @@
 ! A statement after an unconditional `return` on its line never runs,
-! so only its parse and compile are checked.
+! also in the output.
 subroutine dead(y)
     integer, intent(out) :: y
     y = 1

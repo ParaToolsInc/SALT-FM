@@ -15,12 +15,12 @@
 # line that ends with `&` to a next line that starts with `     &`.
 # No line of OUT but a directive may pass column WIDTH, by default 72 for
 # a `.f` SRC (fixed form) and 132 otherwise. FLAGS are compiler flags
-# for saltfm and COMPILER. With NO_RUN, OUT is only compiled, not run.
+# for saltfm and COMPILER.
 #
 # Usage: cmake -DSALTFM=<saltfm> -DCOMPILER=<compiler> -DSTUB=<stub>
 #          -DSRC=<source> -DOUT=<output> -DEXPECTED=<expected>
 #          [-DCONFIG=<config>] [-DWARNING=<regex>] [-DFLAGS=<flags>]
-#          [-DWIDTH=<width>] [-DNO_RUN=ON] -P check_same_line.cmake
+#          [-DWIDTH=<width>] -P check_same_line.cmake
 
 # Runs the command in ARGN, sets `var` to its standard output and `_err`
 # to its standard error, and stops unless it exits with status 0.
@@ -51,13 +51,11 @@ if(WARNING AND NOT _err MATCHES "${WARNING}")
 endif()
 _run(_ignored "${COMPILER}" ${FLAGS} -o "${_name}.orig" "${_copy}")
 _run(_ignored "${COMPILER}" ${FLAGS} -o "${_name}.inst" "${OUT}" "${STUB}")
-if(NOT NO_RUN)
-  _run(_expected "./${_name}.orig")
-  _run(_actual "./${_name}.inst")
-  if(NOT _actual STREQUAL _expected)
-    message(FATAL_ERROR
-      "${SRC} prints:\n${_expected}\nbut ${OUT} prints:\n${_actual}")
-  endif()
+_run(_expected "./${_name}.orig")
+_run(_actual "./${_name}.inst")
+if(NOT _actual STREQUAL _expected)
+  message(FATAL_ERROR
+    "${SRC} prints:\n${_expected}\nbut ${OUT} prints:\n${_actual}")
 endif()
 
 if(NOT WIDTH)
