@@ -1,8 +1,11 @@
 ! Stand-ins for the TAU calls of the default configuration file, so the
 ! output runs without TAU. Each stop must stop the timer that started
 ! last, as TAU requires: a stop that runs without its `return`, or a
-! missing stop, makes the run fail. A common block holds the timers, as
-! a module file would clash among tests that compile this file at once.
+! missing stop before another stop, makes the run fail. No TAU call runs
+! after the last stop, so nothing here checks that every timer stopped;
+! the expected text catches a missing last stop. A common block holds
+! the timers, as a module file would clash among tests that compile
+! this file at once.
 block data tau_stub_data
   integer :: depth, timers, started(100)
   common /tau_stub_timers/ depth, timers, started

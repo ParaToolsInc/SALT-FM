@@ -4197,6 +4197,9 @@ if(TEST_FORTRAN)
     _salt_add_fortran_same_line_test(fixed fixed.f)
     # An End statement on the line of other statements
     _salt_add_fortran_same_line_test(end_line end_line.f90)
+    # The same in internal procedures, whose hosts stop their timers before
+    # `contains`
+    _salt_add_fortran_same_line_test(internal internal.f90)
     # A statement before a return on a continuation line, after a `;`
     _salt_add_fortran_same_line_test(semi semi.f90)
     # An if-return whose condition or return expression would pass
