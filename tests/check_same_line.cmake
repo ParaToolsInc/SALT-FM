@@ -1,21 +1,21 @@
 # Checks the output OUT that saltfm writes for the Fortran program SRC,
 # with the configuration file CONFIG, by default the default one, when a
-# `return`, an if-return, or an End statement shares a line with other
-# statements, or has a label (#118). saltfm reads a copy of SRC in the
-# current directory, named as OUT with the extension of SRC, so the timer
-# names hold no directory. With WARNING, the standard error of saltfm
-# must match the regular expression WARNING. OUT, compiled with COMPILER
-# and STUB, the TAU calls that check the timers, must print what SRC
-# prints. OUT must also equal EXPECTED, without the `#line` directives
-# that saltfm writes (with no file, or the name of the copy) and the
-# blank lines, in any case, as Flang versions differ in the case of a
-# program name. Flang 19-22 write `./` before the name of the copy, in
-# `#line` directives and timer names, which moves where a timer name
+# `return`, an if-return, or a `contains` or End statement shares a line
+# with other statements, or has a label (#118). saltfm reads a copy of
+# SRC in the current directory, named as OUT with the extension of SRC,
+# so the timer names hold no directory. With WARNING, the standard error
+# of saltfm must match the regular expression WARNING. OUT, compiled with
+# COMPILER and STUB, the TAU calls that check the timers, must print
+# what SRC prints. OUT must also equal EXPECTED, without the `#line`
+# directives that saltfm writes (with no file, or the name of the copy)
+# and the blank lines, in any case, as Flang versions differ in the case
+# of a program name. Flang 19-22 write `./` before the name of the copy,
+# in `#line` directives and timer names, which moves where a timer name
 # splits over lines, so the comparison drops that `./` and joins each
-# line that ends with `&` to a next line that starts with `     &`.
-# No line of OUT but a directive may pass column WIDTH, by default 72 for
-# a `.f` SRC (fixed form) and 132 otherwise. FLAGS are compiler flags
-# for saltfm and COMPILER.
+# line that ends with `&` to a next line that starts with `     &`. No
+# line of OUT but a directive may pass column WIDTH, by default 72 for a
+# `.f` SRC (fixed form) and 132 otherwise. FLAGS are compiler flags for
+# saltfm and COMPILER.
 #
 # Usage: cmake -DSALTFM=<saltfm> -DCOMPILER=<compiler> -DSTUB=<stub>
 #          -DSRC=<source> -DOUT=<output> -DEXPECTED=<expected>

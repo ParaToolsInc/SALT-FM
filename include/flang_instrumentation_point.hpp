@@ -81,10 +81,15 @@ namespace salt::fortran {
 
         bool operator<(const InstrumentationPoint &other) const {
             if (line() == other.line()) {
-                if (instrumentBefore() && !other.instrumentBefore()) {
-                    return true;
-                }
-                return false;
+                // The comment of a skipped procedure that starts after a `contains`
+                // or End statement on its line, as `subroutine i()` in
+                // `contains; subroutine i(); y = 1`, comes after that statement.
+                // With this exception the relation is no longer a strict weak
+                // ordering, so it suits std::is_sorted on adjacent points, its only
+                // use, but not std::sort.
+                return instrumentBefore() && !other.instrumentBefore() &&
+                       !(instrumentationType() == InstrumentationPointType::PROCEDURE_SKIPPED &&
+                         other.location() == InstrumentationLocation::REPLACE);
             }
             return line() < other.line();
         }

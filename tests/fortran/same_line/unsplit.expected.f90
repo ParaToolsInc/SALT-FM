@@ -46,6 +46,23 @@ subroutine semi_continued(y)
 ! semi_continued
     ; y = 6
 end subroutine semi_continued
+! A procedure whose statement follows the `contains` statement of its
+! host on its line
+subroutine host_line(y)
+    integer, intent(out) :: y
+      integer, save :: tauProfileTimer(2) = [0, 0]
+      call TAU_PROFILE_TIMER(tauProfileTimer, "&
+     &host_line [{fortran_same_line_unsplit.f90} {36,1}-{40,1}]&
+     &")
+      call TAU_PROFILE_START(tauProfileTimer)
+    y = 7
+    call inner(y)
+      call TAU_PROFILE_STOP(tauProfileTimer)
+contains
+! SALT-FM could not split line 40 to instrument
+! inner
+          subroutine inner(y); integer y; y = y + 1; end subroutine inner
+end subroutine host_line
 program main
     integer :: y
       integer, save :: tauProfileTimer(2) = [0, 0]
@@ -54,7 +71,7 @@ program main
       call  TAU_PROFILE_SET_NODE(0)
 #endif
       call TAU_PROFILE_TIMER(tauProfileTimer, "&
-     &MAIN [{fortran_same_line_unsplit.f90} {34,1}-{48,16}]&
+     &MAIN [{fortran_same_line_unsplit.f90} {43,1}-{59,16}]&
      &")
       call TAU_PROFILE_START(tauProfileTimer)
     call one_line(y)
@@ -69,5 +86,7 @@ program main
     print *, 'semi_start', y
     call semi_continued(y)
     print *, 'semi_continued', y
+    call host_line(y)
+    print *, 'host_line', y
       call TAU_PROFILE_STOP(tauProfileTimer)
 end program main

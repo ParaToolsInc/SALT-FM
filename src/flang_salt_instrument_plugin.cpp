@@ -610,7 +610,10 @@ namespace salt::fortran {
                 // or just before its End statement.  Computing it this way
                 // (instead of from `block.back()` which can fail to map back
                 // through CookedSource for some statements) handles issue #31
-                // and llvm-project#196291 by construction.
+                // and llvm-project#196291 by construction.  The timer stop
+                // goes directly before the `contains` or End statement, at
+                // the input positions that captureBodyEndLines gives; endLine
+                // serves only the fallback when those are missing.
                 const int containsLine = isInMainProgram_ ? mainProgramContainsLine_ : subProgramContainsLine_;
                 const int endStmtLine = isInMainProgram_ ? mainProgramEndLine_ : subProgramEndLine_;
                 const int boundaryLine = containsLine > 0 ? containsLine : endStmtLine;
@@ -629,9 +632,10 @@ namespace salt::fortran {
                     // Start col is the keyword column captured from the
                     // wrapping Statement<StartStmt>; end col is the last char
                     // of the End statement.  When the body is bounded by a
-                    // ContainsStmt instead of the End, fall back to col 1
-                    // for the end (the boundary line lands on the
-                    // ContainsStmt itself, whose extent we don't track).
+                    // ContainsStmt instead of the End, the end col stays 1,
+                    // although the extent of the ContainsStmt is now known,
+                    // so the timer names, which TAU profiles hold, do not
+                    // change.
                     const int startCol = isInMainProgram_ ? mainProgramStartCol_ : subProgramStartCol_;
                     const int endCol = containsLine > 0
                         ? 1
@@ -1100,6 +1104,13 @@ namespace salt::fortran {
                 }
 
                 if (replaced) {
+                    // The comment of a skipped procedure that starts after a `contains`
+                    // or End statement on this line goes before the rest of the line
+                    while (instIter != instPts.cend() && (*instIter)->line() == lineNum &&
+                           (*instIter)->instrumentBefore()) {
+                        outputStream << (*instIter)->instrumentationString(instMap, lineText) << "\n";
+                        ++instIter;
+                    }
                     if (rest < lineText.size()) {
                         outputStream << lineDirective(inputFile, lineNum) << "\n";
                         outputStream << blankBefore(lineText, rest) << "\n";
@@ -1124,6 +1135,14 @@ namespace salt::fortran {
                 if (lineWasInstrumentedAfter) {
                     outputStream << lineDirective(inputFile, lineNum+1) << "\n";
                 }
+            }
+
+            // A point that the loop did not write would drop the timer calls of
+            // every point after it; the exit, before keepOutputs, leaves no output file
+            if (instIter != instPts.cend()) {
+                llvm::errs() << "ERROR: Instrumentation point at line " << (*instIter)->line() << " of "
+                        << inputFile.path() << " could not be written; refusing to emit unbalanced TAU timers\n";
+                std::exit(EXIT_FAILURE);
             }
         }
 
