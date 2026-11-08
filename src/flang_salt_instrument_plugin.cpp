@@ -146,7 +146,7 @@ namespace salt::fortran {
                 std::optional<StatementLabel> label;
             };
 
-            // The timer stop directly before the End statement at `pos`
+            // The timer stop directly before the `contains` or End statement at `pos`
             void addProcedureEndInstrumentation(const StatementPositions &pos) {
                 if (shouldInstrument()) {
                     instrumentationPoints_.emplace_back(std::make_unique<ReturnInstrumentationPoint>(
@@ -179,7 +179,7 @@ namespace salt::fortran {
             InputPosition inputPosition(const Fortran::parser::CharBlock &chars, const bool end) const {
                 const auto pos{locationFromSource(parsing, chars, end)};
                 if (!pos.has_value()) {
-                    DIE("SALT: cooked-source mapping unavailable for a return or End statement; "
+                    DIE("SALT: cooked-source mapping unavailable for a return, contains, or End statement; "
                         "refusing to emit unbalanced TAU timers");
                 }
                 return InputPosition{pos->trueLineNumber, pos->column};
@@ -285,8 +285,9 @@ namespace salt::fortran {
             // endLineOut and containsLineOut are physical lines of the
             // input, where the TAU calls go.  nameEndLineOut is the line
             // of the body's end as `#line` directives number it, for the
-            // timer name.  Without a `contains`, endStmtOut gets the input
-            // positions of the End statement, where the timer stop goes.
+            // timer name.  endStmtOut gets the input positions of the
+            // `contains` statement, or without one of the End statement,
+            // where the timer stop goes.
             template <typename SubprogramT, typename EndStmtT>
             void captureBodyEndLines(const SubprogramT &subprogram, int &endLineOut, int &endColOut,
                                      int &containsLineOut, int &nameEndLineOut,
@@ -320,6 +321,7 @@ namespace salt::fortran {
                     if (const auto pos = locationFromSource(parsing, containsStmt.source, false); pos.has_value()) {
                         containsLineOut = pos.value().trueLineNumber;
                         nameEndLineOut = pos.value().line;
+                        endStmtOut = statementPositions(containsStmt);
                     }
                 } else if (endLineOut > 0) {
                     endStmtOut = statementPositions(endStmt);
@@ -730,7 +732,7 @@ namespace salt::fortran {
                 } else {
                     if (const auto &endStmt{isInMainProgram_ ? mainProgramEndStmt_ : subProgramEndStmt_};
                         endStmt.has_value()) {
-                        verboseStream() << "End statement at line " << endStmt->start.line << "\n";
+                        verboseStream() << "contains or End statement at line " << endStmt->start.line << "\n";
                         addProcedureEndInstrumentation(*endStmt);
                     } else {
                         verboseStream() << "End at line " << endLine << "\n";
@@ -880,8 +882,8 @@ namespace salt::fortran {
             // ExecutionPartConstruct's source mapping (issue #31).
             int mainProgramEndLine_{0};
             int mainProgramContainsLine_{0};
-            // Without a `contains`, the input positions of the End
-            // statement, where the timer stop goes
+            // The input positions of the `contains` statement, or without
+            // one of the End statement, where the timer stop goes
             std::optional<StatementPositions> mainProgramEndStmt_;
             // Columns for the TAU timer name source-range field.  Captured
             // from the wrapping Statement<StartStmt>::source for start
@@ -1037,7 +1039,7 @@ namespace salt::fortran {
                     ++instIter;
                 }
 
-                // Then, process the return and End statements that start on this line,
+                // Then, process the return, `contains`, and End statements that start on this line,
                 // which the output replaces with the TAU stop-timer call and their text.
                 // They can span lines, as when an if-stmt's condition is split via `&`
                 // continuation. The text before them on their lines, such as statements
@@ -1050,7 +1052,7 @@ namespace salt::fortran {
                 while (instIter != instPts.cend() && (*instIter)->line() == lineNum && (*instIter)->location() ==
                        InstrumentationLocation::REPLACE) {
                     // SALT links against LLVM with -fno-rtti, so dynamic_cast is
-                    // unavailable; only return and End statements replace their text.
+                    // unavailable; only return, `contains`, and End statements replace their text.
                     const auto &pt{static_cast<const ReturnInstrumentationPoint &>(**instIter)};
                     if (const std::string before{blankBefore(lineText.substr(0, pt.start().column - 1), rest)};
                         before.find_first_not_of(" \t") != std::string::npos) {
@@ -1098,12 +1100,6 @@ namespace salt::fortran {
                 }
 
                 if (replaced) {
-                    // The points on the lines that a statement's Fortran line continued
-                    // over, as the end of a procedure whose `contains` follows it
-                    while (instIter != instPts.cend() && (*instIter)->line() < lineNum) {
-                        outputStream << (*instIter)->instrumentationString(instMap, lineText) << "\n";
-                        ++instIter;
-                    }
                     if (rest < lineText.size()) {
                         outputStream << lineDirective(inputFile, lineNum) << "\n";
                         outputStream << blankBefore(lineText, rest) << "\n";

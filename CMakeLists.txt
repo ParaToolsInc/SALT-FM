@@ -4151,10 +4151,10 @@ if(TEST_FORTRAN)
     check-internal-func.f90 check_implicit_main_timer_name)
 
   if(_salt_test_flang)
-    # A `return`, an if-return, or an End statement that shares its line
-    # with other statements, or has a label (#118). Adds test
-    # fortran_same_line_<name>: tests/check_same_line.cmake on `src` in
-    # tests/fortran/same_line, whose output must compile with the TAU
+    # A `return`, an if-return, or a `contains` or End statement that
+    # shares its line with other statements, or has a label (#118). Adds
+    # test fortran_same_line_<name>: tests/check_same_line.cmake on `src`
+    # in tests/fortran/same_line, whose output must compile with the TAU
     # stand-ins of tau_stub.f90, print what `src` prints, fit the line
     # width, and equal <stem>.expected<ext>. ARGN are more -D options of
     # the script.
@@ -4200,6 +4200,9 @@ if(TEST_FORTRAN)
     # The same in internal procedures, whose hosts stop their timers before
     # `contains`
     _salt_add_fortran_same_line_test(internal internal.f90)
+    # A `contains` statement on the line of an if-return or an assignment,
+    # whose host stops its timer directly before the `contains`
+    _salt_add_fortran_same_line_test(contains contains.f90)
     # A statement before a return on a continuation line, after a `;`
     _salt_add_fortran_same_line_test(semi semi.f90)
     # An if-return whose condition or return expression would pass
