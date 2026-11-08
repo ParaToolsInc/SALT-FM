@@ -64,8 +64,7 @@ integer function twice(x)
       call TAU_PROFILE_START(tauProfileTimer)
     twice = 2 * x;
       call TAU_PROFILE_STOP(tauProfileTimer)
-                   end function twice
-                                      ! the end of twice
+                   end function twice ! the end of twice
 program main
     integer :: x, y
     integer, external :: twice

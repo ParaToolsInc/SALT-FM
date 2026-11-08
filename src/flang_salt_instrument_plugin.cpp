@@ -1027,6 +1027,18 @@ namespace salt::fortran {
                 outputStream << blankBefore(lineText.substr(0, to.column - 1), from);
             };
 
+            // Writes the comment after the statement of `pt`, if no statement follows
+            // it, in its columns on the current line, the statement's last line. On a
+            // line of its own, a comment such as `!$ y = 1` or `!$omp barrier` would
+            // be code or a directive in free form.
+            const auto writeComment = [&](const ReturnInstrumentationPoint &pt) {
+                const std::size_t end{static_cast<std::size_t>(pt.end().column - 1)};
+                if (const std::size_t comment{lineText.find('!', end)};
+                    !pt.next() && comment != std::string::npos) {
+                    outputStream << blankBefore(lineText.substr(end), comment - end);
+                }
+            };
+
             auto instIter{instPts.cbegin()};
             while (std::getline(inputStream, lineText)) {
                 bool lineWasInstrumentedBefore{false};
@@ -1050,8 +1062,9 @@ namespace salt::fortran {
                 // and the `;` after them, and the statements after them go on lines of
                 // their own, with the text before them made blank, so they keep their
                 // columns and labels; in fixed form, they keep the label field, the
-                // continuation column, and the line length. `rest` is the index in
-                // lineText of the text that is left to write, if any.
+                // continuation column, and the line length. A comment after the last
+                // statement stays on its line. `rest` is the index in lineText of the
+                // text that is left to write, if any.
                 std::size_t rest{0};
                 while (instIter != instPts.cend() && (*instIter)->line() == lineNum && (*instIter)->location() ==
                        InstrumentationLocation::REPLACE) {
@@ -1076,6 +1089,7 @@ namespace salt::fortran {
                         outputStream << "then\n";
                         outputStream << pt.instrumentationString(instMap, lineText) << "\n";
                         writeThrough(returnStart.column - 1, pt.end());
+                        writeComment(pt);
                         outputStream << "\n      end if\n";
                     } else {
                         outputStream << lineDirective(inputFile, lineNum) << "\n";
@@ -1089,14 +1103,14 @@ namespace salt::fortran {
                             from = label->text.column - 1;
                         }
                         writeThrough(from, pt.end());
+                        writeComment(pt);
                         outputStream << "\n";
                     }
                     if (const auto &next{pt.next()}; next) {
                         skipThrough(next->line);
                         rest = next->column - 1;
                     } else {
-                        // A comment after the statement, if any
-                        rest = lineText.find('!', pt.end().column - 1);
+                        rest = std::string::npos;
                     }
                     lineWasInstrumentedAfter = true;
                     replaced = true;

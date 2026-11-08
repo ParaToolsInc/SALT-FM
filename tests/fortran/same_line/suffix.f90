@@ -65,6 +65,16 @@ subroutine end_after(x, y)
     if (x > 0) &
         return; end subroutine end_after
 
+! A comment after an if-return that starts with `!$`, which at the start
+! of a line would be code with OpenMP
+subroutine sentinel(x, y)
+    integer, intent(in) :: x
+    integer, intent(out) :: y
+    y = 0
+    if (x > 0) return !$ y = 77
+    y = 4
+end subroutine sentinel
+
 program main
     integer :: x, y
     do x = 0, 1
@@ -84,5 +94,7 @@ program main
         print *, 'comment', x, y
         call end_after(x, y)
         print *, 'end_after', x, y
+        call sentinel(x, y)
+        print *, 'sentinel', x, y
     end do
 end program main

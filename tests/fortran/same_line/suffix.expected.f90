@@ -109,9 +109,8 @@ subroutine comment(x, y)
     y = 0
     if (x > 0) then
       call TAU_PROFILE_STOP(tauProfileTimer)
-               return
+               return ! early exit
       end if
-                      ! early exit
     y = 4
       call TAU_PROFILE_STOP(tauProfileTimer)
 end subroutine comment
@@ -133,6 +132,24 @@ subroutine end_after(x, y)
       end if
       call TAU_PROFILE_STOP(tauProfileTimer)
                 end subroutine end_after
+! A comment after an if-return that starts with `!$`, which at the start
+! of a line would be code with OpenMP
+subroutine sentinel(x, y)
+    integer, intent(in) :: x
+    integer, intent(out) :: y
+      integer, save :: tauProfileTimer(2) = [0, 0]
+      call TAU_PROFILE_TIMER(tauProfileTimer, "&
+     &sentinel [{fortran_same_line_suffix.f90} {70,1}-{76,23}]&
+     &")
+      call TAU_PROFILE_START(tauProfileTimer)
+    y = 0
+    if (x > 0) then
+      call TAU_PROFILE_STOP(tauProfileTimer)
+               return !$ y = 77
+      end if
+    y = 4
+      call TAU_PROFILE_STOP(tauProfileTimer)
+end subroutine sentinel
 program main
     integer :: x, y
       integer, save :: tauProfileTimer(2) = [0, 0]
@@ -141,7 +158,7 @@ program main
       call  TAU_PROFILE_SET_NODE(0)
 #endif
       call TAU_PROFILE_TIMER(tauProfileTimer, "&
-     &MAIN [{fortran_same_line_suffix.f90} {68,1}-{88,16}]&
+     &MAIN [{fortran_same_line_suffix.f90} {78,1}-{100,16}]&
      &")
       call TAU_PROFILE_START(tauProfileTimer)
     do x = 0, 1
@@ -161,6 +178,8 @@ program main
         print *, 'comment', x, y
         call end_after(x, y)
         print *, 'end_after', x, y
+        call sentinel(x, y)
+        print *, 'sentinel', x, y
     end do
       call TAU_PROFILE_STOP(tauProfileTimer)
 end program main
