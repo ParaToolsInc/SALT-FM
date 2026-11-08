@@ -26,7 +26,7 @@ namespace salt::fortran {
         PROGRAM_BEGIN, // Setup code, then start the main program's timer
         PROGRAM_SETUP, // Setup code, for a main program without a timer
         PROCEDURE_BEGIN, // Declare profiler, start timer
-        PROCEDURE_END, // Stop timer on the line after, or directly before the End statement
+        PROCEDURE_END, // Stop timer on the line after, or directly before the `contains` or End statement
         RETURN_STMT, // Stop timer directly before the return
         IF_RETURN, // Transform if to if-then-endif, stop timer before return
         PROCEDURE_SKIPPED // A comment that SALT-FM could not instrument the procedure
@@ -175,10 +175,10 @@ namespace salt::fortran {
         }
     };
 
-    // A `return` statement, an if-return, or the End statement of a
-    // procedure without internal procedures, which replaces its text in
-    // the input with the TAU stop-timer call and its text. The statement
-    // spans the input from `start` to just before `end`, maybe over
+    // A `return` statement, an if-return, or the `contains` statement of
+    // a procedure, or without one its End statement, which replaces its
+    // text in the input with the TAU stop-timer call and its text. The
+    // statement spans the input from `start` to just before `end`, maybe over
     // continuation lines. `next` is the first character of the statement
     // after it on the same Fortran line, if any, so the output can put
     // that statement on a line of its own. With `label`, the label of the
