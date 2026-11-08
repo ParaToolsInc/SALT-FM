@@ -4238,6 +4238,23 @@ if(TEST_FORTRAN)
       "-DWARNING=${_warnings}")
     # Code after an unconditional `return` on its line never runs
     _salt_add_fortran_same_line_test(dead dead.f90)
+    # A procedure included past the last line of the file gets no timer
+    # (#116), and the rest of the file keeps its timers
+    _salt_add_fortran_same_line_test(include_end include_end.f90
+      -DFLAGS=-I${CMAKE_SOURCE_DIR}/tests/fortran/same_line)
+    # An included procedure whose timer start is on a line of the file but
+    # whose stop is past its last line: saltfm stops with an error, as the
+    # timer would never stop
+    add_test(NAME fortran_same_line_include_split
+      COMMAND ${CMAKE_COMMAND} -DFILE=include_split.f90
+        "-DTEXT=could not be written"
+        -P ${CMAKE_SOURCE_DIR}/tests/expect_output_error.cmake --
+        ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+        --tau_output=fortran_same_line_include_split.inst.F90
+        ${CMAKE_SOURCE_DIR}/tests/fortran/same_line/include_split.f90)
+    set_tests_properties(fortran_same_line_include_split PROPERTIES
+      LABELS "lang:Fortran;phase:instrument")
+    _salt_in_test_output(instrument fortran_same_line_include_split)
   endif()
 
   # Per-form skip checks: each minimal source contains exactly one

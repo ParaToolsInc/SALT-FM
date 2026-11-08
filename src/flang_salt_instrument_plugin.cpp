@@ -1153,7 +1153,11 @@ namespace salt::fortran {
 
             // A point that the loop did not write would drop the timer calls of
             // every point after it; the exit, before keepOutputs, leaves no output file
-            if (instIter != instPts.cend()) {
+            // Points past the last line, of code included after it, get no timer calls
+            // (#116) when the first of them starts a procedure: PROGRAM_BEGIN,
+            // PROGRAM_SETUP, PROCEDURE_BEGIN, or PROCEDURE_SKIPPED, the points before a
+            // line. Otherwise a timer that started on a line of the input never stops.
+            if (instIter != instPts.cend() && ((*instIter)->line() <= lineNum || !(*instIter)->instrumentBefore())) {
                 llvm::errs() << "ERROR: Instrumentation point at line " << (*instIter)->line() << " of "
                         << inputFile.path() << " could not be written; refusing to emit unbalanced TAU timers\n";
                 std::exit(EXIT_FAILURE);
