@@ -1,7 +1,7 @@
 ! Hosts whose `contains` statement shares its line with an if-return or
-! an assignment, with the return taken and not taken, also with a label
-! and over continuation lines. The timer of each host stops directly
-! before its `contains`, after the statements before it on its line.
+! an assignment, with the return taken and not taken, also with a label,
+! a comment, and over continuation lines. The timer of each host stops
+! directly before its `contains`, after the statements before it.
 module m
     interface
         module subroutine mp_if(x, y)
@@ -77,7 +77,7 @@ subroutine sub_set(x, y)
     call inner(y)
     y = y + 10;
       call TAU_PROFILE_STOP(tauProfileTimer)
-                contains
+                contains !$ y = 99
     subroutine inner(y)
         integer, intent(inout) :: y
       integer, save :: tauProfileTimer(2) = [0, 0]
