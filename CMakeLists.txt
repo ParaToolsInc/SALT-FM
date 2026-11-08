@@ -4214,14 +4214,22 @@ if(TEST_FORTRAN)
       -DFLAGS=-ffixed-line-length=132 -DWIDTH=132)
     # A procedure whose first executable statement shares its line with a
     # declaration or the procedure statement: a warning that names the
-    # file, the line, and the procedure, and no timer
+    # file, the line, and the procedure, and no timer, also after the
+    # `contains` statement of its host on its line
     set(_warning "warning: [^']*")
     string(CONCAT _warnings "_unsplit[.]f90:4: ${_warning}'one_line'.*"
       "_unsplit[.]f90:8: ${_warning}'decl_line'.*"
       "_unsplit[.]f90:14: ${_warning}'outer'.*"
-      "_unsplit[.]f90:31: ${_warning}'semi_continued'")
+      "_unsplit[.]f90:31: ${_warning}'semi_continued'.*"
+      "_unsplit[.]f90:40: ${_warning}'inner'")
     _salt_add_fortran_same_line_test(unsplit unsplit.f90
       "-DWARNING=${_warnings}")
+    # The same after the End statement of the procedure before it on its
+    # line, which Flang 19-22 do not parse
+    if(LLVM_VERSION_MAJOR GREATER_EQUAL 23)
+      _salt_add_fortran_same_line_test(unsplit_end unsplit_end.f90
+        "-DWARNING=_unsplit_end[.]f90:6: ${_warning}'after'")
+    endif()
     string(CONCAT _warnings "_unsplit_fixed[.]f:5: ${_warning}'s'.*"
       "_unsplit_fixed[.]f:15: ${_warning}'abcdefghijklmnopqrstuvwxyz"
       "abcdefghijklmnopqrstuvwxyzabcdefghijk'.*"

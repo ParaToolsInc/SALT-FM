@@ -59,14 +59,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   internal procedures, or else before its End statement, and gets its
   label in the same way. Before, a `contains` or End statement on the
   line of an `if (<cond>) return` or a `return`, as in
-  `if (x > 0) return; contains` or `if (x > 0) return; end subroutine s`,
-  stopped `saltfm` with an error about points out of line order, the
-  stop ran before the other statements on the line of a `contains` or
-  End statement, as `y = 1` in `y = 1; contains`, and a `go to` to a
-  labeled End statement skipped it. A `;` at the start of a
-  continuation line, before a `return` or an `if (<cond>) return`, as
-  after `y = 1 &`, is no longer lost, which made the output fail to
-  compile.
+  `if (x > 0) return; contains` or
+  `if (x > 0) return; end subroutine s`, stopped `saltfm` with an error
+  about points out of line order, the stop ran before the other
+  statements on the line of a `contains` or End statement, as `y = 1`
+  in `y = 1; contains`, and a `go to` to a labeled End statement
+  skipped it. A `;` at the start of a continuation line, before a
+  `return` or an `if (<cond>) return`, as after `y = 1 &`, is no longer
+  lost, which made the output fail to compile.
 - A Fortran procedure or main program whose first executable statement
   shares its line with the procedure statement or a declaration, as in
   `subroutine s(y); integer y; y = 1; end subroutine s`, gets no timer,

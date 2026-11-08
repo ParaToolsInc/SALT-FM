@@ -31,6 +31,15 @@ subroutine semi_continued(y)
     ; y = 6
 end subroutine semi_continued
 
+! A procedure whose statement follows the `contains` statement of its
+! host on its line
+subroutine host_line(y)
+    integer, intent(out) :: y
+    y = 7
+    call inner(y)
+contains; subroutine inner(y); integer y; y = y + 1; end subroutine inner
+end subroutine host_line
+
 program main
     integer :: y
     call one_line(y)
@@ -45,4 +54,6 @@ program main
     print *, 'semi_start', y
     call semi_continued(y)
     print *, 'semi_continued', y
+    call host_line(y)
+    print *, 'host_line', y
 end program main
