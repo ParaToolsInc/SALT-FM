@@ -139,6 +139,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   README says. Before, only the first one got no timer; the ones after
   it got timers. The internal procedures of an excluded main program
   still get their timers.
+- When the `;` after a Fortran `return`, `contains`, or End statement
+  is on a continuation line, as in `10 return &` and then `; ! c2`, the
+  output no longer starts a line with that `;`, which the Fortran
+  standard does not allow. Flang and gfortran accepted it. A comment
+  after such a statement and a `;`, as `! continued` in
+  `if (x > 0) return; & ! continued`, now stays on its line when the
+  next statement is on a later line. Before, the output dropped it.
 
 ## [0.6.0] - 2026-10-26
 

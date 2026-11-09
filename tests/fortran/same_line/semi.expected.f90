@@ -30,6 +30,25 @@ subroutine semi_return(y)
         return
       call TAU_PROFILE_STOP(tauProfileTimer)
 end subroutine semi_return
+! A labeled `return` whose `;` and a comment, after the `;`, go on in a
+! continuation line. No line of the output may start with that `;`.
+subroutine semi_after(x, y)
+    integer, intent(in) :: x
+    integer, intent(out) :: y
+      integer, save :: tauProfileTimer(2) = [0, 0]
+      call TAU_PROFILE_TIMER(tauProfileTimer, "&
+     &semi_after [{fortran_same_line_semi.f90} {19,1}-{27,25}]&
+     &")
+      call TAU_PROFILE_START(tauProfileTimer)
+    y = 3
+    if (x > 0) go to 10
+    y = 4
+   10 continue
+      call TAU_PROFILE_STOP(tauProfileTimer)
+    return   ! c
+        ! c2
+      call TAU_PROFILE_STOP(tauProfileTimer)
+end subroutine semi_after
 program main
     integer :: x, y
       integer, save :: tauProfileTimer(2) = [0, 0]
@@ -38,7 +57,7 @@ program main
       call  TAU_PROFILE_SET_NODE(0)
 #endif
       call TAU_PROFILE_TIMER(tauProfileTimer, "&
-     &MAIN [{fortran_same_line_semi.f90} {17,1}-{25,16}]&
+     &MAIN [{fortran_same_line_semi.f90} {29,1}-{41,16}]&
      &")
       call TAU_PROFILE_START(tauProfileTimer)
     do x = 0, 1
@@ -47,5 +66,9 @@ program main
     end do
     call semi_return(y)
     print *, 'semi_return', y
+    do x = 0, 1
+        call semi_after(x, y)
+        print *, 'semi_after', x, y
+    end do
       call TAU_PROFILE_STOP(tauProfileTimer)
 end program main

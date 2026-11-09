@@ -4492,7 +4492,8 @@ if(TEST_FORTRAN)
       _salt_add_fortran_same_line_test(${name} ${name}.F90)
     endforeach()
     # A `contains` or `return` statement that ends in a macro: no timer for
-    # its procedure, with a warning, and a timer for its internal procedure
+    # its procedure, with a warning, and a timer for its internal procedure;
+    # also a `;` from a macro on the line after a `return`, which stays
     set(_macro ": a timer stop would go at a statement that ends in a macro")
     _salt_add_fortran_same_line_test(macro_end macro_end.F90
       "-DWARNING=${_w}'outer'${_macro}.*${_w}'early'${_macro}")
