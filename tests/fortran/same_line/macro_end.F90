@@ -2,14 +2,17 @@
 ! no timer, with a warning, as the output cannot put a timer stop before
 ! the macro's text (#116). Before, the stop for a `contains` from a macro
 ! went after the internal procedures, so the output did not compile.
-! Internal procedures decide for themselves.
+! Internal procedures decide for themselves. A `;` from a macro on the
+! line after a `return` stays as written.
 #define CONT contains
 #define RET return
+#define SEMI ;
 program main
     integer :: y
     y = 0
     call outer(y)
     call early(y)
+    call late(y)
     print *, y
 end program main
 
@@ -29,3 +32,11 @@ subroutine early(y)
     if (y > 0) RET
     y = y + 1000
 end subroutine early
+
+subroutine late(y)
+    integer, intent(inout) :: y
+    y = y + 10000
+    if (y > 5) return &
+    SEMI
+    y = y + 100000
+end subroutine late

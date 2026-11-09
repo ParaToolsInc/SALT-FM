@@ -77,7 +77,7 @@ subroutine next_line_amp(x, y)
     y = 0
     if (x > 0) then
       call TAU_PROFILE_STOP(tauProfileTimer)
-               return
+               return    ! continued
       end if
           y = 5
       call TAU_PROFILE_STOP(tauProfileTimer)

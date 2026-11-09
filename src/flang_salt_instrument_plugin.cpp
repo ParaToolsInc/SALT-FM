@@ -224,23 +224,34 @@ namespace salt::fortran {
 
             // The input positions of `stmt`, from its label, if any, and of
             // the statement after it on its Fortran line, which the cooked
-            // text separates from it with `;`.
+            // text separates from it with `;`. Without such a statement, but
+            // with a `;` on a later line, not from a macro, the position after
+            // the last `;` stands for it, as a line must not start with a `;`.
             template<typename A>
             StatementPositions statementPositions(const Fortran::parser::Statement<A> &stmt) {
                 const Fortran::parser::CharBlock &source{stmt.source};
                 const Fortran::parser::CharBlock cooked{DEREF(parsing->allCooked().Find(source)).AsCharBlock()};
                 const auto isBlank = [](const char c) { return c == ' ' || c == '\t'; };
+                const InputPosition end{inputPosition(source, true)};
                 std::optional<InputPosition> next;
                 const char *after{source.end()};
                 while (after < cooked.end() && isBlank(*after)) {
                     ++after;
                 }
                 if (after < cooked.end() && *after == ';') {
+                    const char *semicolon{after};
                     while (after < cooked.end() && (isBlank(*after) || *after == ';')) {
+                        if (*after == ';') {
+                            semicolon = after;
+                        }
                         ++after;
                     }
                     if (after < cooked.end() && *after != '\n') {
                         next = inputPosition({after, 1}, false);
+                    } else if (const InputPosition last{inputPosition({semicolon, 1}, false)};
+                               // A `;` from a macro maps to the start of the macro's name
+                               inFileText(semicolon) && last.line > end.line) {
+                        next = InputPosition{last.line, last.column + 1};
                     }
                 }
                 std::optional<StatementLabel> label;
@@ -252,7 +263,7 @@ namespace salt::fortran {
                     }
                     label = StatementLabel{static_cast<long>(stmt.label.value()), inputPosition({text, 1}, false)};
                 }
-                return {inputPosition(source, false), inputPosition(source, true), next, label};
+                return {inputPosition(source, false), end, next, label};
             }
 
             [[nodiscard]] const auto &getInstrumentationPoints() const {
@@ -1152,14 +1163,14 @@ namespace salt::fortran {
                 outputStream << blankBefore(lineText.substr(0, to.column - 1), from);
             };
 
-            // Writes the comment after the statement of `pt`, if no statement follows
-            // it, in its columns on the current line, the statement's last line. On a
-            // line of its own, a comment such as `!$ y = 1` or `!$omp barrier` would
-            // be code or a directive in free form.
+            // Writes the comment after the statement of `pt`, if nothing follows it on
+            // that line, in its columns on the current line, the statement's last line.
+            // On a line of its own, a comment such as `!$ y = 1` or `!$omp barrier`
+            // would be code or a directive in free form.
             const auto writeComment = [&](const ReturnInstrumentationPoint &pt) {
                 const std::size_t end{static_cast<std::size_t>(pt.end().column - 1)};
                 if (const std::size_t comment{lineText.find('!', end)};
-                    !pt.next() && comment != std::string::npos) {
+                    (!pt.next() || pt.next()->line > pt.end().line) && comment != std::string::npos) {
                     outputStream << blankBefore(lineText.substr(end), comment - end);
                 }
             };
