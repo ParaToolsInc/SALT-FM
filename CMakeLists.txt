@@ -4422,6 +4422,12 @@ if(TEST_FORTRAN)
     set_tests_properties(fortran_same_line_include_split PROPERTIES
       LABELS "lang:Fortran;phase:instrument")
     _salt_in_test_output(instrument fortran_same_line_include_split)
+    # A first executable statement that ends in a macro, with no macro
+    # after it in the file, alone, before a program unit without macros,
+    # or as the last of three (#116)
+    foreach(name macro_only macro_then macro_three)
+      _salt_add_fortran_same_line_test(${name} ${name}.F90)
+    endforeach()
   endif()
 
   # Per-form skip checks: each minimal source contains exactly one
