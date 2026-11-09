@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+#
+# update-profiler-stub -- Print a stand-in for TAU's Profile/Profiler.h,
+# which the tests compile instrumented C and C++ output against when TAU
+# is not found.
+#
+# The stand-in copies from the headers of a TAU installation the
+# definitions of the TAU macros that config_files/tau_config.yaml uses,
+# the declarations of the functions, the type, and the groups that they
+# use, so that a call with a wrong argument still fails to compile, and
+# TAU_VERSION. It stops with an error if one of them is not found.
+#
+# Usage: tests/stub/update-profiler-stub <TAU include directory> \
+#          > tests/stub/Profile/Profiler.h
+
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then
+  echo "Usage: $0 <TAU include directory>" >&2
+  exit 2
+fi
+inc=$1
+
+# Prints what the sed script $1 prints of header $2 of the include
+# directory; stops if that is nothing.
+copy() {
+  local text
+  text=$(sed -n "$1" "${inc}/$2")
+  if [[ -z "${text}" ]]; then
+    echo "ERROR: '$1' found nothing in ${inc}/$2" >&2
+    exit 1
+  fi
+  printf '%s\n' "${text}"
+}
+
+# Nothing is printed until all of the pieces are found, so a failed run
+# leaves no partial stand-in
+stub=$(
+cat <<'EOF'
+/* Written by tests/stub/update-profiler-stub from the headers of TAU:
+   the TAU macros of config_files/tau_config.yaml and the declarations
+   that they use. Do not edit. */
+#ifndef SALT_PROFILER_STUB_H
+#define SALT_PROFILER_STUB_H
+#include <stddef.h>
+EOF
+copy '/^#define TAU_VERSION /p' TAU.h
+copy '/^typedef .* TauGroup_t;$/p' Profile/ProfileGroups.h
+for group in DEFAULT USER; do
+  copy "/^#define TAU_${group}[[:space:]]/p" Profile/ProfileGroups.h
+done
+# TAUDECL is empty but on Windows
+for fn in profile_c_timer lite_start_timer lite_stop_timer init_ref set_node; do
+  copy "s/^void \(TAUDECL \)\{0,1\}Tau_${fn}(/void Tau_${fn}(/p" Profile/TauAPI.h
+done
+for macro in PROFILE_TIMER PROFILE_START PROFILE_STOP INIT PROFILE_SET_NODE; do
+  copy "/^#define TAU_${macro}(/p" Profile/TauAPI.h
+done
+echo '#ifdef __cplusplus'
+copy '/^void tauCreateFI(void \*\*ptr, const char \*name, const char \*type,$/,/;$/p' \
+  Profile/FunctionInfo.h
+copy '/^struct Tau_Profile_Wrapper$/,/^};$/p' Profile/TauCppAPI.h
+copy '/^#define TAU_PROFILE(name, type, group) \\$/,/[^\\]$/p' Profile/TauCppAPI.h
+cat <<'EOF'
+#endif /* __cplusplus */
+#endif /* SALT_PROFILER_STUB_H */
+EOF
+)
+printf '%s\n' "${stub}"
