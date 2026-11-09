@@ -445,6 +445,18 @@ namespace salt::fortran {
                 return true;
             }
 
+            // The internal procedures after a `contains` share the exclusion of
+            // their parent. endOwnSkip, at the end of the parent's execution
+            // part, which comes before them, cleared any other skip.
+            bool Pre(const Fortran::parser::InternalSubprogramPart &) {
+                parentSkip_ = skipInstrumentSubprogram_;
+                return true;
+            }
+
+            void Post(const Fortran::parser::InternalSubprogramPart &) {
+                parentSkip_ = false;
+            }
+
             void Post(const Fortran::parser::MainProgram &) {
                 verboseStream() << "Exit main program: " << mainProgramName_ << "\n";
                 isInMainProgram_ = false;
@@ -546,7 +558,7 @@ namespace salt::fortran {
 
             void Post(const Fortran::parser::SubroutineSubprogram &) {
                 verboseStream() << "Exit Subroutine: " << subprogramName_ << "\n";
-                skipInstrumentSubprogram_ = false;
+                skipInstrumentSubprogram_ = parentSkip_;
                 subprogramName_.clear();
                 subProgramEndLine_ = 0;
                 subProgramEndCol_ = 1;
@@ -574,7 +586,7 @@ namespace salt::fortran {
 
             void Post(const Fortran::parser::FunctionSubprogram &) {
                 verboseStream() << "Exit Function: " << subprogramName_ << "\n";
-                skipInstrumentSubprogram_ = false;
+                skipInstrumentSubprogram_ = parentSkip_;
                 subprogramName_.clear();
                 subProgramLine_ = 0;
                 subProgramEndLine_ = 0;
@@ -608,7 +620,7 @@ namespace salt::fortran {
 
             void Post(const Fortran::parser::SeparateModuleSubprogram &) {
                 verboseStream() << "Exit Module Procedure: " << subprogramName_ << "\n";
-                skipInstrumentSubprogram_ = false;
+                skipInstrumentSubprogram_ = parentSkip_;
                 subprogramName_.clear();
                 subProgramLine_ = 0;
                 subProgramEndLine_ = 0;
@@ -1011,6 +1023,9 @@ namespace salt::fortran {
             // Whether the procedure has no timers for a reason of its own, which
             // its internal subprograms do not share
             bool ownSkip_{false};
+            // Whether the selective instrumentation lists, or a pure or elemental
+            // prefix, exclude the parent of the current internal procedure
+            bool parentSkip_{false};
             // Whether a main program that the lists leave out gets its setup code
             bool mainSetup_;
             // The source that the output copies, where the timer calls must go

@@ -1,0 +1,5 @@
+# SIF: exclude a Fortran subroutine, which also excludes its internal
+# procedures
+BEGIN_EXCLUDE_LIST
+parent
+END_EXCLUDE_LIST

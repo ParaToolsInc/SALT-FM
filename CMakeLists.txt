@@ -2396,6 +2396,16 @@ if(TEST_FORTRAN)
     PASS_REGULAR_EXPRESSION "${_sif_keep_pattern_fortran}"
     FAIL_REGULAR_EXPRESSION "${_sif_excluded_pattern_fortran}"
   )
+  # Excluding a subroutine also excludes its internal procedures, as the
+  # README says, also after the first one ends. A timer name starts after
+  # the `&` of a continuation.
+  add_sif_test(exclude_parent_fortran
+    fortran tests/fortran/sif_parent.f90 tests/sif/exclude_parent_f90.tau)
+  set_tests_properties(check_sif_exclude_parent_fortran
+    PROPERTIES
+    PASS_REGULAR_EXPRESSION "&[Ss][Ii][Ff]_[Pp][Aa][Rr][Ee][Nn][Tt] .[{]"
+    FAIL_REGULAR_EXPRESSION "&(child|child2|parent) .[{]"
+  )
   # A configuration file without the optional program_setup_insert still
   # instruments the main program from its program_insert.
   add_sif_test(no_program_setup_fortran

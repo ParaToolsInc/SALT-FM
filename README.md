@@ -307,6 +307,8 @@ these rules in C, C++, and Fortran:
   the routines that it matches.
 - A C or C++ inline function gets a timer only with
   `--tau_instrument_inline`, or when it matches the include list.
+- Excluding a Fortran subroutine or function also excludes its internal
+  procedures, the ones after its `contains` statement.
 
 Setup code makes sure that the measurement library starts correctly.
 For TAU, it is `TAU_INIT` and `TAU_PROFILE_SET_NODE(0)`, or
