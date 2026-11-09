@@ -5383,7 +5383,10 @@ if(TEST_FORTRAN)
     ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90 write_error.inst.F90
     --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau)
   # With --tau_output=-, the output goes to standard output, as Flang
-  # writes it for `-o -`, and no file is made.
+  # writes it for `-o -`, and no file is made, not even the build output
+  # after `--`. The build flags make fparse-llvm print each of its
+  # messages about removed arguments, which must not go to standard
+  # output, where syntax_stdout_output_fortran would fail on them.
   add_test(NAME stdout_output_fortran
     COMMAND sh -c "cd stdout_output_fortran &&
       \"$0\" \"$@\" > ../stdout_output_fortran.log &&
@@ -5391,13 +5394,27 @@ if(TEST_FORTRAN)
       [ -z \"$(ls)\" ] ||
         { echo 'Expected the output on stdout and no file:'; ls; exit 1; }"
       ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --tau_output=-
-      ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+      ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90
+      -- -bogus -fdefault-double-8 -o junk.o extra)
   set_tests_properties(stdout_output_fortran PROPERTIES
     FIXTURES_REQUIRED clang_error_outputs
     LABELS "lang:Fortran;phase:instrument")
   _salt_in_test_output(output_error stdout_output_fortran)
-  # The output is not compiled, as fparse-llvm writes its messages to
-  # standard output too.
+  _salt_add_syntax_test(stdout_output_fortran fortran/hello.f90
+    stdout_output_fortran.log)
+  # --show prints the environment and the command of Flang on standard
+  # output, as they are its output, not messages.
+  add_test(NAME saltfm_show_stdout
+    COMMAND sh -c "\"$0\" \"$@\" 2>/dev/null > saltfm_show_stdout.log &&
+      grep -q '^SALT_FORTRAN_CONFIG_FILE=' saltfm_show_stdout.log &&
+      grep -q '^cmd: ' saltfm_show_stdout.log ||
+        { echo 'Expected the environment and the command on stdout:'
+          cat saltfm_show_stdout.log; exit 1; }"
+      ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
+      ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+  set_tests_properties(saltfm_show_stdout PROPERTIES
+    LABELS "lang:Fortran;phase:smoke")
+  _salt_in_test_output(output_error saltfm_show_stdout)
   # The wrapper's own early exits must not leave a stale output either.
   _salt_add_clang_error_test(fortran_early_exit_output
     fortran_early_exit.inst.F90 "lang:Fortran" fortran/hello.f90

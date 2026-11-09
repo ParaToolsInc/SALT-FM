@@ -271,7 +271,7 @@ for arg in "$@"; do
         continue
         #echo "args remaining: $*"
     elif $expecting_build_output; then
-        echo "Removed build output: $arg"
+        echo "Removed build output: $arg" >&2
         expecting_build_output=false
         shift
         continue
@@ -340,7 +340,7 @@ for arg in "$@"; do
     # `--`; Clang reads -output as -o utput
     elif [[ $arg =~ ^(--?o|--output)$ ]]; then
         expecting_build_output=true
-        echo "Removed build flag: $arg"
+        echo "Removed build flag: $arg" >&2
         shift || true
     elif [[ $arg == --tau_select_file ]]; then
         expecting_select_file=true
@@ -374,7 +374,7 @@ for arg in "$@"; do
             after_dashes=true
         fi
         shift || true
-        echo "Removed blacklisted flag: $arg"
+        echo "Removed blacklisted flag: $arg" >&2
     elif [[ "${arg:-}" =~ $_WHITELISTED_WARNING_REGEX ]]; then
         # Only safe to do after ensuring -Wl,* blacklisted flag is removed
         if [[ "${arg:-}" == -Werror ]]; then
@@ -408,7 +408,7 @@ for arg in "$@"; do
         others+=("$arg")
         shift || true
     else
-        echo "Removed unknown flag: $arg"
+        echo "Removed unknown flag: $arg" >&2
         shift || true
     fi
     inputs+=("$arg")
@@ -417,7 +417,7 @@ if $default_double_8; then
     if [[ " ${args[*]:-} " == *" -fdefault-real-8 "* ]]; then
         args+=(-fdefault-double-8)
     else
-        echo "Removed flag without -fdefault-real-8: -fdefault-double-8"
+        echo "Removed flag without -fdefault-real-8: -fdefault-double-8" >&2
     fi
 fi
 
@@ -573,7 +573,7 @@ elif [[ ${#others[@]} -gt 0 ]]; then
     others=("${others[@]:1}")
 fi
 for arg in ${others[@]+"${others[@]}"}; do
-    echo "Removed unknown flag: $arg"
+    echo "Removed unknown flag: $arg" >&2
 done
 # Flang -fc1 reads .ftn and .FTN as free form, unlike gfortran, and does not
 # predefine macros such as __flang__ for .FTN; a later flag in the arguments
@@ -583,7 +583,7 @@ case ${input_file:-} in
     *.FTN) args=(-ffixed-form -cpp ${args[@]+"${args[@]}"}) ;;
 esac
 
-echo "input file: ${input_file:-\"<None given>\" }"
+echo "input file: ${input_file:-\"<None given>\" }" >&2
 
 # If no output file is given, emit the output file in the current working directory
 if [[ -z "${output_file:-}" ]]; then
@@ -608,8 +608,8 @@ if [[ -z "${output_file:-}" ]]; then
 
 fi
 
-echo "output file: ${output_file:-\"<None given>\" }"
-echo "Remaining Arguments: ${args[*]:-}"
+echo "output file: ${output_file:-\"<None given>\" }" >&2
+echo "Remaining Arguments: ${args[*]:-}" >&2
 
 # Without the suffix, Flang reads and writes the .mod files of the build,
 # which hold the checksums of the intrinsic modules of the Flang that runs.
@@ -644,9 +644,16 @@ cmd=("${flang_exe}"
     "${input_file:-}"
     -o "${output_file}"
     ${args[@]+"${args[@]}"})
-echo "SALT_FORTRAN_CONFIG_FILE=\"${FORTRAN_CONFIG_FILE}\""
-echo "SALT_FORTRAN_SELECT_FILE=\"${select_file:-}\""
-echo "SALT_FORTRAN_EXCLUDED_MAIN_SETUP=${excluded_main_setup}"
+# With --show, the environment of the command is its output, on stdout;
+# else it goes to stderr, as the messages above do, apart from the output
+# of -o -
+env_fd=2
+if $show; then
+    env_fd=1
+fi
+echo "SALT_FORTRAN_CONFIG_FILE=\"${FORTRAN_CONFIG_FILE}\"" >&"${env_fd}"
+echo "SALT_FORTRAN_SELECT_FILE=\"${select_file:-}\"" >&"${env_fd}"
+echo "SALT_FORTRAN_EXCLUDED_MAIN_SETUP=${excluded_main_setup}" >&"${env_fd}"
 if $show; then
     echo "cmd: ${cmd[*]}"
     exit 0
@@ -659,7 +666,7 @@ fi
 
 # Runs Flang with the plugin
 function run_flang {
-    echo "Running: ${cmd[*]}"
+    echo "Running: ${cmd[*]}" >&2
     if ! $build_uses_salt_flang; then
         run_cmd
         return
