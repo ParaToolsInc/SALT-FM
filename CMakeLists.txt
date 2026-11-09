@@ -4481,6 +4481,11 @@ if(TEST_FORTRAN)
     foreach(name macro_only macro_then macro_three)
       _salt_add_fortran_same_line_test(${name} ${name}.F90)
     endforeach()
+    # A `contains` or `return` statement that ends in a macro: no timer for
+    # its procedure, with a warning, and a timer for its internal procedure
+    set(_macro ": a timer stop would go at a statement that ends in a macro")
+    _salt_add_fortran_same_line_test(macro_end macro_end.F90
+      "-DWARNING=${_w}'outer'${_macro}.*${_w}'early'${_macro}")
   endif()
 
   # Per-form skip checks: each minimal source contains exactly one

@@ -127,6 +127,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   program with only a later timer call in an included file keeps its
   setup code
   ([#116](https://github.com/ParaToolsInc/SALT-FM/issues/116)).
+- A Fortran procedure whose `contains`, End, or `return` statement
+  ends in a macro, as `y = y + 2; CONT` with `#define CONT contains`,
+  gets no timer, and `saltfm` prints a warning that names it, as the
+  output cannot put a timer stop before the text of the macro. Before,
+  the stop of a `contains` from a macro went after the internal
+  procedures, so the output did not compile
+  ([#116](https://github.com/ParaToolsInc/SALT-FM/issues/116)).
 
 ## [0.6.0] - 2026-10-26
 
