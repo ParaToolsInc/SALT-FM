@@ -1,0 +1,5 @@
+# Excludes the main program, which then gets no setup code with
+# --tau_excluded_main_setup=none
+BEGIN_EXCLUDE_LIST
+main
+END_EXCLUDE_LIST

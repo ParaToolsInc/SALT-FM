@@ -1,0 +1,4 @@
+# Leaves the main program off the include list, so it gets no timer
+BEGIN_INCLUDE_LIST
+work
+END_INCLUDE_LIST

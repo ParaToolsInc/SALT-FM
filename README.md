@@ -318,10 +318,10 @@ number was set; node numbers start at 0.
 
 When the routine lists leave out the main program, SALT-FM removes only
 its timer. It still writes the setup code (`main_setup_insert`, or
-`program_setup_insert` under `Fortran:`). An include list that is not
-empty can leave out the main program while no exclude list entry
-names it. Then, SALT-FM warns that the main program still gets setup
-code.
+`program_setup_insert` under `Fortran:`), unless a warning says
+otherwise. An include list that is not empty can leave out the main
+program while no exclude list entry names it. Then, SALT-FM warns that
+the main program still gets setup code.
 
 By default, SALT-FM does not parse or instrument a source that the file
 lists exclude. It copies the source to the output file, so the compiler
@@ -348,7 +348,7 @@ programs get setup code:
 
 A main program that the selective instrumentation file includes gets
 its setup code and its timer at the `none`, `routine`, and `file`
-levels.
+levels, unless a warning says otherwise.
 
 At the `none` and `routine` levels, SALT-FM still parses an excluded
 Fortran source that seems to define a module, or that has an `include`

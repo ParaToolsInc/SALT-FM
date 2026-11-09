@@ -3219,14 +3219,16 @@ if(TEST_FORTRAN)
   _salt_add_line_directive_test(implicit implicit.f90 "lang:Fortran")
   # An output of saltfm as the input
   _salt_add_line_directive_test(instrumented hello.inst.F90 "lang:Fortran")
-  # The return statement of this included file puts the instrumentation
-  # points out of line order, so saltfm must stop with an error.
+  # The return statement of this included file would put the
+  # instrumentation points out of line order, so its procedure gets no
+  # timer, with a warning (#116).
   _salt_add_clang_error_test(line_directive_include_return
     line_directive_include_return.out "lang:Fortran"
-    line_directive/include_return.f90
+    line_directive/include_return.f90 EXIT_ZERO
+    CHECK "-s line_directive_include_return.out"
     ARGS --config_file=${CMAKE_SOURCE_DIR}/tests/line_directive/config.yaml
-    LOG "ERROR: Instrumentation points of ${CMAKE_SOURCE_DIR}/tests/line_directive/include_return"
-    "include_return.f90 are not in line order, as when an included file holds instrumented code")
+    LOG "warning: not instrumenting procedure 'early': a timer call would go in the included"
+    " file ${CMAKE_SOURCE_DIR}/tests/line_directive/include_return.inc")
   # An if-return on the last line, with and without a final newline: the
   # `#line` directive after it gives a line past the end, and saltfm must
   # not abort
@@ -4382,7 +4384,8 @@ if(TEST_FORTRAN)
     # A procedure whose first executable statement shares its line with a
     # declaration or the procedure statement: a warning that names the
     # file, the line, and the procedure, and no timer, also after the
-    # `contains` statement of its host on its line
+    # `contains` statement of its host on its line; a main program also
+    # gets no setup code
     set(_warning "warning: [^']*")
     string(CONCAT _warnings "_unsplit[.]f90:4: ${_warning}'one_line'.*"
       "_unsplit[.]f90:8: ${_warning}'decl_line'.*"
@@ -4400,28 +4403,78 @@ if(TEST_FORTRAN)
     string(CONCAT _warnings "_unsplit_fixed[.]f:5: ${_warning}'s'.*"
       "_unsplit_fixed[.]f:15: ${_warning}'abcdefghijklmnopqrstuvwxyz"
       "abcdefghijklmnopqrstuvwxyzabcdefghijk'.*"
-      "_unsplit_fixed[.]f:18: ${_warning}'(main|MAIN)'")
+      "_unsplit_fixed[.]f:18: ${_warning}'(main|MAIN)', which gets no setup code")
     _salt_add_fortran_same_line_test(unsplit_fixed unsplit.f
       "-DWARNING=${_warnings}")
     # Code after an unconditional `return` on its line never runs
     _salt_add_fortran_same_line_test(dead dead.f90)
-    # A procedure included past the last line of the file gets no timer
-    # (#116), and the rest of the file keeps its timers
+    # A procedure with a timer call in an included file gets no timer, with
+    # a warning that names it and the file, and the rest of the file keeps
+    # its timers (#116): a procedure included past the last line of the
+    # file (include_end), one whose timer start would go on a line of the
+    # file but whose stop would go past its last line (include_split), one
+    # with an if-return from an INCLUDE line (include_mid), and procedures
+    # with a return from an `#include`, where internal procedures and their
+    # containing procedures decide for themselves (include_internal). A
+    # procedure that includes only declarations keeps its timer
+    # (include_decl).
+    set(_dir ${CMAKE_SOURCE_DIR}/tests/fortran/same_line)
+    set(_w "warning: not instrumenting procedure ")
+    set(_inc ": a timer call would go in the included file [^\n]*/include_")
     _salt_add_fortran_same_line_test(include_end include_end.f90
-      -DFLAGS=-I${CMAKE_SOURCE_DIR}/tests/fortran/same_line)
-    # An included procedure whose timer start is on a line of the file but
-    # whose stop is past its last line: saltfm stops with an error, as the
-    # timer would never stop
-    set(_split ${CMAKE_SOURCE_DIR}/tests/fortran/same_line/include_split.f90)
-    add_test(NAME fortran_same_line_include_split
-      COMMAND ${CMAKE_COMMAND} -DFILE=include_split.f90
-        "-DTEXT=at line 11 of ${_split} could not be written"
-        -P ${CMAKE_SOURCE_DIR}/tests/expect_output_error.cmake --
-        ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
-        --tau_output=fortran_same_line_include_split.inst.F90 ${_split})
-    set_tests_properties(fortran_same_line_include_split PROPERTIES
-      LABELS "lang:Fortran;phase:instrument")
-    _salt_in_test_output(instrument fortran_same_line_include_split)
+      -DFLAGS=-I${_dir} "-DWARNING=${_w}'included'${_inc}end[.]inc")
+    _salt_add_fortran_same_line_test(include_split include_split.f90
+      -DFLAGS=-I${_dir} "-DWARNING=${_w}'included'${_inc}split[.]inc")
+    _salt_add_fortran_same_line_test(include_mid include_mid.f90
+      -DFLAGS=-I${_dir} "-DWARNING=${_w}'early'${_inc}mid[.]inc")
+    _salt_add_fortran_same_line_test(include_internal include_internal.F90
+      -DFLAGS=-I${_dir}
+      "-DWARNING=${_w}'outer'${_inc}internal[.]inc.*${_w}'child'${_inc}internal")
+    _salt_add_fortran_same_line_test(include_decl include_decl.f90
+      -DFLAGS=-I${_dir})
+    # A main program whose first executable statement is in an included
+    # file cannot get its setup code or its timer: a warning that says so,
+    # and the other procedures keep their timers. With the main program
+    # excluded and --tau_excluded_main_setup=none, there is no warning.
+    string(CONCAT _main_w "include_main[.]inc:12: warning: not "
+      "instrumenting main program '(main|MAIN)', which gets no setup code: "
+      "its first executable statement is in an included file")
+    _salt_add_fortran_same_line_test(include_main include_main.f90
+      -DFLAGS=-I${_dir} "-DWARNING=${_main_w}")
+    _salt_add_clang_error_test(fortran_same_line_include_main_none
+      fortran_same_line_include_main_none.inst.F90 "lang:Fortran"
+      fortran/same_line/include_main.f90 EXIT_ZERO
+      CHECK "-s fortran_same_line_include_main_none.inst.F90"
+      ARGS --tau_select_file=${_dir}/exclude_main.tau
+      --tau_excluded_main_setup=none
+      NOT_LOG "ERROR" "warning")
+    # With the main program excluded and the default setup, the warning,
+    # and `work` keeps its timer
+    _salt_add_clang_error_test(fortran_same_line_include_main_excluded
+      fortran_same_line_include_main_excluded.inst.F90 "lang:Fortran"
+      fortran/same_line/include_main.f90 EXIT_ZERO
+      CHECK "-s fortran_same_line_include_main_excluded.inst.F90"
+      ARGS --tau_select_file=${_dir}/exclude_main.tau
+      LOG "which gets no setup code: its first executable statement is in"
+      OUT "call TAU_PROFILE_START(tauProfileTimer)")
+    # A main program that the include list leaves out, and whose setup
+    # code has no place, in an included file or on the line of a
+    # declaration, gets only the warning that it gets no setup code
+    foreach(src include_main.f90 unsplit.f)
+      get_filename_component(_stem ${src} NAME_WE)
+      get_filename_component(_ext ${src} LAST_EXT)
+      string(TOUPPER ${_ext} _ext)
+      set(_test fortran_same_line_${_stem}_include_list)
+      _salt_add_clang_error_test(${_test} ${_test}.inst${_ext} "lang:Fortran"
+        fortran/same_line/${src} EXIT_ZERO CHECK "-s ${_test}.inst${_ext}"
+        ARGS --tau_select_file=${_dir}/include_work.tau
+        LOG "which gets no setup code" NOT_LOG "is not on the selective")
+    endforeach()
+    # A main program whose End statement is in an included file keeps its
+    # setup code, but gets no timer
+    _salt_add_fortran_same_line_test(include_main_end include_main_end.f90
+      -DFLAGS=-I${_dir}
+      "-DWARNING=warning: not instrumenting main program '(main|MAIN)'${_inc}main_end[.]inc")
     # A first executable statement that ends in a macro, with no macro
     # after it in the file, alone, before a program unit without macros,
     # or as the last of three (#116)
