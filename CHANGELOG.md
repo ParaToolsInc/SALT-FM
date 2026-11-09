@@ -134,6 +134,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the stop of a `contains` from a macro went after the internal
   procedures, so the output did not compile
   ([#116](https://github.com/ParaToolsInc/SALT-FM/issues/116)).
+- When the selective instrumentation lists exclude a Fortran subroutine
+  or function, none of its internal procedures gets a timer, as the
+  README says. Before, only the first one got no timer; the ones after
+  it got timers. The internal procedures of an excluded main program
+  still get their timers.
 
 ## [0.6.0] - 2026-10-26
 
