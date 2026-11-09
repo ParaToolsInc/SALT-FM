@@ -99,11 +99,12 @@ namespace salt::fortran {
 
     class SaltInstrumentAction final : public PluginParseTreeAction {
         struct SaltInstrumentParseTreeVisitor {
-            explicit SaltInstrumentParseTreeVisitor(Fortran::parser::Parsing *parsing,
-                                                    const bool skipInstrument = false,
-                                                    const bool mainSetup = true)
+            SaltInstrumentParseTreeVisitor(Fortran::parser::Parsing *parsing,
+                                           const Fortran::parser::SourceFile &inputFile,
+                                           const bool skipInstrument = false,
+                                           const bool mainSetup = true)
                 : mainProgramLine_(0), subProgramLine_(0), skipInstrumentFile_(skipInstrument),
-                  mainSetup_(mainSetup), parsing(parsing) {
+                  mainSetup_(mainSetup), inputFile_(&inputFile), parsing(parsing) {
             }
 
             bool shouldInstrument() const {
@@ -172,24 +173,57 @@ namespace salt::fortran {
             // The input position of the start, or with `end` the end, of
             // `chars`.
             //
-            // If locationFromSource fails to map a CharBlock we DIE rather
-            // than skip: dropping a single instrumentation point would leave
-            // a TAU_PROFILE_TIMER_START without a matching TAU_PROFILE_STOP
-            // at runtime.
-            InputPosition inputPosition(const Fortran::parser::CharBlock &chars, const bool end) const {
+            // A position in an included file, where the output cannot write
+            // timer calls, sets skipReason_, so the procedure gets no timer
+            // calls at all. If locationFromSource fails to map a CharBlock we
+            // DIE rather than skip: dropping a single instrumentation point
+            // would leave a timer start without a matching stop.
+            InputPosition inputPosition(const Fortran::parser::CharBlock &chars, const bool end) {
                 const auto pos{locationFromSource(parsing, chars, end)};
-                if (!pos.has_value()) {
+                // The character at the position, or with `end` just before it
+                const char *at{end ? chars.end() - 1 : chars.begin()};
+                const auto atPos{locationFromSource(parsing, {at, 1}, false)};
+                if (!pos.has_value() || !atPos.has_value()) {
                     DIE("SALT: cooked-source mapping unavailable for a return, contains, or End statement; "
                         "refusing to emit unbalanced TAU timers");
                 }
+                if (&*atPos->sourceFile != inputFile_) {
+                    skipFor("a timer call would go in the included file " + atPos->sourceFile->path());
+                    return InputPosition{0, 0};
+                }
                 return InputPosition{pos->trueLineNumber, pos->column};
+            }
+
+            // Warns that procedure `name`, at `where`, a `<file>:<line>`, gets no
+            // timer, and a main program, unless `keepsSetup`, no setup code, for
+            // `reason`
+            void warnNotInstrumenting(const std::string &where, const std::string &name,
+                                      const std::string &reason, const bool keepsSetup = false) const {
+                const bool noSetup{isInMainProgram_ && !keepsSetup};
+                llvm::errs() << "[SALT] " << where << ": warning: not instrumenting "
+                        << (isInMainProgram_ ? "main program '" : "procedure '") << name
+                        << (noSetup ? "', which gets no setup code: " : "': ") << reason << "\n";
+            }
+
+            // The name of a main program without a `program` statement in the
+            // file at `path`
+            static std::string implicitMainName(const std::string &path) {
+                return std::filesystem::path(path).stem().string() + "._implicit_main_";
+            }
+
+            // Notes `reason`, unless it has one, why the current procedure gets
+            // no timer
+            void skipFor(const std::string &reason) {
+                if (!skipReason_.has_value()) {
+                    skipReason_ = reason;
+                }
             }
 
             // The input positions of `stmt`, from its label, if any, and of
             // the statement after it on its Fortran line, which the cooked
             // text separates from it with `;`.
             template<typename A>
-            StatementPositions statementPositions(const Fortran::parser::Statement<A> &stmt) const {
+            StatementPositions statementPositions(const Fortran::parser::Statement<A> &stmt) {
                 const Fortran::parser::CharBlock &source{stmt.source};
                 const Fortran::parser::CharBlock cooked{DEREF(parsing->allCooked().Find(source)).AsCharBlock()};
                 const auto isBlank = [](const char c) { return c == ' ' || c == '\t'; };
@@ -304,6 +338,8 @@ namespace salt::fortran {
                 containsLineOut = 0;
                 nameEndLineOut = 0;
                 endStmtOut.reset();
+                // A new procedure, whose timer calls can go where its parent's cannot
+                skipReason_.reset();
                 const auto &endStmt = std::get<Fortran::parser::Statement<EndStmtT> >(subprogram.t);
                 if (const auto pos = locationFromSource(parsing, endStmt.source, false); pos.has_value()) {
                     endLineOut = pos.value().trueLineNumber;
@@ -599,7 +635,19 @@ namespace salt::fortran {
 
                 const std::optional startLocOpt{getLocation(parsing, block.front(), false)};
                 if (!startLocOpt.has_value()) {
-                    llvm::errs() << "ERROR: execution part had no start source location!\n";
+                    if (!pre) {
+                        endOwnSkip();
+                    } else if (shouldInstrument()) {
+                        // A main program without a `program` statement has no name or line
+                        const std::string &path{isInMainProgram_ ? mainProgramPath_ : subProgramPath_};
+                        const int line{isInMainProgram_ ? mainProgramLine_ : subProgramLine_};
+                        const std::string &name{isInMainProgram_ ? mainProgramName_ : subprogramName_};
+                        warnNotInstrumenting(path.empty() ? inputFile_->path() : path + ":" + std::to_string(line),
+                                             name.empty() ? implicitMainName(inputFile_->path()) : name,
+                                             "its first executable statement has no source position");
+                        skipInstrumentSubprogram_ = true;
+                        ownSkip_ = true;
+                    }
                     return;
                 }
                 const auto &startLoc{startLocOpt.value()};
@@ -657,7 +705,7 @@ namespace salt::fortran {
                     int procStartLine;
                     if (isInMainProgram_ && mainProgramName_.empty()) {
                         procPath = writtenPath(startLoc);
-                        procName = std::filesystem::path(procPath).stem().string() + "._implicit_main_";
+                        procName = implicitMainName(procPath);
                         procStartLine = startLoc.line;
                     } else {
                         procName = isInMainProgram_ ? mainProgramName_ : subprogramName_;
@@ -694,27 +742,44 @@ namespace salt::fortran {
 
                     const std::string splitTimerName{ss2.str()};
 
-                    if (isInMainProgram_ && mainSetup_) {
-                        warnIfMainNotIncluded(procName, /*ignoreCase=*/true);
-                    }
                     const bool excludedMain{
                         isInMainProgram_ && (skipInstrumentFile_ || !shouldInstrumentSubprogram(procName))
                     };
-                    if ((excludedMain ? mainSetup_ : shouldInstrument()) && followsStatement(block.front())) {
-                        // The timer declarations and start, or the setup code, would go before
-                        // the line, so before the statement before them on the line. The flag
-                        // also drops the timer stops. The name, of up to 63 characters, goes
-                        // on a comment line of its own to fit in column 72.
-                        llvm::errs() << "[SALT] " << writtenPath(startLoc) << ":" << startLoc.line
-                                << ": warning: not instrumenting procedure '" << procName
-                                << "': its first executable statement shares the line with the "
-                                << "procedure statement or a declaration\n";
-                        instrumentationPoints_.emplace_back(std::make_unique<ProcedureSkippedInstrumentationPoint>(
-                            startLoc.trueLineNumber, "! SALT-FM could not split line " +
-                                                     std::to_string(startLoc.line) + " to instrument\n! " +
-                                                     procName));
+                    procedureName_ = procName;
+                    procedureWhere_ = procPath + ":" + std::to_string(procStartLine);
+                    procedureStart_ = instrumentationPoints_.size();
+                    // The timer start, or the setup code, of a procedure whose first
+                    // executable statement is in an included file would go on an
+                    // unrelated line of the input, or past its last line
+                    const bool beginElsewhere{&*startLoc.sourceFile != inputFile_};
+                    const bool instrumented{excludedMain ? mainSetup_ : shouldInstrument()};
+                    // Why the procedure gets no timer, and a main program no setup code.
+                    // A warning, not an error: the program may set up TAU elsewhere, so
+                    // its profile can still be useful.
+                    std::string skipAll;
+                    if (beginElsewhere && isInMainProgram_ && instrumented) {
+                        skipAll = "its first executable statement is in an included file";
+                    } else if (beginElsewhere) {
+                        skipFor("a timer call would go in the included file " + startLoc.sourceFile->path());
+                    } else if (instrumented && followsStatement(block.front())) {
+                        // The timer declarations and start, or the setup code, would go
+                        // before the line, so before the statement before them on the line
+                        skipAll = "its first executable statement shares the line with the "
+                                  "procedure statement or a declaration";
+                    }
+                    if (!skipAll.empty()) {
+                        warnNotInstrumenting(writtenPath(startLoc) + ":" + std::to_string(startLoc.line), procName,
+                                             skipAll);
+                        // The flag also drops the timer stops. The name, of up to 63
+                        // characters, goes on a comment line of its own to fit in column 72.
+                        if (!beginElsewhere) {
+                            instrumentationPoints_.emplace_back(std::make_unique<ProcedureSkippedInstrumentationPoint>(
+                                startLoc.trueLineNumber, "! SALT-FM could not split line " +
+                                                         std::to_string(startLoc.line) + " to instrument\n! " +
+                                                         procName));
+                        }
                         skipInstrumentSubprogram_ = true;
-                        lineNotSplit_ = true;
+                        ownSkip_ = true;
                     } else if (excludedMain) {
                         // Keep the setup code, if any, but not the timer; the
                         // flag also drops the timer stop
@@ -722,6 +787,7 @@ namespace salt::fortran {
                                 " due to selective instrumentation\n";
                         skipInstrumentSubprogram_ = true;
                         if (mainSetup_) {
+                            warnIfMainNotIncluded(procName, /*ignoreCase=*/true);
                             addProgramSetupInstrumentation(startLoc.trueLineNumber, splitTimerName);
                         }
                     } else if (isInMainProgram_) {
@@ -742,11 +808,43 @@ namespace salt::fortran {
                         verboseStream() << "End at line " << endLine << "\n";
                         addProcedureEndInstrumentation(endLine);
                     }
-                    if (isInMainProgram_ || lineNotSplit_) {
-                        // Its internal subprograms choose for themselves
-                        skipInstrumentSubprogram_ = false;
-                        lineNotSplit_ = false;
-                    }
+                    dropSkippedTimers();
+                    endOwnSkip();
+                }
+            }
+
+            // Lets the internal subprograms of the current procedure choose for
+            // themselves, after it skipped its own timers, or after a main program
+            void endOwnSkip() {
+                if (isInMainProgram_ || ownSkip_) {
+                    skipInstrumentSubprogram_ = false;
+                    ownSkip_ = false;
+                }
+            }
+
+            // With skipReason_, removes the timer calls of the current procedure,
+            // from procedureStart_ on, and warns; a main program keeps its setup
+            // code. A procedure without a timer has nothing to remove.
+            void dropSkippedTimers() {
+                if (!skipReason_.has_value() || instrumentationPoints_.size() <= procedureStart_) {
+                    return;
+                }
+                const auto first{instrumentationPoints_.begin() + static_cast<std::ptrdiff_t>(procedureStart_)};
+                const InstrumentationPointType type{(*first)->instrumentationType()};
+                if (type == InstrumentationPointType::PROGRAM_SETUP ||
+                    type == InstrumentationPointType::PROCEDURE_SKIPPED) {
+                    return;
+                }
+                warnNotInstrumenting(procedureWhere_, procedureName_, *skipReason_, /*keepsSetup=*/true);
+                std::unique_ptr<const InstrumentationPoint> setup;
+                if (type == InstrumentationPointType::PROGRAM_BEGIN) {
+                    const auto &begin{static_cast<const ProgramBeginInstrumentationPoint &>(**first)};
+                    setup = std::make_unique<ProgramBeginInstrumentationPoint>(
+                        begin.line(), begin.timerName(), InstrumentationPointType::PROGRAM_SETUP);
+                }
+                instrumentationPoints_.erase(first, instrumentationPoints_.end());
+                if (setup) {
+                    instrumentationPoints_.push_back(std::move(setup));
                 }
             }
 
@@ -909,10 +1007,21 @@ namespace salt::fortran {
 
             bool skipInstrumentFile_;
             bool skipInstrumentSubprogram_{false};
-            // Whether the procedure has no timers as a line cannot be split
-            bool lineNotSplit_{false};
+            // Whether the procedure has no timers for a reason of its own, which
+            // its internal subprograms do not share
+            bool ownSkip_{false};
             // Whether a main program that the lists leave out gets its setup code
             bool mainSetup_;
+            // The source that the output copies, where the timer calls must go
+            const Fortran::parser::SourceFile *inputFile_;
+            // Why the current procedure gets no timer, if it gets none, as a
+            // timer call would go in another file
+            std::optional<std::string> skipReason_;
+            // The name and the `<file>:<line>` of the current procedure, and the
+            // index of its first instrumentation point
+            std::string procedureName_;
+            std::string procedureWhere_;
+            std::size_t procedureStart_{0};
 
             std::vector<std::unique_ptr<const InstrumentationPoint> > instrumentationPoints_;
 
@@ -1152,12 +1261,10 @@ namespace salt::fortran {
             }
 
             // A point that the loop did not write would drop the timer calls of
-            // every point after it; the exit, before keepOutputs, leaves no output file
-            // Points past the last line, of code included after it, get no timer calls
-            // (#116) when the first of them starts a procedure: PROGRAM_BEGIN,
-            // PROGRAM_SETUP, PROCEDURE_BEGIN, or PROCEDURE_SKIPPED, the points before a
-            // line. Otherwise a timer that started on a line of the input never stops.
-            if (instIter != instPts.cend() && ((*instIter)->line() <= lineNum || !(*instIter)->instrumentBefore())) {
+            // every point after it; the exit, before keepOutputs, leaves no output file.
+            // The visitor drops the points of included code, so none is past the last
+            // line (#116).
+            if (instIter != instPts.cend()) {
                 llvm::errs() << "ERROR: Instrumentation point at line " << (*instIter)->line() << " of "
                         << inputFile.path() << " could not be written; refusing to emit unbalanced TAU timers\n";
                 std::exit(EXIT_FAILURE);
@@ -1332,7 +1439,8 @@ namespace salt::fortran {
             }
             // Walk the parse tree -- marks nodes for instrumentation
             const ExcludedMainSetup level{getExcludedMainSetup()};
-            SaltInstrumentParseTreeVisitor visitor{&parsing, skipInstrument, level != ExcludedMainSetup::none};
+            SaltInstrumentParseTreeVisitor visitor{&parsing, *inputFile, skipInstrument,
+                                                   level != ExcludedMainSetup::none};
             // Unless --tau_excluded_main_setup=file, fparse-llvm runs Flang on an excluded
             // source only for its module files, so it gets no instrumentation points: a copy.
             if (!skipInstrument || level == ExcludedMainSetup::file) {

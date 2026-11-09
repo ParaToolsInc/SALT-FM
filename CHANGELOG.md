@@ -73,8 +73,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and a main program no setup code, as both would go before that line,
   so before the other statements on it. When `saltfm` would instrument
   the procedure, or give the main program setup code, it prints a
-  warning that names the file, the line, and the procedure, writes a
-  comment in place of the timer, and exits with status 0. The other
+  warning that names the file, the line, and the procedure; for a main
+  program it also says that it gets no setup code. `saltfm` writes a
+  comment in place of the timer and exits with status 0. The other
   procedures keep their timers. Before, `saltfm` stopped with an error
   about points out of line order, or wrote the timer before the line,
   so the output did not compile.
@@ -107,6 +108,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   no timer, and `saltfm` printed
   `ERROR: execution part had no start source location!` and exited
   with status 0
+  ([#116](https://github.com/ParaToolsInc/SALT-FM/issues/116)).
+- A Fortran procedure with a timer call in a file that an `include`
+  line or `#include` brings in, at its first executable statement, a
+  `return`, or its `contains` or End statement, gets no timer, and
+  `saltfm` prints a warning that names the procedure and the file.
+  Flang numbers the lines of an included file within that file, so
+  before, the timer calls went on unrelated lines of the input: the
+  output lost a line of code or did not compile, with exit status 0,
+  or `saltfm` stopped with an error about points out of line order.
+  Internal procedures and their containing procedure get their timers
+  or not on their own, and a procedure that includes only
+  declarations keeps its timer. A main program whose first executable
+  statement is in an included file gets no timer and no setup code, and
+  `saltfm` prints a warning that says so, keeps the timers of the other
+  procedures, and exits with status 0, since the program may set up TAU
+  elsewhere. Before, its setup code was lost with no message. A main
+  program with only a later timer call in an included file keeps its
+  setup code
   ([#116](https://github.com/ParaToolsInc/SALT-FM/issues/116)).
 
 ## [0.6.0] - 2026-10-26
