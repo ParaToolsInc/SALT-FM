@@ -4245,13 +4245,13 @@ if(TEST_FORTRAN)
     # An included procedure whose timer start is on a line of the file but
     # whose stop is past its last line: saltfm stops with an error, as the
     # timer would never stop
+    set(_split ${CMAKE_SOURCE_DIR}/tests/fortran/same_line/include_split.f90)
     add_test(NAME fortran_same_line_include_split
       COMMAND ${CMAKE_COMMAND} -DFILE=include_split.f90
-        "-DTEXT=could not be written"
+        "-DTEXT=at line 11 of ${_split} could not be written"
         -P ${CMAKE_SOURCE_DIR}/tests/expect_output_error.cmake --
         ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
-        --tau_output=fortran_same_line_include_split.inst.F90
-        ${CMAKE_SOURCE_DIR}/tests/fortran/same_line/include_split.f90)
+        --tau_output=fortran_same_line_include_split.inst.F90 ${_split})
     set_tests_properties(fortran_same_line_include_split PROPERTIES
       LABELS "lang:Fortran;phase:instrument")
     _salt_in_test_output(instrument fortran_same_line_include_split)
