@@ -22,12 +22,17 @@ limitations under the License.
 
 [[nodiscard]] std::optional<Fortran::parser::SourcePosition> salt::fortran::locationFromSource(
     const Fortran::parser::Parsing *parsing, const Fortran::parser::CharBlock &charBlock, const bool end) {
+    // The start maps only the first character, so a block whose end does
+    // not map, as at the end of a macro expansion, still has a start
+    if (!end) {
+        if (const auto range{parsing->allCooked().GetProvenanceRange({charBlock.begin(), 1})}) {
+            return parsing->allCooked().allSources().GetSourcePosition(range->start());
+        }
+        return std::nullopt;
+    }
     if (const auto &sourceRange{parsing->allCooked().GetSourcePositionRange(charBlock)}; sourceRange.
         has_value()) {
-        if (end) {
-            return sourceRange->second;
-        }
-        return sourceRange->first;
+        return sourceRange->second;
     }
     return std::nullopt;
 }

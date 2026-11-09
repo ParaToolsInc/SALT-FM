@@ -101,6 +101,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - With `--tau_output=-`, a source that the file lists of a selective
   instrumentation file exclude is copied to standard output. Before,
   the copy went to a file named `-`.
+- A Fortran procedure whose first executable statement ends in a
+  macro, as `print *, __FILE__` or `x = ONE` with `#define ONE 1`, gets
+  its timer. Before, when no macro came after it in the file, it got
+  no timer, and `saltfm` printed
+  `ERROR: execution part had no start source location!` and exited
+  with status 0
+  ([#116](https://github.com/ParaToolsInc/SALT-FM/issues/116)).
 
 ## [0.6.0] - 2026-10-26
 

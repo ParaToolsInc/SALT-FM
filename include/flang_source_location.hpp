@@ -29,6 +29,7 @@ namespace salt::fortran {
      * get the source position (file, line, column).
      * If `end` is set, returns the ending position of the block.
      * If `end` is not set (and by default), returns the starting position of the block.
+     * A start in a macro expansion gives the start of the macro use.
      */
     [[nodiscard]] std::optional<Fortran::parser::SourcePosition> locationFromSource(
         const Fortran::parser::Parsing *parsing,
