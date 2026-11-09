@@ -53,8 +53,6 @@ std::string salt::fortran::InstrumentationPoint::locationString() const {
     switch (location()) {
         case InstrumentationLocation::BEFORE:
             return "BEFORE"s;
-        case InstrumentationLocation::AFTER:
-            return "AFTER"s;
         case InstrumentationLocation::REPLACE:
             return "REPLACE"s;
         default:

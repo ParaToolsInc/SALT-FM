@@ -132,12 +132,6 @@ namespace salt::fortran {
                 }
             }
 
-            void addProcedureEndInstrumentation(const int end_line) {
-                if (shouldInstrument()) {
-                    instrumentationPoints_.emplace_back(std::make_unique<ProcedureEndInstrumentationPoint>(end_line));
-                }
-            }
-
             // The input positions of a statement and its label, as
             // ReturnInstrumentationPoint takes them
             struct StatementPositions {
@@ -173,25 +167,34 @@ namespace salt::fortran {
             // The input position of the start, or with `end` the end, of
             // `chars`.
             //
-            // A position in an included file, where the output cannot write
-            // timer calls, sets skipReason_, so the procedure gets no timer
-            // calls at all. If locationFromSource fails to map a CharBlock we
-            // DIE rather than skip: dropping a single instrumentation point
-            // would leave a timer start without a matching stop.
+            // A position that the output cannot hold, in an included file, at
+            // the end of a macro expansion, or with no place in the input, sets
+            // skipReason_, so the procedure gets no timer calls at all: dropping
+            // a single instrumentation point would leave a timer start without
+            // a matching stop.
             InputPosition inputPosition(const Fortran::parser::CharBlock &chars, const bool end) {
                 const auto pos{locationFromSource(parsing, chars, end)};
                 // The character at the position, or with `end` just before it
                 const char *at{end ? chars.end() - 1 : chars.begin()};
                 const auto atPos{locationFromSource(parsing, {at, 1}, false)};
-                if (!pos.has_value() || !atPos.has_value()) {
-                    DIE("SALT: cooked-source mapping unavailable for a return, contains, or End statement; "
-                        "refusing to emit unbalanced TAU timers");
-                }
-                if (&*atPos->sourceFile != inputFile_) {
+                if (!pos.has_value() || !atPos.has_value() || (end && !inFileText(at))) {
+                    skipFor(end ? "a timer stop would go at a statement that ends in a macro"
+                                : "a timer call would go at a position SALT-FM cannot map to the input");
+                } else if (&*atPos->sourceFile != inputFile_) {
                     skipFor("a timer call would go in the included file " + atPos->sourceFile->path());
-                    return InputPosition{0, 0};
+                } else {
+                    return InputPosition{pos->trueLineNumber, pos->column};
                 }
-                return InputPosition{pos->trueLineNumber, pos->column};
+                return InputPosition{0, 0};
+            }
+
+            // Whether the character at `p` of the cooked text comes from the
+            // text of a file, not from a macro expansion or text that Flang made
+            bool inFileText(const char *p) const {
+                const auto &sources{parsing->allCooked().allSources()};
+                const auto range{parsing->allCooked().GetProvenanceRange({p, 1})};
+                return range.has_value() && sources.GetReplacedProvenance(range->start()) == range->start() &&
+                       sources.GetSourceFile(range->start()) != nullptr;
             }
 
             // Warns that procedure `name`, at `where`, a `<file>:<line>`, gets no
@@ -357,8 +360,10 @@ namespace salt::fortran {
                     if (const auto pos = locationFromSource(parsing, containsStmt.source, false); pos.has_value()) {
                         containsLineOut = pos.value().trueLineNumber;
                         nameEndLineOut = pos.value().line;
-                        endStmtOut = statementPositions(containsStmt);
                     }
+                    // Without a position, the procedure gets no timer, as the stop
+                    // must go before the `contains`, not at the End statement
+                    endStmtOut = statementPositions(containsStmt);
                 } else if (endLineOut > 0) {
                     endStmtOut = statementPositions(endStmt);
                 }
@@ -660,8 +665,7 @@ namespace salt::fortran {
                 // through CookedSource for some statements) handles issue #31
                 // and llvm-project#196291 by construction.  The timer stop
                 // goes directly before the `contains` or End statement, at
-                // the input positions that captureBodyEndLines gives; endLine
-                // serves only the fallback when those are missing.
+                // the input positions that captureBodyEndLines gives.
                 const int containsLine = isInMainProgram_ ? mainProgramContainsLine_ : subProgramContainsLine_;
                 const int endStmtLine = isInMainProgram_ ? mainProgramEndLine_ : subProgramEndLine_;
                 const int boundaryLine = containsLine > 0 ? containsLine : endStmtLine;
@@ -670,7 +674,6 @@ namespace salt::fortran {
                             "neither contains nor End statement source resolved.\n";
                     return;
                 }
-                const int endLine = boundaryLine - 1;
 
                 // Insert the timer start in the Pre phase (when we first visit the node)
                 // and the timer stop in the Post phase (when we return after visiting the node's children).
@@ -800,13 +803,11 @@ namespace salt::fortran {
                         addProcedureBeginInstrumentation(startLoc.trueLineNumber, splitTimerName);
                     }
                 } else {
+                    // captureBodyEndLines gives the positions whenever boundaryLine is known
                     if (const auto &endStmt{isInMainProgram_ ? mainProgramEndStmt_ : subProgramEndStmt_};
                         endStmt.has_value()) {
                         verboseStream() << "contains or End statement at line " << endStmt->start.line << "\n";
                         addProcedureEndInstrumentation(*endStmt);
-                    } else {
-                        verboseStream() << "End at line " << endLine << "\n";
-                        addProcedureEndInstrumentation(endLine);
                     }
                     dropSkippedTimers();
                     endOwnSkip();
@@ -884,8 +885,8 @@ namespace salt::fortran {
             // CharBlock, which spans the full physical extent of the if-stmt -- including any `&` line
             // continuations inside the condition or between the condition and the action.
             //
-            // inputPosition() DIEs when it cannot map a CharBlock.
-            // Possible causes of an unmapped CharBlock include
+            // When inputPosition() cannot map a CharBlock, the procedure gets no
+            // timer, with a warning. Possible causes of an unmapped CharBlock include
             // non-conforming Fortran (e.g. a deleted construct -- see
             // F2018 Annex B.2.2 / R813 / R823 for the labeled-DO
             // terminator rules), upstream flang source-mapping bugs (cf.
@@ -1015,7 +1016,7 @@ namespace salt::fortran {
             // The source that the output copies, where the timer calls must go
             const Fortran::parser::SourceFile *inputFile_;
             // Why the current procedure gets no timer, if it gets none, as a
-            // timer call would go in another file
+            // timer call would go in another file or a macro
             std::optional<std::string> skipReason_;
             // The name and the `<file>:<line>` of the current procedure, and the
             // index of its first instrumentation point
@@ -1244,14 +1245,6 @@ namespace salt::fortran {
                         outputStream << lineDirective(inputFile, lineNum) << "\n";
                     }
                     outputStream << lineText << "\n";
-                }
-
-                // Finally, process instrumentation points that come AFTER this line.
-                while (instIter != instPts.cend() && (*instIter)->line() == lineNum && (*instIter)->location() ==
-                       InstrumentationLocation::AFTER) {
-                    outputStream << (*instIter)->instrumentationString(instMap, lineText) << "\n";
-                    lineWasInstrumentedAfter = true;
-                    ++instIter;
                 }
 
                 // If line was instrumented, output a #line directive

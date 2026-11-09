@@ -26,7 +26,7 @@ namespace salt::fortran {
         PROGRAM_BEGIN, // Setup code, then start the main program's timer
         PROGRAM_SETUP, // Setup code, for a main program without a timer
         PROCEDURE_BEGIN, // Declare profiler, start timer
-        PROCEDURE_END, // Stop timer on the line after, or directly before the `contains` or End statement
+        PROCEDURE_END, // Stop timer directly before the `contains` or End statement
         RETURN_STMT, // Stop timer directly before the return
         IF_RETURN, // Transform if to if-then-endif, stop timer before return
         PROCEDURE_SKIPPED // A comment that SALT-FM could not instrument the procedure
@@ -48,7 +48,6 @@ namespace salt::fortran {
 
     enum class InstrumentationLocation {
         BEFORE,
-        AFTER,
         REPLACE
     };
 
@@ -171,13 +170,6 @@ namespace salt::fortran {
 
     private:
         const std::string comment_;
-    };
-
-    class ProcedureEndInstrumentationPoint final : public InstrumentationPoint {
-    public:
-        explicit ProcedureEndInstrumentationPoint(const int line) : InstrumentationPoint(
-            InstrumentationPointType::PROCEDURE_END, line, InstrumentationLocation::AFTER) {
-        }
     };
 
     // A `return` statement, an if-return, or the `contains` statement of
