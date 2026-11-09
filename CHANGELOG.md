@@ -85,6 +85,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   size limit, and Flang stopped with
   `LLVM ERROR: IO failure on output stream` before `saltfm` reported
   the write error.
+- For Fortran, `saltfm` and `fparse-llvm` print their messages, such as
+  `input file:`, `Removed unknown flag:`, and `Running:`, on standard
+  error. Before, they went to standard output, so with
+  `--tau_output=-`, they came before the instrumented source there,
+  which then did not compile. `--show` still prints the command and
+  its environment on standard output.
 
 ## [0.6.0] - 2026-10-26
 
