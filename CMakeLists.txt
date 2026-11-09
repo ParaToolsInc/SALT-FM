@@ -921,6 +921,96 @@ function(_salt_in_test_output sub)
   set_property(TEST ${ARGN} APPEND PROPERTY FIXTURES_REQUIRED ${sub}_dir)
 endfunction()
 
+# Tests that check instrumented output as text also compile it, with
+# -fsyntax-only, so that output that does not compile fails without TAU
+# too (#120). C and C++ output compiles with the flags that TAU's
+# compiler wrapper gives an instrumented source, from the TAU Makefile
+# of the compiler, or without TAU, against tests/stub/Profile/Profiler.h,
+# the stand-in for TAU's that tests/stub/update-profiler-stub writes.
+set(_salt_syntax_flags -I${CMAKE_SOURCE_DIR}/tests/stub)
+if(HAVE_TAU)
+  set(_mk ${TAU_GCC_MAKEFILE})
+  if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+    set(_mk ${TAU_LLVM_MAKEFILE})
+  endif()
+  # The -optTauIncludes and -optTauDefs values of TAUCOMPILEROPTS
+  file(WRITE ${CMAKE_BINARY_DIR}/tau_flags.mk "include ${_mk}\nall:\n"
+    "\t@echo $(TAU_INC_DIR)\n"
+    "\t@echo $(TAU_INCLUDE) $(TAU_MPI_COMPILE_INCLUDE) $(TAU_SHMEM_INCLUDE) $(TAU_DEFS)\n")
+  execute_process(COMMAND make -s -f ${CMAKE_BINARY_DIR}/tau_flags.mk
+    OUTPUT_VARIABLE _salt_syntax_flags OUTPUT_STRIP_TRAILING_WHITESPACE
+    COMMAND_ERROR_IS_FATAL ANY)
+  string(REGEX REPLACE "\n.*" "" _salt_tau_include_dir "${_salt_syntax_flags}")
+  string(REGEX REPLACE "^[^\n]*\n" "" _salt_syntax_flags "${_salt_syntax_flags}")
+  separate_arguments(_salt_syntax_flags UNIX_COMMAND "${_salt_syntax_flags}")
+  message(STATUS "Flags of the instrumented output syntax checks: ${_salt_syntax_flags}")
+endif()
+# Adds test syntax_<test>, which compiles the instrumented output files
+# in ARGN after test `test`, in its working directory, with
+# -fsyntax-only, the FLAGS, and -I of the directory of source `src`
+# (relative to tests/, or absolute), as TAU's compiler wrapper does. The
+# extension of `src` gives the language. Fortran output calls external
+# TAU subroutines, so it needs no TAU flags, and is compiled only when
+# the tests have a Flang driver.
+function(_salt_add_syntax_test test src)
+  cmake_parse_arguments(PARSE_ARGV 2 ARG "" "" "FLAGS")
+  cmake_path(ABSOLUTE_PATH src BASE_DIRECTORY ${CMAKE_SOURCE_DIR}/tests)
+  cmake_path(GET src PARENT_PATH dir)
+  cmake_path(GET src EXTENSION LAST_ONLY ext)
+  if(ext STREQUAL ".c")
+    set(compile ${CMAKE_C_COMPILER} -x c ${_salt_syntax_flags})
+    set(label "lang:C")
+  elseif(ext STREQUAL ".cpp")
+    set(compile ${CMAKE_CXX_COMPILER} -x c++ ${_salt_syntax_flags})
+    set(label "lang:CXX")
+  elseif(_salt_test_flang)
+    # Flang 19 predefines macros such as __flang__ only with -cpp
+    set(compile ${_salt_test_flang} -cpp -x f95-cpp-input)
+    if(ext MATCHES "^\\.([fF]|for|FOR|ftn|FTN|f77|fpp|FPP)$")
+      list(APPEND compile -ffixed-form)
+    endif()
+    set(label "lang:Fortran")
+  else()
+    return()
+  endif()
+  add_test(NAME syntax_${test}
+    COMMAND ${compile} -fsyntax-only -I${dir} ${ARG_FLAGS} ${ARG_UNPARSED_ARGUMENTS})
+  set_property(TEST ${test} APPEND PROPERTY FIXTURES_SETUP ${test})
+  get_test_property(${test} WORKING_DIRECTORY wd)
+  set_tests_properties(syntax_${test} PROPERTIES
+    FIXTURES_REQUIRED ${test}
+    LABELS "${label};phase:compile")
+  if(wd)
+    set_tests_properties(syntax_${test} PROPERTIES WORKING_DIRECTORY ${wd})
+  endif()
+endfunction()
+# The stand-in must be what tests/stub/update-profiler-stub writes from
+# the headers of TAU. The test fails when the stand-in has no
+# TAU_VERSION, and skips when TAU has a different TAU_VERSION.
+if(HAVE_TAU)
+  add_test(NAME profiler_stub_current
+    COMMAND sh -c "stub=$1/Profile/Profiler.h
+      version=$(grep '^#define TAU_VERSION ' \"$stub\") ||
+        { echo \"Expected TAU_VERSION in $stub\"; exit 1; }
+      tau=$(grep '^#define TAU_VERSION ' \"$0/TAU.h\")
+      [ \"$tau\" = \"$version\" ] ||
+        { echo \"Skipped: the stand-in is not of this TAU: $tau\"; exit 77; }
+      \"$1/update-profiler-stub\" \"$0\" > profiler_stub.h &&
+        diff -u \"$stub\" profiler_stub.h"
+      ${_salt_tau_include_dir} ${CMAKE_SOURCE_DIR}/tests/stub)
+  set_tests_properties(profiler_stub_current PROPERTIES
+    SKIP_RETURN_CODE 77
+    LABELS "phase:check")
+  _salt_in_test_output(instrument profiler_stub_current)
+endif()
+# A failed run of tests/stub/update-profiler-stub prints nothing, so it
+# leaves no partial stand-in.
+add_test(NAME profiler_stub_error
+  COMMAND sh -c "out=$(\"$0\" /nonexistent) && exit 1
+    [ -z \"$out\" ] || { echo \"Expected no output, got:\"; echo \"$out\"; exit 1; }"
+    ${CMAKE_SOURCE_DIR}/tests/stub/update-profiler-stub)
+set_tests_properties(profiler_stub_error PROPERTIES LABELS "phase:check")
+
 # Test label helpers. Labels are grouped by key:value so "Label Time
 # Summary" buckets meaningfully and `ctest -L "^lang:"` (etc.) filters
 # by dimension.
@@ -1007,9 +1097,9 @@ foreach(script IN LISTS _salt_common_scripts)
 endforeach()
 
 # Map an entry from TESTS_LIST to a saltfm parser test (with a follow-up
-# check that the .inst file was emitted). Optional second argument overrides
-# the derived test name; passing it is somewhat fragile and likely more
-# trouble than it's worth.
+# check that the .inst file was emitted, and a compile of it). Optional
+# second argument overrides the derived test name; passing it is
+# somewhat fragile and likely more trouble than it's worth.
 function(add_instrumentor_test test_src)
   get_filename_component(test_base_name ${test_src} NAME_WE)
   set(test_name "instrument_${test_base_name}")
@@ -1046,6 +1136,7 @@ function(add_instrumentor_test test_src)
     PASS_REGULAR_EXPRESSION "TAU_PROFILE_SET_NODE"
   )
   _salt_in_test_output(instrument ${test_name} ${test_name}_exists)
+  _salt_add_syntax_test(${test_name} ${test_src} ${test_base_name}.inst${test_lang})
 endfunction()
 
 foreach(test_source IN LISTS TESTS_LIST)
@@ -1180,6 +1271,7 @@ foreach(kind dot bare)
     PASS_REGULAR_EXPRESSION "keep_routine[(]void[)] +\\[\\{"
     FAIL_REGULAR_EXPRESSION "header_routine[(]void[)] +\\[\\{"
   )
+  _salt_add_syntax_test(instrument_rel_path_${kind} rel_path.c ${_out})
 endforeach()
 # A source whose path has braces, as the timer names around it do, gets
 # its timers and main's setup code.
@@ -1203,6 +1295,7 @@ set_tests_properties(check_brace_path
   PASS_REGULAR_EXPRESSION
     "TAU_PROFILE_TIMER[^\n]*keep_routine[^\n]*/brace[{]d[}][.]c[}] [{]3,.*TAU_PROFILE_SET_NODE"
 )
+_salt_add_syntax_test(instrument_brace_path ${_src} ${_out})
 
 _salt_in_test_output(instrument
   check_forward_decl_skips_bodyless check_pure_virtual_skips_bodyless
@@ -1210,6 +1303,10 @@ _salt_in_test_output(instrument
   instrument_inline_on check_inline_on_instruments_method
   check_inline_on_instruments_free_fn
   check_inline_on_instruments_declared_then_inline)
+foreach(flag off on)
+  _salt_add_syntax_test(instrument_inline_${flag} instrument_inline.cpp
+    instrument_inline_${flag}.inst.cpp)
+endforeach()
 
 # saltfm must fail with an error naming its output file when it cannot
 # write it. These failures hit root too, so the tests run in CI's
@@ -1360,9 +1457,12 @@ _salt_in_test_output(output_error make_clang_error_outputs)
 # COPY_OF `fixture` (relative to tests/) instead expects the error that
 # `out`, a copy of the fixture that is also `src` or another input, is
 # an input file, and `out` unchanged.
+# With EXIT_ZERO, syntax_<name> also compiles `out`, with the
+# SYNTAX_FLAGS, unless NO_SYNTAX.
 function(_salt_add_clang_error_test name out labels src)
-  cmake_parse_arguments(PARSE_ARGV 4 ARG "EXIT_ZERO;NOT_ROOT;SPACE;DEFAULT_OUTPUT"
-    "CHECK;COPY_OF" "ARGS;TAIL;LOG;NOT_LOG;OUT")
+  cmake_parse_arguments(PARSE_ARGV 4 ARG
+    "EXIT_ZERO;NOT_ROOT;SPACE;DEFAULT_OUTPUT;NO_SYNTAX"
+    "CHECK;COPY_OF" "ARGS;TAIL;LOG;NOT_LOG;OUT;SYNTAX_FLAGS")
   set(out_args --tau_output=${out})
   if(ARG_SPACE)
     set(out_args --tau_output ${out})
@@ -1417,6 +1517,9 @@ function(_salt_add_clang_error_test name out labels src)
     SKIP_RETURN_CODE 77
     LABELS "${labels};phase:instrument")
   _salt_in_test_output(output_error ${name})
+  if(ARG_EXIT_ZERO AND NOT ARG_NO_SYNTAX)
+    _salt_add_syntax_test(${name} ${src} ${out} FLAGS ${ARG_SYNTAX_FLAGS})
+  endif()
 endfunction()
 foreach(out IN ITEMS new old)
   _salt_add_clang_error_test(clang_error_${out}_output
@@ -1445,7 +1548,7 @@ _salt_add_clang_error_test(clang_error_ro_output clang_error_ro.inst.c
 # saltfm writes a device output such as /dev/null directly: a rename
 # onto it fails, or, as root, replaces the device.
 _salt_add_clang_error_test(dev_null_c /dev/null "lang:C" hello.c EXIT_ZERO
-  CHECK "-c /dev/null")
+  CHECK "-c /dev/null" NO_SYNTAX)
 # With more than one source, --tau_output is an error before a parse,
 # which would report the errors in clang_error.c.
 _salt_add_clang_error_test(multi_source_one_output multi_source_one.inst.c
@@ -1497,8 +1600,10 @@ _salt_add_o_form_tests(c "lang:C" hello.c .out)
 # Adds temp_output_<lang>: saltfm with umask 022, run in the setup's
 # empty directory temp_output_<lang> on the sources in ARGN, must exit
 # with status 0 and leave only their default outputs `outs`, each with
-# mode 0644 and a timer, and no temporary file.
+# mode 0644 and a timer, and no temporary file. syntax_temp_output_<lang>
+# compiles them.
 function(_salt_add_temp_output_test lang labels outs)
+  list(TRANSFORM outs PREPEND temp_output_${lang}/ OUTPUT_VARIABLE files)
   string(REPLACE ";" " " outs "${outs}")
   add_test(NAME temp_output_${lang}
     COMMAND sh -c "cd temp_output_${lang} && umask 022 && \"$0\" \"$@\" || exit 1
@@ -1515,6 +1620,8 @@ function(_salt_add_temp_output_test lang labels outs)
     FIXTURES_REQUIRED clang_error_outputs
     LABELS "${labels};phase:instrument")
   _salt_in_test_output(output_error temp_output_${lang})
+  list(GET ARGN 0 src)
+  _salt_add_syntax_test(temp_output_${lang} ${src} ${files})
 endfunction()
 _salt_add_temp_output_test(c "lang:C" "hello.inst.c;sif_nomain.inst.c"
   ${CMAKE_SOURCE_DIR}/tests/hello.c ${CMAKE_SOURCE_DIR}/tests/sif_nomain.c)
@@ -1556,7 +1663,8 @@ _salt_add_write_error_test(write_error_percent_c "lang:C"
   ${CMAKE_SOURCE_DIR}/tests/hello.c a%2Fb/write_error.inst.c)
 # Run, as when instrumenting outside the build, with no -I for the
 # missing header: without --tau_allow_parse_errors, saltfm fails; with
-# it, it warns and instruments the partial parse tree Clang builds.
+# it, it warns and instruments the partial parse tree Clang builds, whose
+# output does not compile either.
 _salt_add_clang_error_test(missing_header_fails missing_header_fails.inst.c
   "lang:C" missing_header.c LOG "'grid_c.h' file not found")
 set(_allow_warning
@@ -1565,11 +1673,12 @@ set(_allow_warning
 set(_c_timers "void scale(int, int *)" "int count(int)")
 _salt_add_clang_error_test(allow_parse_errors_c allow_parse_errors_c.inst.c
   "lang:C" missing_header.c EXIT_ZERO CHECK "-s allow_parse_errors_c.inst.c"
-  ARGS --tau_allow_parse_errors LOG "${_allow_warning}" OUT ${_c_timers})
+  ARGS --tau_allow_parse_errors LOG "${_allow_warning}" OUT ${_c_timers}
+  NO_SYNTAX)
 _salt_add_clang_error_test(allow_parse_errors_env
   allow_parse_errors_env.inst.c "lang:C" missing_header.c EXIT_ZERO
   CHECK "-s allow_parse_errors_env.inst.c"
-  LOG "${_allow_warning}" OUT ${_c_timers})
+  LOG "${_allow_warning}" OUT ${_c_timers} NO_SYNTAX)
 set_property(TEST allow_parse_errors_env APPEND
   PROPERTY ENVIRONMENT "SALT_ALLOW_PARSE_ERRORS=1")
 # As `cd <dir>; saltfm <file>` does: the default output in the source's
@@ -1578,14 +1687,16 @@ _salt_add_clang_error_test(allow_parse_errors_default_output
   missing_header.inst.c "lang:C"
   ${SALT_TEST_OUTPUT_DIR}/output_error/missing_header.c DEFAULT_OUTPUT
   EXIT_ZERO CHECK "-s missing_header.inst.c"
-  ARGS --tau_allow_parse_errors LOG "${_allow_warning}" OUT ${_c_timers})
+  ARGS --tau_allow_parse_errors LOG "${_allow_warning}" OUT ${_c_timers}
+  NO_SYNTAX)
 _salt_add_clang_error_test(allow_parse_errors_cxx_fabricate
   allow_parse_errors_cxx.inst.cpp "lang:CXX;fabricate" missing_header.cpp
   EXIT_ZERO CHECK "-s allow_parse_errors_cxx.inst.cpp"
   ARGS --tau_allow_parse_errors --tau_fabricate_unknown_types
   LOG "${_allow_warning}"
   OUT "scale(RealD, ComplexD &)" "int count(int)"
-  "computeOmega(std::vector<ComplexD> &, const int, const std::vector<RealD> &, const int)")
+  "computeOmega(std::vector<ComplexD> &, const int, const std::vector<RealD> &, const int)"
+  NO_SYNTAX)
 # A source that does not exist gives nothing to instrument, so saltfm
 # must fail and leave no output for TAU's compiler wrapper to compile.
 _salt_add_clang_error_test(allow_parse_errors_missing_input
@@ -1847,11 +1958,13 @@ _salt_add_config_error_test(list_instrumentation_c "lang:C" hello.c
 # run needs no `_scope` keys without --tau_use_cxx_api, no
 # main_setup_insert, and no `Fortran` section, which the NVTX and ROCTX
 # configuration files lack (main_excluded_<cfg>_c covers perfstubs and
-# ITT).
+# ITT). Without the include, or with the headers of NVTX and ROCTX, the
+# outputs do not compile here.
 foreach(name empty_include null_include)
   _salt_add_clang_error_test(config_ok_${name}_c config_ok_${name}_c.out
     "lang:C" hello.c EXIT_ZERO CHECK "-s config_ok_${name}_c.out"
-    ARGS --config_file=${_config_errors}/${name}.yaml LOG "Instrumentation: TAU")
+    ARGS --config_file=${_config_errors}/${name}.yaml LOG "Instrumentation: TAU"
+    NO_SYNTAX)
 endforeach()
 # A YAML alias gives the value of its anchor.
 _salt_add_clang_error_test(config_ok_alias_include_c
@@ -1890,7 +2003,7 @@ foreach(cfg nvtx roctx)
   _salt_add_clang_error_test(config_ok_${cfg}_c config_ok_${cfg}_c.out
     "lang:C" hello.c EXIT_ZERO CHECK "-s config_ok_${cfg}_c.out"
     ARGS --config_file=${CMAKE_SOURCE_DIR}/config_files/${cfg}_config.yaml
-    LOG "Instrumentation: ${_name}")
+    LOG "Instrumentation: ${_name}" NO_SYNTAX)
 endforeach()
 
 # Selective Instrumentation File (SIF) tests.
@@ -1937,6 +2050,8 @@ endfunction()
 # against the optional WARNINGS (see _sif_set_warning_checks). The optional
 # CONFIG names a configuration file relative to the source directory, and
 # the optional ARGS are extra instrumentor options.
+# syntax_instrument_sif_<test_name> compiles the output, without CONFIG
+# or for Fortran.
 function(add_sif_test test_name lang src sif)
   cmake_parse_arguments(PARSE_ARGV 4 ARG "" "CONFIG" "WARNINGS;ARGS")
   set(name sif_${test_name})
@@ -2003,6 +2118,10 @@ function(add_sif_test test_name lang src sif)
   )
   _salt_in_test_output(sif
     rm_old_${name}_output instrument_${name} check_${name} warn_${name})
+  # The C and C++ calls of the other configuration files are not TAU's
+  if(NOT ARG_CONFIG OR lang STREQUAL "fortran")
+    _salt_add_syntax_test(instrument_${name} ${CMAKE_SOURCE_DIR}/${src} ${out_file})
+  endif()
 endfunction()
 
 # SIF test where the instrumentor is expected NOT to instrument the source
@@ -2945,8 +3064,9 @@ _salt_add_clang_error_test(parse_error_file_c parse_error_file.inst.c
 # line_escape_<name>: tests/check_line_escape.cmake on `src` (relative
 # to tests/) as a .`ext` file, compiled and run with
 # tests/line_escape.yaml, or with TAU, checked as text with the default
-# configuration file. With EXCLUDED, the file lists exclude it. ARGN are
-# more -D options of the script.
+# configuration file and compiled by syntax_line_escape_<name>. With
+# EXCLUDED, the file lists exclude it. ARGN are more -D options of the
+# script.
 function(_salt_add_line_escape_test name ext src)
   cmake_parse_arguments(PARSE_ARGV 3 ARG "TAU;EXCLUDED" "" "")
   set(compiler ${CMAKE_C_COMPILER})
@@ -2975,6 +3095,11 @@ function(_salt_add_line_escape_test name ext src)
   set_tests_properties(line_escape_${name} PROPERTIES
     LABELS "${lang_label};phase:run")
   _salt_in_test_output(instrument line_escape_${name})
+  if(ARG_TAU)
+    # The source path names only the language and the include directory
+    _salt_add_syntax_test(line_escape_${name} line_escape.${ext}
+      line_escape_${name}/line_escape.inst.${ext})
+  endif()
 endfunction()
 foreach(ext c cpp)
   _salt_add_line_escape_test(instrumented_${ext} ${ext} line_escape.c)
@@ -3534,11 +3659,11 @@ add_fabricate_test(c_control fabricate_control.c ON
 _salt_add_clang_error_test(fabricate_canary canary.fab.inst.cpp
   "lang:CXX;fabricate" fabricate_case1.cpp)
 # With the flag, the same Clang errors are expected: exit 0, the
-# warning, and output.
+# warning, and output, which does not compile either.
 _salt_add_clang_error_test(fabricate_on_exit_zero fabricate_on.inst.cpp
   "lang:CXX;fabricate" fabricate_case1.cpp EXIT_ZERO
   CHECK "-s fabricate_on.inst.cpp" ARGS --tau_fabricate_unknown_types
-  LOG "${_allow_warning}")
+  LOG "${_allow_warning}" NO_SYNTAX)
 
 add_test(NAME instrument_fabricate_env
   COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
@@ -4099,6 +4224,11 @@ if(TEST_FORTRAN)
       PASS_REGULAR_EXPRESSION "SALT Instrumentor Plugin finished"
     )
     _salt_in_test_output(instrument instrument_${test_source})
+    get_filename_component(_base ${test_source} NAME_WLE)
+    get_filename_component(_ext ${test_source} LAST_EXT)
+    string(TOUPPER ${_ext} _ext)
+    _salt_add_syntax_test(instrument_${test_source} fortran/${test_source}
+      ${_base}.inst${_ext})
   endforeach()
 
   add_test(NAME check-internal-func.f90
@@ -4305,6 +4435,8 @@ if(TEST_FORTRAN)
     )
     _salt_in_test_output(instrument
       instrument_${test_source} check_no_tau_${test_source})
+    _salt_add_syntax_test(instrument_${test_source} fortran/${test_source}
+      ${_inst_output})
   endforeach()
 
   # OpenMP constructs opening a procedure body: with -fopenmp the
@@ -4330,6 +4462,8 @@ if(TEST_FORTRAN)
       FAIL_REGULAR_EXPRESSION "ERROR:"
     )
     _salt_in_test_output(instrument instrument_${src})
+    _salt_add_syntax_test(instrument_${src} fortran/${src} ${_base}.inst.F90
+      FLAGS -fopenmp)
     foreach(directive IN LISTS ARGN)
       string(REPLACE " " "_" _name "${directive}")
       string(CONCAT _start_above_directive
@@ -4649,6 +4783,16 @@ if(TEST_FORTRAN)
   # written
   _salt_add_fortran_names_test(implicit_backslash ${_implicit}
     [[-DSTEM=a\\b]])
+  # Flang compiles the outputs that gfortran does not, but those with a
+  # `"` in a `#line` directive
+  set(_names line_instrumented line_excluded)
+  if(NOT SALT_GFORTRAN)
+    list(APPEND _names dollar implicit_apostrophe implicit_backslash)
+  endif()
+  foreach(name IN LISTS _names)
+    _salt_add_syntax_test(fortran_names_${name} fortran/line_escape.f90
+      fortran_names_${name}/line_escape.inst.F90)
+  endforeach()
   # A byte that is not valid in the locale's encoding, here Latin-1 in
   # UTF-8, does not hide the module.
   _salt_add_excluded_test(mod_latin1 excluded_mod_latin1.f90
@@ -4833,11 +4977,19 @@ if(TEST_FORTRAN)
   # Adds test `name`: _salt_add_clang_error_test on tests/fortran/`src`
   # with the ARGS, LOG, and NOT_LOG, and SALT_BUILD_USES_SALT_FLANG
   # unset. It must write the output with a timer and exit with status 0,
-  # or with FAILS, write no output.
+  # or with FAILS, write no output. The output compiles with the flags of
+  # ARGS that are not saltfm's, but -fdefault-double-8 only with
+  # -fdefault-real-8, as Flang refuses it alone.
   function(_salt_add_fortran_flags_test name src)
     cmake_parse_arguments(PARSE_ARGV 2 ARG "FAILS" "" "ARGS;LOG;NOT_LOG")
     set(out ${name}.inst.F90)
-    set(expect EXIT_ZERO CHECK "-s ${out}" OUT "TAU_PROFILE_START")
+    set(flags ${ARG_ARGS})
+    list(FILTER flags EXCLUDE REGEX "^--")
+    if(NOT "-fdefault-real-8" IN_LIST flags)
+      list(REMOVE_ITEM flags -fdefault-double-8)
+    endif()
+    set(expect EXIT_ZERO CHECK "-s ${out}" OUT "TAU_PROFILE_START"
+      SYNTAX_FLAGS ${flags})
     if(ARG_FAILS)
       set(expect "")
     endif()
@@ -5081,7 +5233,7 @@ if(TEST_FORTRAN)
     CHECK "-f fortran_error_ro.inst.F90 -a ! -w fortran_error_ro.inst.F90"
     LOG "ERROR: Could not open output file fortran_error_ro.inst.F90" OUT stale)
   _salt_add_clang_error_test(dev_null_fortran /dev/null "lang:Fortran"
-    fortran/hello.f90 EXIT_ZERO CHECK "-c /dev/null")
+    fortran/hello.f90 EXIT_ZERO CHECK "-c /dev/null" NO_SYNTAX)
   # As for C: more than one source with --tau_output is an error before
   # Flang runs, and -o names the output, but not after `--`.
   _salt_add_clang_error_test(multi_source_one_output_fortran
@@ -5159,7 +5311,7 @@ if(TEST_FORTRAN)
     CHECK "! -e multi_source_no_output_a.inst.F90 -a ! -e multi_source_no_output_b.inst.F"
     ARGS --version
     TAIL ${SALT_TEST_OUTPUT_DIR}/output_error/multi_source_no_output_b.f
-    LOG "SALT-FM Version")
+    LOG "SALT-FM Version" NO_SYNTAX)
   _salt_add_clang_error_test(o_before_source_fortran
     o_before_source_fortran.inst.F90 "lang:Fortran" fortran/hello.f90
     DEFAULT_OUTPUT EXIT_ZERO CHECK "-s o_before_source_fortran.inst.F90"
@@ -5244,6 +5396,8 @@ if(TEST_FORTRAN)
     FIXTURES_REQUIRED clang_error_outputs
     LABELS "lang:Fortran;phase:instrument")
   _salt_in_test_output(output_error stdout_output_fortran)
+  # The output is not compiled, as fparse-llvm writes its messages to
+  # standard output too.
   # The wrapper's own early exits must not leave a stale output either.
   _salt_add_clang_error_test(fortran_early_exit_output
     fortran_early_exit.inst.F90 "lang:Fortran" fortran/hello.f90
@@ -5289,6 +5443,8 @@ if(TEST_FORTRAN)
       FIXTURES_REQUIRED clang_error_outputs
       LABELS "lang:Fortran;phase:instrument")
     _salt_in_test_output(output_error fortran_plugin_default_output)
+    _salt_add_syntax_test(fortran_plugin_default_output fortran/hello.f90
+      plugin_default.inst.F90)
   endif()
   # The second `--tau_output` is the selective instrumentation file, so the
   # source after it is an input that saltfm must refuse to overwrite.
