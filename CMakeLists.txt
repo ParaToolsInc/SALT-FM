@@ -975,6 +975,13 @@ function(_salt_add_syntax_test test src)
   endif()
   add_test(NAME syntax_${test}
     COMMAND ${compile} -fsyntax-only -I${dir} ${ARG_FLAGS} ${ARG_UNPARSED_ARGUMENTS})
+  # Test `test` sets up the fixture of its own name here, next to the
+  # compile that requires it, so that no caller can leave it out. Most
+  # callers rely on this, as their tests set up no fixture of that name:
+  # those of _salt_add_clang_error_test, add_sif_test,
+  # _salt_add_temp_output_test, and _salt_add_line_escape_test, the
+  # rel_path, brace_path, and fortran_names tests, and
+  # stdout_output_fortran and fortran_plugin_default_output.
   set_property(TEST ${test} APPEND PROPERTY FIXTURES_SETUP ${test})
   get_test_property(${test} WORKING_DIRECTORY wd)
   set_tests_properties(syntax_${test} PROPERTIES
