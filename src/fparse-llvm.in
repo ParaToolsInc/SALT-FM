@@ -671,8 +671,9 @@ function run_flang {
         run_cmd
         return
     fi
-    # Flang's errors, to add a hint after them when it refuses a module
-    # file of the build; the plugin's output still goes to stdout
+    # Flang's errors and the plugin's messages, to add a hint after them
+    # when Flang refuses a module file of the build; the instrumented
+    # source of `-o -` still goes to stdout
     local errors status=0
     { errors="$(run_cmd 2>&1 1>&3 3>&-)" || status=$?; } 3>&1
     if [[ -n ${errors} ]]; then
