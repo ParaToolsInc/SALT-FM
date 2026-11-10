@@ -6,8 +6,8 @@
 //          exits with 0 if the file lists include <source>, 1 if they
 //          exclude it, or 2 after an error
 //        salt-selectfile --copy <source> <output>
-//          writes `#line 1 "<source>"` and then <source> to <output>;
-//          exits with 0, or 2 after an error
+//          writes `#line 1 "<source>"` and then <source> to <output>, or
+//          to standard output for `-`; exits with 0, or 2 after an error
 #include <cstdio>
 #include <cstring>
 

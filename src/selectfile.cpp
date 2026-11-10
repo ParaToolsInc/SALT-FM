@@ -935,19 +935,29 @@ bool copySource(const std::string &source, const std::string &output,
   if (ioFailed(!in.is_open(), "open input file", source)) {
     return false;
   }
-  const std::optional<std::string> write_name = openOutput(output);
+  /* `-` is standard output, as for the Flang plugin */
+  const bool to_stdout = output == "-";
+  const std::optional<std::string> write_name = to_stdout ? output : openOutput(output);
   if (!write_name) {
     return false;
   }
-  std::ofstream out(*write_name);
-  if (ioFailed(!out.is_open(), "open output file", output)) {
-    return false;
+  std::ofstream file;
+  if (!to_stdout) {
+    file.open(*write_name);
+    if (ioFailed(!file.is_open(), "open output file", output)) {
+      return false;
+    }
   }
+  std::ostream &out = to_stdout ? std::cout : file;
   out << "#line 1 \"" << line_name << "\"\n";
   /* Copying an empty rdbuf() sets failbit, so copy only a non-empty file */
   if (in.peek() != std::ifstream::traits_type::eof()) {
     out << in.rdbuf();
   }
-  out.close();
+  if (to_stdout) {
+    out.flush();
+  } else {
+    file.close();
+  }
   return !ioFailed(!out, "write output file", output);
 }

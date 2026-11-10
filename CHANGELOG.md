@@ -98,6 +98,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instrumented source.
 - For Fortran, `--tau_output=-` no longer stops on a failed assertion
   when LLVM is built with assertions.
+- With `--tau_output=-`, a source that the file lists of a selective
+  instrumentation file exclude is copied to standard output. Before,
+  the copy went to a file named `-`.
 
 ## [0.6.0] - 2026-10-26
 

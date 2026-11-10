@@ -981,8 +981,8 @@ function(_salt_add_syntax_test test src)
   # those of _salt_add_clang_error_test, add_sif_test,
   # _salt_add_temp_output_test, and _salt_add_line_escape_test, the
   # rel_path, brace_path, and fortran_names tests, and
-  # stdout_output_fortran, stdout_output_fortran_verbose, and
-  # fortran_plugin_default_output.
+  # stdout_output_fortran, stdout_output_fortran_verbose,
+  # stdout_output_fortran_copy, and fortran_plugin_default_output.
   set_property(TEST ${test} APPEND PROPERTY FIXTURES_SETUP ${test})
   get_test_property(${test} WORKING_DIRECTORY wd)
   set_tests_properties(syntax_${test} PROPERTIES
@@ -1390,12 +1390,12 @@ add_test(NAME make_clang_error_outputs
     mkdir temp_output_c temp_output_fortran temp%output &&
     rm -rf write_error_c write_error_fortran write_error_fortran_copy &&
     mkdir write_error_c write_error_fortran write_error_fortran_copy &&
-    rm -rf write_error_stdout_fortran &&
-    mkdir write_error_stdout_fortran &&
+    rm -rf write_error_stdout_fortran write_error_stdout_fortran_copy &&
+    mkdir write_error_stdout_fortran write_error_stdout_fortran_copy &&
     rm -rf write_error_percent_c write_error_percent_fortran &&
     mkdir -p write_error_percent_c/a%2Fb write_error_percent_fortran/a%2Fb &&
-    rm -rf stdout_output_fortran plugin_default_cwd &&
-    mkdir stdout_output_fortran plugin_default_cwd &&
+    rm -rf stdout_output_fortran stdout_output_fortran_copy plugin_default_cwd &&
+    mkdir stdout_output_fortran stdout_output_fortran_copy plugin_default_cwd &&
     cp ${_tests}/missing_header.c missing_header.c &&
     rm -rf clang_error_dir.inst.c fortran_error_dir.inst.F90 &&
     mkdir clang_error_dir.inst.c fortran_error_dir.inst.F90 &&
@@ -5397,9 +5397,13 @@ if(TEST_FORTRAN)
   _salt_add_write_error_test(write_error_fortran_copy "lang:Fortran;sif"
     ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90 write_error.inst.F90
     --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau)
-  # The plugin's write to a closed standard output
+  # The write to a closed standard output, by the plugin and by the copy
+  # of a source that the file lists exclude
   _salt_add_write_error_test(write_error_stdout_fortran "lang:Fortran"
     ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90 -)
+  _salt_add_write_error_test(write_error_stdout_fortran_copy
+    "lang:Fortran;sif" ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90 -
+    --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau)
   # With --tau_output=-, the output goes to standard output, as Flang
   # writes it for `-o -`, and no file is made, not even the build output
   # after `--`. The build flags make fparse-llvm print each of its
@@ -5440,6 +5444,23 @@ if(TEST_FORTRAN)
   _salt_in_test_output(output_error stdout_output_fortran_verbose)
   _salt_add_syntax_test(stdout_output_fortran_verbose fortran/hello.f90
     stdout_output_fortran_verbose.log)
+  # A source that the file lists exclude is copied, after a `#line`
+  # directive, to standard output too, and to no file named `-`.
+  add_test(NAME stdout_output_fortran_copy
+    COMMAND sh -c "src=${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90
+      cd stdout_output_fortran_copy &&
+      \"$0\" \"$@\" \"$src\" > ../stdout_output_fortran_copy.log &&
+      tail -n +2 ../stdout_output_fortran_copy.log | cmp -s - \"$src\" &&
+      [ -z \"$(ls)\" ] ||
+        { echo 'Expected the copy on stdout and no file:'; ls; exit 1; }"
+      ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --tau_output=-
+      --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau)
+  set_tests_properties(stdout_output_fortran_copy PROPERTIES
+    FIXTURES_REQUIRED clang_error_outputs
+    LABELS "lang:Fortran;phase:instrument;sif")
+  _salt_in_test_output(output_error stdout_output_fortran_copy)
+  _salt_add_syntax_test(stdout_output_fortran_copy fortran/hello.f90
+    stdout_output_fortran_copy.log)
   # --show prints the environment and the command of Flang on standard
   # output, as they are its output, not messages.
   add_test(NAME saltfm_show_stdout

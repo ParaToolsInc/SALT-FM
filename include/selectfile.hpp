@@ -116,7 +116,8 @@ std::string ReplacePhrase(std::string str, const std::string &phrase,
    source. `line_name` is `source` as the language reads it: escaped for
    a C or C++ string literal, or as written for Fortran, since Flang and
    ifx read the name of a Fortran `#line` line as written. Writes
-   through openOutput(), so keepOutputs() must follow.
+   through openOutput(), so keepOutputs() must follow, or, for an
+   `output` of `-`, to standard output.
    Returns false after an error message that names the file. */
 bool copySource(const std::string &source, const std::string &output,
                 const std::string &line_name);
