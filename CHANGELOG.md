@@ -96,6 +96,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--tau_output=-`, Flang stopped with
   `LLVM ERROR: IO failure on output stream` after it wrote the
   instrumented source.
+- For Fortran, `--tau_output=-` no longer stops on a failed assertion
+  when LLVM is built with assertions.
 
 ## [0.6.0] - 2026-10-26
 

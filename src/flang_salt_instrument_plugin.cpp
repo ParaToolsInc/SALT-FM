@@ -1409,7 +1409,13 @@ namespace salt::fortran {
                                                               : form == FortranForm::FixedForm};
             instrumentFile(*inputFile, inputStream, outputStream, visitor, instMap, fixedForm);
 
-            outputStream.close();
+            // close() must not run on standard output: it asserts that the
+            // stream may close its descriptor, and without assertions closes it
+            if (outputPath == "-") {
+                outputStream.flush();
+            } else {
+                outputStream.close();
+            }
             if (outputStream.has_error()) {
                 llvm::errs() << "ERROR: Could not write output file " << outputPath << ": "
                         << outputStream.error().message() << "\n";

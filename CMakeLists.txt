@@ -1390,6 +1390,8 @@ add_test(NAME make_clang_error_outputs
     mkdir temp_output_c temp_output_fortran temp%output &&
     rm -rf write_error_c write_error_fortran write_error_fortran_copy &&
     mkdir write_error_c write_error_fortran write_error_fortran_copy &&
+    rm -rf write_error_stdout_fortran &&
+    mkdir write_error_stdout_fortran &&
     rm -rf write_error_percent_c write_error_percent_fortran &&
     mkdir -p write_error_percent_c/a%2Fb write_error_percent_fortran/a%2Fb &&
     rm -rf stdout_output_fortran plugin_default_cwd &&
@@ -1645,11 +1647,16 @@ _salt_add_clang_error_test(percent_dir_output_c temp%output/hello.inst.c
 # ignored so that the write fails instead of killing saltfm), must exit
 # with a status from 1 to 127 and an error naming `out`, and leave no
 # file. LLVM's SIGXFSZ handler removes the temporary file itself, so
-# these tests pass without the removal at exit too.
+# these tests pass without the removal at exit too. For an `out` of `-`,
+# standard output is closed instead, and no file may be named `-`.
 function(_salt_add_write_error_test name labels src out)
+  set(run "trap '' XFSZ; ulimit -f 0; exec \"$0\" \"$@\"")
+  if(out STREQUAL "-")
+    set(run "exec \"$0\" \"$@\" >&-")
+  endif()
   add_test(NAME ${name}
     COMMAND sh -c "cd ${name} || exit 1
-      log=$( (trap '' XFSZ; ulimit -f 0; exec \"$0\" \"$@\") 2>&1 ); rc=$?
+      log=$( (${run}) 2>&1 ); rc=$?
       echo \"$log\"
       [ $rc -ge 1 ] && [ $rc -le 127 ] ||
         { echo \"Expected an exit status from 1 to 127, got $rc\"; exit 1; }
@@ -5390,6 +5397,9 @@ if(TEST_FORTRAN)
   _salt_add_write_error_test(write_error_fortran_copy "lang:Fortran;sif"
     ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90 write_error.inst.F90
     --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/file_exclude_all.tau)
+  # The plugin's write to a closed standard output
+  _salt_add_write_error_test(write_error_stdout_fortran "lang:Fortran"
+    ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90 -)
   # With --tau_output=-, the output goes to standard output, as Flang
   # writes it for `-o -`, and no file is made, not even the build output
   # after `--`. The build flags make fparse-llvm print each of its
