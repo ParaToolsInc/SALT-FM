@@ -91,6 +91,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--tau_output=-`, they came before the instrumented source there,
   which then did not compile. `--show` still prints the command and
   its environment on standard output.
+- With `SALT_FORTRAN_VERBOSE` on, the Flang plugin prints its messages
+  on standard error too. Before, they went to standard output, so with
+  `--tau_output=-`, Flang stopped with
+  `LLVM ERROR: IO failure on output stream` after it wrote the
+  instrumented source.
 
 ## [0.6.0] - 2026-10-26
 

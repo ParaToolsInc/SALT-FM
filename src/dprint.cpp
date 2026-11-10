@@ -23,7 +23,7 @@ void salt::enableVerbose() {
 
 llvm::raw_ostream & salt::verboseStream() {
     if (verboseEnabled) {
-        return llvm::outs();
+        return llvm::errs();
     }
     return llvm::nulls();
 }

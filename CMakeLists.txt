@@ -981,7 +981,8 @@ function(_salt_add_syntax_test test src)
   # those of _salt_add_clang_error_test, add_sif_test,
   # _salt_add_temp_output_test, and _salt_add_line_escape_test, the
   # rel_path, brace_path, and fortran_names tests, and
-  # stdout_output_fortran and fortran_plugin_default_output.
+  # stdout_output_fortran, stdout_output_fortran_verbose, and
+  # fortran_plugin_default_output.
   set_property(TEST ${test} APPEND PROPERTY FIXTURES_SETUP ${test})
   get_test_property(${test} WORKING_DIRECTORY wd)
   set_tests_properties(syntax_${test} PROPERTIES
@@ -5409,6 +5410,26 @@ if(TEST_FORTRAN)
   _salt_in_test_output(output_error stdout_output_fortran)
   _salt_add_syntax_test(stdout_output_fortran fortran/hello.f90
     stdout_output_fortran.log)
+  # With SALT_FORTRAN_VERBOSE on, the plugin's messages go to standard
+  # error too, where the test looks for its last one, and standard
+  # output holds only the source, which
+  # syntax_stdout_output_fortran_verbose compiles.
+  add_test(NAME stdout_output_fortran_verbose
+    COMMAND sh -c "log=stdout_output_fortran_verbose
+      \"$0\" \"$@\" > $log.log 2> $log.err &&
+      grep -q 'SALT Instrumentor Plugin finished' $log.err &&
+      grep -q TAU_PROFILE_START $log.log &&
+      ! grep -q 'SALT Instrumentor' $log.log ||
+        { echo 'Expected the source on stdout, the messages on stderr:'
+          cat $log.log $log.err; exit 1; }"
+      ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --tau_output=-
+      ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+  set_tests_properties(stdout_output_fortran_verbose PROPERTIES
+    ENVIRONMENT "SALT_FORTRAN_VERBOSE=1"
+    LABELS "lang:Fortran;phase:instrument")
+  _salt_in_test_output(output_error stdout_output_fortran_verbose)
+  _salt_add_syntax_test(stdout_output_fortran_verbose fortran/hello.f90
+    stdout_output_fortran_verbose.log)
   # --show prints the environment and the command of Flang on standard
   # output, as they are its output, not messages.
   add_test(NAME saltfm_show_stdout
