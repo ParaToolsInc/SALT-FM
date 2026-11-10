@@ -2,3 +2,5 @@ reviews:
   profile: assertive
   auto_review:
     auto_pause_after_reviewed_commits: 0
+    # Review a PR when it opens; later rounds only on `@coderabbitai review`.
+    auto_incremental_review: false
