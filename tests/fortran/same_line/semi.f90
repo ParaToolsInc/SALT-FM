@@ -26,6 +26,20 @@ subroutine semi_after(x, y)
       ; ! c2
 end subroutine semi_after
 
+! The same with no label and a comment that starts with `!$`, after an
+! if-return and a `return`. On a line of its own, with -fopenmp, the
+! comment would be code, which here does not compile.
+subroutine semi_omp(x, y)
+    integer, intent(in) :: x
+    integer, intent(out) :: y
+    y = 5
+    if (x > 0) return &
+      ; !$ y = 99 +
+    y = 6
+    return &
+      ; !$ y = 98 +
+end subroutine semi_omp
+
 program main
     integer :: x, y
     do x = 0, 1
@@ -37,5 +51,9 @@ program main
     do x = 0, 1
         call semi_after(x, y)
         print *, 'semi_after', x, y
+    end do
+    do x = 0, 1
+        call semi_omp(x, y)
+        print *, 'semi_omp', x, y
     end do
 end program main
