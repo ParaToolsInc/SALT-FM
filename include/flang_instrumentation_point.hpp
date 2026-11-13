@@ -176,11 +176,11 @@ namespace salt::fortran {
     // a procedure, or without one its End statement, which replaces its
     // text in the input with the TAU stop-timer call and its text. The
     // statement spans the input from `start` to just before `end`, maybe over
-    // continuation lines. `next` is the first character of the statement
-    // after it on the same Fortran line, if any, so the output can put
-    // that statement on a line of its own, or else, when a `;` after it
-    // is on a later line, the character after the last `;`, so no line
-    // of the output starts with a `;`. With `label`, the label of the
+    // continuation lines, and through the last `;` after it when only `;`
+    // follow it up to a later line, so the output keeps those lines as
+    // written. `next` is the first character of the statement after it on
+    // the same Fortran line, if any, so the output can put that statement
+    // on a line of its own. With `label`, the label of the
     // statement, the label goes on a `continue` before the stop-timer
     // call, as labels are local to a procedure, so a branch to the
     // statement also stops the timer.

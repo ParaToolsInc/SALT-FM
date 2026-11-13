@@ -4378,8 +4378,9 @@ if(TEST_FORTRAN)
       -DCONFIG=${CMAKE_SOURCE_DIR}/tests/fortran/same_line/directive.yaml)
     # Fixed form, also a tab-format line, if-returns whose condition or
     # return expression would pass column 72 on one line, also with a
-    # character literal, and a `return` split at column 72, compiled with
-    # the default line length
+    # character literal, a `return` split at column 72, and a `;` on a
+    # continuation line after a return, compiled with the default line
+    # length
     _salt_add_fortran_same_line_test(fixed fixed.f)
     # An End statement on the line of other statements
     _salt_add_fortran_same_line_test(end_line end_line.f90)
@@ -4390,7 +4391,8 @@ if(TEST_FORTRAN)
     # whose host stops its timer directly before the `contains`
     _salt_add_fortran_same_line_test(contains contains.f90)
     # A statement before a return on a continuation line, after a `;`,
-    # also with CRLF line ends.
+    # and a `;` on a continuation line after a return, `contains`, or End
+    # statement, also with CRLF line ends.
     # With -fopenmp, a comment that starts an output line with `!$` is
     # code, which for the `!$` comments of these inputs does not compile.
     # gfortran checks it, as Flang 23 also reads a `!$` after code as code.
