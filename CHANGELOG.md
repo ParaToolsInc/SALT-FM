@@ -143,6 +143,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is on a continuation line, as in `10 return &` and then `; ! c2`, the
   output no longer starts a line with that `;`, which the Fortran
   standard does not allow. Flang and gfortran accepted it. A comment
+  after that `;`, as `! c2`, goes after the statement, since on a line
+  of its own a comment such as `!$ y = 1` is code with OpenMP. A comment
   after such a statement and a `;`, as `! continued` in
   `if (x > 0) return; & ! continued`, now stays on its line when the
   next statement is on a later line. Before, the output dropped it.

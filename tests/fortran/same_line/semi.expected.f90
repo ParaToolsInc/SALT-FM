@@ -45,10 +45,30 @@ subroutine semi_after(x, y)
     y = 4
    10 continue
       call TAU_PROFILE_STOP(tauProfileTimer)
-    return   ! c
-        ! c2
+    return   ! c ! c2
       call TAU_PROFILE_STOP(tauProfileTimer)
 end subroutine semi_after
+! The same with no label and a comment that starts with `!$`, after an
+! if-return and a `return`. On a line of its own, with -fopenmp, the
+! comment would be code, which here does not compile.
+subroutine semi_omp(x, y)
+    integer, intent(in) :: x
+    integer, intent(out) :: y
+      integer, save :: tauProfileTimer(2) = [0, 0]
+      call TAU_PROFILE_TIMER(tauProfileTimer, "&
+     &semi_omp [{fortran_same_line_semi.f90} {32,1}-{41,23}]&
+     &")
+      call TAU_PROFILE_START(tauProfileTimer)
+    y = 5
+    if (x > 0) then
+      call TAU_PROFILE_STOP(tauProfileTimer)
+               return !$ y = 99 +
+      end if
+    y = 6
+      call TAU_PROFILE_STOP(tauProfileTimer)
+    return !$ y = 98 +
+      call TAU_PROFILE_STOP(tauProfileTimer)
+end subroutine semi_omp
 program main
     integer :: x, y
       integer, save :: tauProfileTimer(2) = [0, 0]
@@ -57,7 +77,7 @@ program main
       call  TAU_PROFILE_SET_NODE(0)
 #endif
       call TAU_PROFILE_TIMER(tauProfileTimer, "&
-     &MAIN [{fortran_same_line_semi.f90} {29,1}-{41,16}]&
+     &MAIN [{fortran_same_line_semi.f90} {43,1}-{59,16}]&
      &")
       call TAU_PROFILE_START(tauProfileTimer)
     do x = 0, 1
@@ -69,6 +89,10 @@ program main
     do x = 0, 1
         call semi_after(x, y)
         print *, 'semi_after', x, y
+    end do
+    do x = 0, 1
+        call semi_omp(x, y)
+        print *, 'semi_omp', x, y
     end do
       call TAU_PROFILE_STOP(tauProfileTimer)
 end program main

@@ -1163,15 +1163,44 @@ namespace salt::fortran {
                 outputStream << blankBefore(lineText.substr(0, to.column - 1), from);
             };
 
+            // Line `line` of the input, without its line end
+            const auto inputLine = [&](const int line) {
+                const llvm::ArrayRef<char> content{inputFile.content()};
+                const std::size_t start{inputFile.GetLineStartOffset(line)};
+                return llvm::StringRef{content.data() + start, content.size() - start}.take_until(
+                    [](const char c) { return c == '\n'; });
+            };
+
+            // The index of the comment that is all that follows the last `;` after the
+            // statement of `pt`, on a later line, where `pt.next()` points after that
+            // `;`; npos without one
+            const auto laterComment = [&](const ReturnInstrumentationPoint &pt) {
+                const auto &next{pt.next()};
+                if (!next || next->line <= pt.end().line) {
+                    return std::string::npos;
+                }
+                const llvm::StringRef text{inputLine(next->line)};
+                const std::size_t comment{text.find_first_not_of(" \t", next->column - 1)};
+                return comment < text.size() && text[comment] == '!' ? comment : std::string::npos;
+            };
+
             // Writes the comment after the statement of `pt`, if nothing follows it on
-            // that line, in its columns on the current line, the statement's last line.
-            // On a line of its own, a comment such as `!$ y = 1` or `!$omp barrier`
-            // would be code or a directive in free form.
+            // that line, in its columns on the current line, the statement's last line,
+            // then the comment after the last `;` on a later line, if any, in its
+            // columns if they come later. On a line of its own, a comment such as
+            // `!$ y = 1` or `!$omp barrier` would be code or a directive in free form.
             const auto writeComment = [&](const ReturnInstrumentationPoint &pt) {
-                const std::size_t end{static_cast<std::size_t>(pt.end().column - 1)};
-                if (const std::size_t comment{lineText.find('!', end)};
+                std::size_t end{static_cast<std::size_t>(pt.end().column - 1)};
+                // Without a CR, which before a later comment would end the line for gfortran
+                const llvm::StringRef text{llvm::StringRef{lineText}.rtrim("\r")};
+                if (const std::size_t comment{text.find('!', end)};
                     (!pt.next() || pt.next()->line > pt.end().line) && comment != std::string::npos) {
-                    outputStream << blankBefore(lineText.substr(end), comment - end);
+                    outputStream << blankBefore(text.substr(end).str(), comment - end);
+                    end = text.size();
+                }
+                if (const std::size_t comment{laterComment(pt)}; comment != std::string::npos) {
+                    outputStream << std::string(comment > end ? comment - end : 1, ' ')
+                            << inputLine(pt.next()->line).substr(comment);
                 }
             };
 
@@ -1244,7 +1273,8 @@ namespace salt::fortran {
                     }
                     if (const auto &next{pt.next()}; next) {
                         skipThrough(next->line);
-                        rest = next->column - 1;
+                        // writeComment wrote the comment that is all that is left
+                        rest = laterComment(pt) == std::string::npos ? next->column - 1 : std::string::npos;
                     } else {
                         rest = std::string::npos;
                     }

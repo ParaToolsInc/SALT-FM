@@ -951,9 +951,10 @@ endif()
 # (relative to tests/, or absolute), as TAU's compiler wrapper does. The
 # extension of `src` gives the language. Fortran output calls external
 # TAU subroutines, so it needs no TAU flags, and is checked only when
-# the tests have a Flang driver.
+# the tests have a Flang driver, by the Fortran COMPILER if given, else
+# by Flang.
 function(_salt_add_syntax_test test src)
-  cmake_parse_arguments(PARSE_ARGV 2 ARG "" "" "FLAGS")
+  cmake_parse_arguments(PARSE_ARGV 2 ARG "" "COMPILER" "FLAGS")
   cmake_path(ABSOLUTE_PATH src BASE_DIRECTORY ${CMAKE_SOURCE_DIR}/tests)
   cmake_path(GET src PARENT_PATH dir)
   cmake_path(GET src EXTENSION LAST_ONLY ext)
@@ -964,8 +965,12 @@ function(_salt_add_syntax_test test src)
     set(compile ${CMAKE_CXX_COMPILER} -x c++ ${_salt_syntax_flags})
     set(label "lang:CXX")
   elseif(_salt_test_flang)
+    set(fortran ${_salt_test_flang})
+    if(ARG_COMPILER)
+      set(fortran ${ARG_COMPILER})
+    endif()
     # Flang 19 predefines macros such as __flang__ only with -cpp
-    set(compile ${_salt_test_flang} -cpp -x f95-cpp-input)
+    set(compile ${fortran} -cpp -x f95-cpp-input)
     if(ext MATCHES "^\\.([fF]|for|FOR|ftn|FTN|f77|fpp|FPP)$")
       list(APPEND compile -ffixed-form)
     endif()
@@ -4329,6 +4334,8 @@ if(TEST_FORTRAN)
   _salt_in_test_output(instrument
     check-internal-func.f90 check_implicit_main_timer_name)
 
+  find_program(SALT_GFORTRAN NAMES gfortran gfortran-15 gfortran-14
+    gfortran-13 gfortran-12)
   if(_salt_test_flang)
     # A `return`, an if-return, or a `contains` or End statement that
     # shares its line with other statements, or has a label (#118). Adds
@@ -4382,8 +4389,19 @@ if(TEST_FORTRAN)
     # A `contains` statement on the line of an if-return or an assignment,
     # whose host stops its timer directly before the `contains`
     _salt_add_fortran_same_line_test(contains contains.f90)
-    # A statement before a return on a continuation line, after a `;`
-    _salt_add_fortran_same_line_test(semi semi.f90)
+    # A statement before a return on a continuation line, after a `;`,
+    # also with CRLF line ends.
+    # With -fopenmp, a comment that starts an output line with `!$` is
+    # code, which for the `!$` comments of these inputs does not compile.
+    # gfortran checks it, as Flang 23 also reads a `!$` after code as code.
+    foreach(name semi semi_crlf)
+      _salt_add_fortran_same_line_test(${name} ${name}.f90)
+      if(SALT_GFORTRAN)
+        set(_test fortran_same_line_${name})
+        _salt_add_syntax_test(${_test} fortran/same_line/${name}.f90
+          ${_test}.inst.F90 COMPILER ${SALT_GFORTRAN} FLAGS -fopenmp)
+      endif()
+    endforeach()
     # An if-return whose condition or return expression would pass
     # column 132 on one line, and a `return` split at column 132
     _salt_add_fortran_same_line_test(wide wide.f90)
@@ -4873,8 +4891,6 @@ if(TEST_FORTRAN)
   # as text.
   # An implicit main program takes its name from the file name; its
   # -DSRC follows, so it replaces, the one of the function.
-  find_program(SALT_GFORTRAN NAMES gfortran gfortran-15 gfortran-14
-    gfortran-13 gfortran-12)
   set(_names_args -DCONFIG=${CMAKE_SOURCE_DIR}/tests/line_escape.yaml)
   if(SALT_GFORTRAN)
     list(APPEND _names_args -DCOMPILER=${SALT_GFORTRAN})
