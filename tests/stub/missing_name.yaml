@@ -1,0 +1,9 @@
+# Uses TAU_PROFILE_EXIT, which tests/stub/Profile/Profiler.h does not
+# define, so that tests/stub/check-profiler-stub fails on it. Its key
+# comes after the Fortran section, whose names are not checked.
+instrumentation: TAU
+Fortran:
+  procedure_end_insert:
+    - "      call TAU_PROFILE_INIT()"
+function_end_insert:
+  - "TAU_PROFILE_EXIT(\"exit\");"

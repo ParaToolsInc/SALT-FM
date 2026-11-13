@@ -1018,6 +1018,30 @@ add_test(NAME profiler_stub_error
     [ -z \"$out\" ] || { echo \"Expected no output, got:\"; echo \"$out\"; exit 1; }"
     ${CMAKE_SOURCE_DIR}/tests/stub/update-profiler-stub)
 set_tests_properties(profiler_stub_error PROPERTIES LABELS "phase:check")
+# The stand-in must define each TAU name of the C and C++ code of the
+# default configuration file. The check must name a TAU name that the
+# stand-in lacks, skipping the Fortran section (missing_name.yaml), and
+# fail when it finds no TAU name (no_name.yaml).
+add_test(NAME profiler_stub_names
+  COMMAND ${CMAKE_SOURCE_DIR}/tests/stub/check-profiler-stub
+    ${CMAKE_SOURCE_DIR}/config_files/tau_config.yaml
+    ${CMAKE_SOURCE_DIR}/tests/stub/Profile/Profiler.h)
+foreach(yaml missing_name no_name)
+  add_test(NAME profiler_stub_${yaml}
+    COMMAND sh -c "\"$0\" \"$1\" \"$2\" && echo 'Expected a failure'"
+      ${CMAKE_SOURCE_DIR}/tests/stub/check-profiler-stub
+      ${CMAKE_SOURCE_DIR}/tests/stub/${yaml}.yaml
+      ${CMAKE_SOURCE_DIR}/tests/stub/Profile/Profiler.h)
+endforeach()
+set_tests_properties(profiler_stub_missing_name PROPERTIES
+  PASS_REGULAR_EXPRESSION
+    "does not define TAU_PROFILE_EXIT, [^\n]*: add it to tests/stub/update-profiler-stub"
+  FAIL_REGULAR_EXPRESSION "Expected a failure;TAU_PROFILE_INIT")
+set_tests_properties(profiler_stub_no_name PROPERTIES
+  PASS_REGULAR_EXPRESSION "found no TAU name in the C and C\\+\\+ code of "
+  FAIL_REGULAR_EXPRESSION "Expected a failure")
+set_tests_properties(profiler_stub_names profiler_stub_missing_name
+  profiler_stub_no_name PROPERTIES LABELS "phase:check")
 
 # Test label helpers. Labels are grouped by key:value so "Label Time
 # Summary" buckets meaningfully and `ctest -L "^lang:"` (etc.) filters

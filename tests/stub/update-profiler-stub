@@ -9,6 +9,8 @@
 # the declarations of the functions, the type, and the groups that they
 # use, so that a call with a wrong argument still fails to compile, and
 # TAU_VERSION. It stops with an error if one of them is not found.
+# tests/stub/check-profiler-stub names each TAU name of the C and C++
+# code of the configuration file that the stand-in lacks.
 #
 # Usage: tests/stub/update-profiler-stub <TAU include directory> \
 #          > tests/stub/Profile/Profiler.h
