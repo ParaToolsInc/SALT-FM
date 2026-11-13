@@ -10,7 +10,10 @@
 # use, so that a call with a wrong argument still fails to compile, and
 # TAU_VERSION. It stops with an error if one of them is not found.
 # tests/stub/check-profiler-stub names each TAU name of the C and C++
-# code of the configuration file that the stand-in lacks.
+# code of the configuration file that the stand-in lacks. Test
+# profiler_stub_current compares the stand-in with what this script
+# writes from the TAU of the tests, ignoring TAU_VERSION, which only
+# records the TAU that the stand-in comes from.
 #
 # Usage: tests/stub/update-profiler-stub <TAU include directory> \
 #          > tests/stub/Profile/Profiler.h
