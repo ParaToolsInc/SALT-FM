@@ -2133,7 +2133,9 @@ function(add_sif_test test_name lang src sif)
   )
   _salt_in_test_output(sif
     rm_old_${name}_output instrument_${name} check_${name} warn_${name})
-  # The C and C++ calls of the other configuration files are not TAU's
+  # With CONFIG, C and C++ output calls functions that TAU's header does
+  # not declare (SETUP_TIMER_NAME, or perfstubs and ITT calls), so only
+  # Fortran output, whose calls are external, gets a syntax check.
   if(NOT ARG_CONFIG OR lang STREQUAL "fortran")
     _salt_add_syntax_test(instrument_${name} ${CMAKE_SOURCE_DIR}/${src} ${out_file})
   endif()
