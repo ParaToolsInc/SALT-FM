@@ -1,7 +1,6 @@
 ! Three procedures whose first executable statements end in a macro all
 ! get their timers, also the last one, after which the file has no
-! macro (#116). A macro inside an if-return does not change it. Flang
-! can give `__LINE__` a later line, so its value does not count.
+! macro (#116). A macro inside an if-return does not change it.
 #define INC(v) v = v + 1
 #define ONE 1
 program main
@@ -27,5 +26,5 @@ end subroutine b
 
 subroutine c(y)
     integer, intent(inout) :: y
-    y = y + 0 * __LINE__
+    INC(y)
 end subroutine c
