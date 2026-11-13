@@ -1205,6 +1205,39 @@ set_tests_properties(check_pure_virtual_skips_bodyless
     "TAU_PROFILE_TIMER[^\n]*Abstract::unimplemented;TAU_PROFILE_TIMER[^\n]*undefined_free_fn"
 )
 
+# A function defaulted outside its class has no body in braces, so it
+# gets no TAU calls, with either API, and the output compiles (#119).
+foreach(api capi cxxapi)
+  set(_args "")
+  if(api STREQUAL "cxxapi")
+    set(_args --tau_use_cxx_api)
+  endif()
+  set(_out default_outside_${api}.inst.cpp)
+  add_test(NAME instrument_default_outside_${api}
+    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+            --tau_output=${_out} ${_args}
+            ${CMAKE_SOURCE_DIR}/tests/default_outside.cpp)
+  set_tests_properties(instrument_default_outside_${api}
+    PROPERTIES
+    REQUIRED_FILES "${CMAKE_SOURCE_DIR}/tests/default_outside.cpp"
+    LABELS "lang:CXX;phase:instrument"
+    PASS_REGULAR_EXPRESSION "[Ii]nstrumentation:"
+  )
+  add_test(NAME check_default_outside_${api}
+    COMMAND ${CMAKE_COMMAND} -E cat ${_out})
+  set_tests_properties(check_default_outside_${api}
+    PROPERTIES
+    FIXTURES_REQUIRED instrument_default_outside_${api}
+    LABELS "lang:CXX;phase:check"
+    PASS_REGULAR_EXPRESSION "TAU_PROFILE[^\n]*int main"
+    FAIL_REGULAR_EXPRESSION "TAU_PROFILE[^\n]*Defaulted::"
+  )
+  _salt_in_test_output(instrument
+    instrument_default_outside_${api} check_default_outside_${api})
+  _salt_add_syntax_test(instrument_default_outside_${api}
+    default_outside.cpp ${_out})
+endforeach()
+
 # --tau_instrument_inline tests
 # Verify that inline functions are skipped without flag
 # and are instrumented with it

@@ -2,6 +2,8 @@
 
 class Widget {
 public:
+    // Defaulted in its class: no body in the source, so no timer (#119)
+    Widget() = default;
     int method_in_class_body(int value) {
         std::cout << value << std::endl;
         return value;

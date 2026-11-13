@@ -859,8 +859,9 @@ class FindFunctionVisitor : public RecursiveASTVisitor<FindFunctionVisitor>
         //     printf("Function %s is inline\n", func->getQualifiedNameAsString().c_str());
         // }
         // short circuit on the body first to protect check_func_against_list (and makeFuncInstLoc) from segfaults;
-        // only the declaration with the body, since a prototype does not visit its returns
-        if (func->doesThisDeclarationHaveABody() &&
+        // only the declaration with the body, since a prototype does not visit its returns;
+        // a defaulted function, in or outside its class, has a body that is not in the source (#119)
+        if (func->doesThisDeclarationHaveABody() && !func->isDefaulted() &&
             (!func->isInlined() || do_inline || check_func_against_list(includelist, func, context, src_mgr)))
         { //
             const size_t first = inst_locs.size();

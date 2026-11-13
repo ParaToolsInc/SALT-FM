@@ -32,6 +32,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   timer code in each C or C++ source. The read did not change the
   output, but stopped a `saltfm` built with AddressSanitizer
   ([#84](https://github.com/ParaToolsInc/SALT-FM/issues/84)).
+- A C++ function defaulted outside its class, as `S::S() = default;`,
+  or in its class with `--tau_instrument_inline`, gets no timer.
+  Before, the timer code went into its declaration, with or without
+  `--tau_use_cxx_api`, so the output did not compile
+  ([#119](https://github.com/ParaToolsInc/SALT-FM/issues/119)).
 - `saltfm` keeps the other statements on the line of a Fortran
   `return` or `if (<cond>) return`, such as `y = 1; if (x > 0) return`
   or `if (x > 0) return; y = 3`, in their order, and puts the
