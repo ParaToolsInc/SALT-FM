@@ -921,9 +921,9 @@ function(_salt_in_test_output sub)
   set_property(TEST ${ARGN} APPEND PROPERTY FIXTURES_REQUIRED ${sub}_dir)
 endfunction()
 
-# Tests that check instrumented output as text also compile it, with
-# -fsyntax-only, so that output that does not compile fails without TAU
-# too (#120). C and C++ output compiles with the flags that TAU's
+# Tests that check instrumented output as text also check its syntax,
+# with -fsyntax-only, so that output that does not compile fails without
+# TAU too (#120). C and C++ output is checked with the flags that TAU's
 # compiler wrapper gives an instrumented source, from the TAU Makefile
 # of the compiler, or without TAU, against tests/stub/Profile/Profiler.h,
 # the stand-in for TAU's that tests/stub/update-profiler-stub writes.
@@ -945,12 +945,12 @@ if(HAVE_TAU)
   separate_arguments(_salt_syntax_flags UNIX_COMMAND "${_salt_syntax_flags}")
   message(STATUS "Flags of the instrumented output syntax checks: ${_salt_syntax_flags}")
 endif()
-# Adds test syntax_<test>, which compiles the instrumented output files
+# Adds test syntax_<test>, which checks the instrumented output files
 # in ARGN after test `test`, in its working directory, with
 # -fsyntax-only, the FLAGS, and -I of the directory of source `src`
 # (relative to tests/, or absolute), as TAU's compiler wrapper does. The
 # extension of `src` gives the language. Fortran output calls external
-# TAU subroutines, so it needs no TAU flags, and is compiled only when
+# TAU subroutines, so it needs no TAU flags, and is checked only when
 # the tests have a Flang driver.
 function(_salt_add_syntax_test test src)
   cmake_parse_arguments(PARSE_ARGV 2 ARG "" "" "FLAGS")
@@ -976,7 +976,7 @@ function(_salt_add_syntax_test test src)
   add_test(NAME syntax_${test}
     COMMAND ${compile} -fsyntax-only -I${dir} ${ARG_FLAGS} ${ARG_UNPARSED_ARGUMENTS})
   # Test `test` sets up the fixture of its own name here, next to the
-  # compile that requires it, so that no caller can leave it out. Most
+  # check that requires it, so that no caller can leave it out. Most
   # callers rely on this, as their tests set up no fixture of that name:
   # those of _salt_add_clang_error_test, add_sif_test,
   # _salt_add_temp_output_test, and _salt_add_line_escape_test, the
@@ -1105,9 +1105,9 @@ foreach(script IN LISTS _salt_common_scripts)
 endforeach()
 
 # Map an entry from TESTS_LIST to a saltfm parser test (with a follow-up
-# check that the .inst file was emitted, and a compile of it). Optional
-# second argument overrides the derived test name; passing it is
-# somewhat fragile and likely more trouble than it's worth.
+# check that the .inst file was emitted, and a syntax check of it).
+# Optional second argument overrides the derived test name; passing it
+# is somewhat fragile and likely more trouble than it's worth.
 function(add_instrumentor_test test_src)
   get_filename_component(test_base_name ${test_src} NAME_WE)
   set(test_name "instrument_${test_base_name}")
@@ -1467,7 +1467,7 @@ _salt_in_test_output(output_error make_clang_error_outputs)
 # COPY_OF `fixture` (relative to tests/) instead expects the error that
 # `out`, a copy of the fixture that is also `src` or another input, is
 # an input file, and `out` unchanged.
-# With EXIT_ZERO, syntax_<name> also compiles `out`, with the
+# With EXIT_ZERO, syntax_<name> also checks `out`, with the
 # SYNTAX_FLAGS, unless NO_SYNTAX.
 function(_salt_add_clang_error_test name out labels src)
   cmake_parse_arguments(PARSE_ARGV 4 ARG
@@ -1611,7 +1611,7 @@ _salt_add_o_form_tests(c "lang:C" hello.c .out)
 # empty directory temp_output_<lang> on the sources in ARGN, must exit
 # with status 0 and leave only their default outputs `outs`, each with
 # mode 0644 and a timer, and no temporary file. syntax_temp_output_<lang>
-# compiles them.
+# checks them.
 function(_salt_add_temp_output_test lang labels outs)
   list(TRANSFORM outs PREPEND temp_output_${lang}/ OUTPUT_VARIABLE files)
   string(REPLACE ";" " " outs "${outs}")
@@ -2065,7 +2065,7 @@ endfunction()
 # against the optional WARNINGS (see _sif_set_warning_checks). The optional
 # CONFIG names a configuration file relative to the source directory, and
 # the optional ARGS are extra instrumentor options.
-# syntax_instrument_sif_<test_name> compiles the output, without CONFIG
+# syntax_instrument_sif_<test_name> checks the output, without CONFIG
 # or for Fortran.
 function(add_sif_test test_name lang src sif)
   cmake_parse_arguments(PARSE_ARGV 4 ARG "" "CONFIG" "WARNINGS;ARGS")
@@ -3079,7 +3079,7 @@ _salt_add_clang_error_test(parse_error_file_c parse_error_file.inst.c
 # line_escape_<name>: tests/check_line_escape.cmake on `src` (relative
 # to tests/) as a .`ext` file, compiled and run with
 # tests/line_escape.yaml, or with TAU, checked as text with the default
-# configuration file and compiled by syntax_line_escape_<name>. With
+# configuration file and checked by syntax_line_escape_<name>. With
 # EXCLUDED, the file lists exclude it. ARGN are more -D options of the
 # script.
 function(_salt_add_line_escape_test name ext src)
@@ -4798,7 +4798,7 @@ if(TEST_FORTRAN)
   # written
   _salt_add_fortran_names_test(implicit_backslash ${_implicit}
     [[-DSTEM=a\\b]])
-  # Flang compiles the outputs that gfortran does not, but those with a
+  # Flang checks the outputs that gfortran does not, but those with a
   # `"` in a `#line` directive
   set(_names line_instrumented line_excluded)
   if(NOT SALT_GFORTRAN)
@@ -4992,7 +4992,7 @@ if(TEST_FORTRAN)
   # Adds test `name`: _salt_add_clang_error_test on tests/fortran/`src`
   # with the ARGS, LOG, and NOT_LOG, and SALT_BUILD_USES_SALT_FLANG
   # unset. It must write the output with a timer and exit with status 0,
-  # or with FAILS, write no output. The output compiles with the flags of
+  # or with FAILS, write no output. The output is checked with the flags of
   # ARGS that are not saltfm's, but -fdefault-double-8 only with
   # -fdefault-real-8, as Flang refuses it alone.
   function(_salt_add_fortran_flags_test name src)
@@ -5427,7 +5427,7 @@ if(TEST_FORTRAN)
   # With SALT_FORTRAN_VERBOSE on, the plugin's messages go to standard
   # error too, where the test looks for its last one, and standard
   # output holds only the source, which
-  # syntax_stdout_output_fortran_verbose compiles.
+  # syntax_stdout_output_fortran_verbose checks.
   add_test(NAME stdout_output_fortran_verbose
     COMMAND sh -c "log=stdout_output_fortran_verbose
       \"$0\" \"$@\" > $log.log 2> $log.err &&
