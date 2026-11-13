@@ -1,7 +1,6 @@
 ! Three procedures whose first executable statements end in a macro all
 ! get their timers, also the last one, after which the file has no
-! macro (#116). A macro inside an if-return does not change it. Flang
-! can give `__LINE__` a later line, so its value does not count.
+! macro (#116). A macro inside an if-return does not change it.
 #define INC(v) v = v + 1
 #define ONE 1
 program main
@@ -12,7 +11,7 @@ program main
       call  TAU_PROFILE_SET_NODE(0)
 #endif
       call TAU_PROFILE_TIMER(tauProfileTimer, "&
-     &MAIN [{fortran_same_line_macro_three.F90} {7,1}-{14,16}]&
+     &MAIN [{fortran_same_line_macro_three.F90} {6,1}-{13,16}]&
      &")
       call TAU_PROFILE_START(tauProfileTimer)
     y = 0
@@ -26,7 +25,7 @@ subroutine a(y)
     integer, intent(inout) :: y
       integer, save :: tauProfileTimer(2) = [0, 0]
       call TAU_PROFILE_TIMER(tauProfileTimer, "&
-     &a [{fortran_same_line_macro_three.F90} {16,1}-{21,16}]&
+     &a [{fortran_same_line_macro_three.F90} {15,1}-{20,16}]&
      &")
       call TAU_PROFILE_START(tauProfileTimer)
     INC(y)
@@ -41,7 +40,7 @@ subroutine b(y)
     integer, intent(inout) :: y
       integer, save :: tauProfileTimer(2) = [0, 0]
       call TAU_PROFILE_TIMER(tauProfileTimer, "&
-     &b [{fortran_same_line_macro_three.F90} {23,1}-{26,16}]&
+     &b [{fortran_same_line_macro_three.F90} {22,1}-{25,16}]&
      &")
       call TAU_PROFILE_START(tauProfileTimer)
     y = y + ONE
@@ -51,9 +50,9 @@ subroutine c(y)
     integer, intent(inout) :: y
       integer, save :: tauProfileTimer(2) = [0, 0]
       call TAU_PROFILE_TIMER(tauProfileTimer, "&
-     &c [{fortran_same_line_macro_three.F90} {28,1}-{31,16}]&
+     &c [{fortran_same_line_macro_three.F90} {27,1}-{30,16}]&
      &")
       call TAU_PROFILE_START(tauProfileTimer)
-    y = y + 0 * __LINE__
+    INC(y)
       call TAU_PROFILE_STOP(tauProfileTimer)
 end subroutine c
