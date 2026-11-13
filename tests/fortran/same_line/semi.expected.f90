@@ -31,13 +31,14 @@ subroutine semi_return(y)
       call TAU_PROFILE_STOP(tauProfileTimer)
 end subroutine semi_return
 ! A labeled `return` whose `;` and a comment, after the `;`, go on in a
-! continuation line. No line of the output may start with that `;`.
+! continuation line. The output keeps the `&` and that line as written,
+! as no line may start with a `;` but a continuation line.
 subroutine semi_after(x, y)
     integer, intent(in) :: x
     integer, intent(out) :: y
       integer, save :: tauProfileTimer(2) = [0, 0]
       call TAU_PROFILE_TIMER(tauProfileTimer, "&
-     &semi_after [{fortran_same_line_semi.f90} {19,1}-{27,25}]&
+     &semi_after [{fortran_same_line_semi.f90} {20,1}-{28,25}]&
      &")
       call TAU_PROFILE_START(tauProfileTimer)
     y = 3
@@ -45,7 +46,8 @@ subroutine semi_after(x, y)
     y = 4
    10 continue
       call TAU_PROFILE_STOP(tauProfileTimer)
-    return   ! c ! c2
+    return & ! c
+      ; ! c2
       call TAU_PROFILE_STOP(tauProfileTimer)
 end subroutine semi_after
 ! The same with no label and a comment that starts with `!$`, after an
@@ -56,19 +58,64 @@ subroutine semi_omp(x, y)
     integer, intent(out) :: y
       integer, save :: tauProfileTimer(2) = [0, 0]
       call TAU_PROFILE_TIMER(tauProfileTimer, "&
-     &semi_omp [{fortran_same_line_semi.f90} {32,1}-{41,23}]&
+     &semi_omp [{fortran_same_line_semi.f90} {33,1}-{42,23}]&
      &")
       call TAU_PROFILE_START(tauProfileTimer)
     y = 5
     if (x > 0) then
       call TAU_PROFILE_STOP(tauProfileTimer)
-               return !$ y = 99 +
+               return &
+      ; !$ y = 99 +
       end if
     y = 6
       call TAU_PROFILE_STOP(tauProfileTimer)
-    return !$ y = 98 +
+    return &
+      ; !$ y = 98 +
       call TAU_PROFILE_STOP(tauProfileTimer)
 end subroutine semi_omp
+! The same after a `contains` and an End statement
+subroutine semi_end(y)
+    integer, intent(out) :: y
+      integer, save :: tauProfileTimer(2) = [0, 0]
+      call TAU_PROFILE_TIMER(tauProfileTimer, "&
+     &semi_end [{fortran_same_line_semi.f90} {45,1}-{49,1}]&
+     &")
+      call TAU_PROFILE_START(tauProfileTimer)
+    y = 7
+    call inner(y)
+      call TAU_PROFILE_STOP(tauProfileTimer)
+contains & ! c
+      ; ! c2
+    subroutine inner(y)
+        integer, intent(inout) :: y
+      integer, save :: tauProfileTimer(2) = [0, 0]
+      call TAU_PROFILE_TIMER(tauProfileTimer, "&
+     &inner [{fortran_same_line_semi.f90} {51,5}-{54,24}]&
+     &")
+      call TAU_PROFILE_START(tauProfileTimer)
+        y = y + 10
+      call TAU_PROFILE_STOP(tauProfileTimer)
+    end subroutine inner &
+      ; !$ y = 97 +
+end subroutine semi_end
+! A `;` with no comment after it, after an if-return
+subroutine semi_bare(x, y)
+    integer, intent(in) :: x
+    integer, intent(out) :: y
+      integer, save :: tauProfileTimer(2) = [0, 0]
+      call TAU_PROFILE_TIMER(tauProfileTimer, "&
+     &semi_bare [{fortran_same_line_semi.f90} {59,1}-{66,24}]&
+     &")
+      call TAU_PROFILE_START(tauProfileTimer)
+    y = 11
+    if (x > 0) then
+      call TAU_PROFILE_STOP(tauProfileTimer)
+               return &
+      ;
+      end if
+    y = 12
+      call TAU_PROFILE_STOP(tauProfileTimer)
+end subroutine semi_bare
 program main
     integer :: x, y
       integer, save :: tauProfileTimer(2) = [0, 0]
@@ -77,7 +124,7 @@ program main
       call  TAU_PROFILE_SET_NODE(0)
 #endif
       call TAU_PROFILE_TIMER(tauProfileTimer, "&
-     &MAIN [{fortran_same_line_semi.f90} {43,1}-{59,16}]&
+     &MAIN [{fortran_same_line_semi.f90} {68,1}-{90,16}]&
      &")
       call TAU_PROFILE_START(tauProfileTimer)
     do x = 0, 1
@@ -93,6 +140,12 @@ program main
     do x = 0, 1
         call semi_omp(x, y)
         print *, 'semi_omp', x, y
+    end do
+    call semi_end(y)
+    print *, 'semi_end', y
+    do x = 0, 1
+        call semi_bare(x, y)
+        print *, 'semi_bare', x, y
     end do
       call TAU_PROFILE_STOP(tauProfileTimer)
 end program main

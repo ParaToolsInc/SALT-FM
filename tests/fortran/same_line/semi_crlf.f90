@@ -1,7 +1,6 @@
 ! `semi_omp` of semi.f90 with CRLF line ends and a comment after each
-! return. Each `!$` comment goes after the comment of its return; a CR
-! between them would start a line for gfortran's preprocessor, where,
-! with -fopenmp, the `!$` comment would be code, which does not compile.
+! return. The output keeps the lines of each return and its `;` as
+! written, with their CRLF line ends.
 subroutine semi_crlf(x, y)
     integer, intent(in) :: x
     integer, intent(out) :: y

@@ -2,8 +2,8 @@ c     The fixed-form cases: statements that share a line with an
 c     if-return or a return, labels, continuation lines, a tab-format
 c     line, if-returns whose condition or return expression would pass
 c     column 72 on one line, also with a character literal across column
-c     72, and a `return` split over two lines at column 72, also in a
-c     tab-format line.
+c     72, a `return` split over two lines at column 72, also in a
+c     tab-format line, and a `;` on a continuation line after a return.
       subroutine prefix(x, y)
       integer x, y
       y = 0
@@ -109,6 +109,17 @@ c     tab-format line.
       y = 1
       end
 
+      subroutine semi(x, y)
+      integer x, y
+      y = 0
+      if (x .lt. 0) go to 10
+      if (x .gt. 0) return
+     &; ! after the if-return
+      y = 1
+   10 return
+     &; ! after the return
+      end
+
       program main
       integer i, y, xs(4)
       data xs /-3, -1, 0, 1/
@@ -135,6 +146,8 @@ c     tab-format line.
       print *, 'cut', xs(i), y
       call tab_cut(xs(i), y)
       print *, 'tab_cut', xs(i), y
+      call semi(xs(i), y)
+      print *, 'semi', xs(i), y
    40 continue
       call tab(y)
       print *, 'tab', y

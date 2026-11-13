@@ -1,23 +1,24 @@
 ! `semi_omp` of semi.f90 with CRLF line ends and a comment after each
-! return. Each `!$` comment goes after the comment of its return; a CR
-! between them would start a line for gfortran's preprocessor, where,
-! with -fopenmp, the `!$` comment would be code, which does not compile.
+! return. The output keeps the lines of each return and its `;` as
+! written, with their CRLF line ends.
 subroutine semi_crlf(x, y)
     integer, intent(in) :: x
     integer, intent(out) :: y
       integer, save :: tauProfileTimer(2) = [0, 0]
       call TAU_PROFILE_TIMER(tauProfileTimer, "&
-     &semi_crlf [{fortran_same_line_semi_crlf.f90} {5,1}-{14,24}]&
+     &semi_crlf [{fortran_same_line_semi_crlf.f90} {4,1}-{13,24}]&
      &")
       call TAU_PROFILE_START(tauProfileTimer)
     y = 5
     if (x > 0) then
       call TAU_PROFILE_STOP(tauProfileTimer)
-               return   ! c !$ y = 99 +
+               return & ! c
+      ; !$ y = 99 +
       end if
     y = 6
       call TAU_PROFILE_STOP(tauProfileTimer)
-    return   ! c2 !$ y = 98 +
+    return & ! c2
+      ; !$ y = 98 +
       call TAU_PROFILE_STOP(tauProfileTimer)
 end subroutine semi_crlf
 program main
@@ -28,7 +29,7 @@ program main
       call  TAU_PROFILE_SET_NODE(0)
 #endif
       call TAU_PROFILE_TIMER(tauProfileTimer, "&
-     &MAIN [{fortran_same_line_semi_crlf.f90} {16,1}-{22,16}]&
+     &MAIN [{fortran_same_line_semi_crlf.f90} {15,1}-{21,16}]&
      &")
       call TAU_PROFILE_START(tauProfileTimer)
     do x = 0, 1
