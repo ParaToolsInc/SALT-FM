@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+#
+# check-profiler-stub -- Check that the stand-in for TAU's
+# Profile/Profiler.h defines each TAU name that the C and C++ code of a
+# configuration file uses, so that a name missing from the stand-in is
+# named here, rather than shown as compile errors in the syntax_ tests.
+#
+# The C and C++ code is the list items outside the Fortran section,
+# which ends at the next top-level key. Names in preprocessor
+# directives, such as TAU_MPI in "#ifndef TAU_MPI", are not checked,
+# since TAU defines them only in some configurations.
+#
+# Usage: tests/stub/check-profiler-stub <configuration file> <stand-in>
+
+set -euo pipefail
+
+if [[ $# -ne 2 ]]; then
+  echo "Usage: $0 <configuration file> <stand-in>" >&2
+  exit 2
+fi
+for file in "$1" "$2"; do
+  if [[ ! -r "${file}" ]]; then
+    echo "ERROR: cannot read ${file}" >&2
+    exit 1
+  fi
+done
+
+# shortcut: reads only block-sequence items with double-quoted or plain
+# strings; parse the YAML if a configuration file uses other forms.
+names=$(sed -n '/^Fortran:/,/^[A-Za-z_]/d; /^ *- "[[:space:]]*#/d
+    s/^ *- //p' "$1" |
+  { grep -o '\<TAU_[A-Za-z0-9_]*' || true; } | sort -u)
+if [[ -z "${names}" ]]; then
+  echo "ERROR: found no TAU name in the C and C++ code of $1" >&2
+  exit 1
+fi
+status=0
+for name in ${names}; do
+  if ! grep -Eq "^#define ${name}([(]|[[:space:]]|$)" "$2"; then
+    echo "ERROR: $2 does not define ${name}, which $1 uses:" \
+      "add it to tests/stub/update-profiler-stub" >&2
+    status=1
+  fi
+done
+if [[ ${status} -ne 0 ]]; then
+  echo "Then rerun: tests/stub/update-profiler-stub" \
+    "<TAU include directory> > tests/stub/Profile/Profiler.h" >&2
+fi
+exit "${status}"

@@ -1,0 +1,5 @@
+# Uses no TAU name: MY_TAU_EXIT is not one, since it does not start
+# with TAU_, so tests/stub/check-profiler-stub finds none
+instrumentation: TAU
+function_end_insert:
+  - "MY_TAU_EXIT();"
