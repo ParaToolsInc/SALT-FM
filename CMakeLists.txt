@@ -993,22 +993,18 @@ function(_salt_add_syntax_test test src)
   endif()
 endfunction()
 # The stand-in must be what tests/stub/update-profiler-stub writes from
-# the headers of TAU. The test fails when the stand-in has no
-# TAU_VERSION, and skips when TAU has a different TAU_VERSION.
+# the headers of TAU, except for the TAU_VERSION line, so that every TAU
+# version whose headers give the same stand-in passes.
 if(HAVE_TAU)
   add_test(NAME profiler_stub_current
-    COMMAND sh -c "stub=$1/Profile/Profiler.h
-      version=$(grep '^#define TAU_VERSION ' \"$stub\") ||
-        { echo \"Expected TAU_VERSION in $stub\"; exit 1; }
-      tau=$(grep '^#define TAU_VERSION ' \"$0/TAU.h\")
-      [ \"$tau\" = \"$version\" ] ||
-        { echo \"Skipped: the stand-in is not of this TAU: $tau\"; exit 77; }
-      \"$1/update-profiler-stub\" \"$0\" > profiler_stub.h &&
-        diff -u \"$stub\" profiler_stub.h"
+    COMMAND sh -c "\"$1/update-profiler-stub\" \"$0\" > profiler_stub.h || exit 1
+      diff -u -I '^#define TAU_VERSION ' \"$1/Profile/Profiler.h\" profiler_stub.h ||
+        { echo 'The stand-in differs from the headers of TAU. Rerun:'
+          echo '  tests/stub/update-profiler-stub <TAU include directory> \\'
+          echo '    > tests/stub/Profile/Profiler.h'
+          exit 1; }"
       ${_salt_tau_include_dir} ${CMAKE_SOURCE_DIR}/tests/stub)
-  set_tests_properties(profiler_stub_current PROPERTIES
-    SKIP_RETURN_CODE 77
-    LABELS "phase:check")
+  set_tests_properties(profiler_stub_current PROPERTIES LABELS "phase:check")
   _salt_in_test_output(instrument profiler_stub_current)
 endif()
 # A failed run of tests/stub/update-profiler-stub prints nothing, so it
