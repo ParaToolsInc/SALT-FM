@@ -1409,8 +1409,9 @@ namespace salt::fortran {
                                                               : form == FortranForm::FixedForm};
             instrumentFile(*inputFile, inputStream, outputStream, visitor, instMap, fixedForm);
 
-            // close() must not run on standard output: it asserts that the
-            // stream may close its descriptor, and without assertions closes it
+            // Do not close standard output. LLVM's close() asserts that the
+            // stream owns its descriptor, which fails for stdout; in a build
+            // without assertions it closes fd 1, and later writes to stdout fail.
             if (outputPath == "-") {
                 outputStream.flush();
             } else {
