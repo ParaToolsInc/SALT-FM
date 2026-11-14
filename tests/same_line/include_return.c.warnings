@@ -1,6 +1,3 @@
-WARNING: include_return.c: SALT-FM does not instrument "int early(int)",
-  since a timer call would go in the included file include_return.inc
-WARNING: include_return.c: SALT-FM does not instrument "void ends(int *)",
-  since a timer call would go in the included file include_close.inc
-WARNING: include_return.c: SALT-FM does not instrument "int opens(void)",
-  since a timer call would go in the included file include_open.inc
+[SALT] include_return.c:5: warning: not instrumenting function 'int early(int)': a timer call would go in the included file include_return.inc
+[SALT] include_return.c:10: warning: not instrumenting function 'void ends(int *)': a timer call would go in the included file include_close.inc
+[SALT] include_return.c:14: warning: not instrumenting function 'int opens(void)': a timer call would go in the included file include_open.inc

@@ -3665,7 +3665,8 @@ endfunction()
 _salt_add_macro_name_test(same_file same_file.c)
 _salt_add_macro_name_test(header header.c)
 # Braces or a return statement from a macro: no timers, and one warning
-# for each function, also with a prototype
+# for each function, also with a prototype, with the file and line of a
+# `#line` directive
 _salt_add_macro_name_test(body body.c)
 # A return statement whose last token is a macro, one on the next line
 # and the definition on the line of the `return`, or a macro call over
@@ -3788,9 +3789,32 @@ _salt_add_same_line_test(include_return.c EXPECTED LINES)
 _salt_add_clang_error_test(same_line_include_main_c
   same_line_include_main_c.inst.c "lang:C" same_line/include_main.c
   EXIT_ZERO CHECK "-s same_line_include_main_c.inst.c"
-  LOG "SALT-FM does not instrument" "int main(int, char **)"
-  "since a timer call would go in the included file"
+  LOG "include_main.c:3: warning: not instrumenting function"
+  "'int main(int, char **)': a timer call would go in the included file"
   OUT "TAU_INIT(&argc, &argv);" NOT_OUT "TAU_PROFILE_TIMER")
+# One with its opening brace in an included file or from a macro gets
+# no setup code either, and its warning says so
+foreach(stem include_main_open macro_main_open)
+  _salt_add_clang_error_test(same_line_${stem}_c
+    same_line_${stem}_c.inst.c "lang:C" same_line/${stem}.c
+    EXIT_ZERO CHECK "-s same_line_${stem}_c.inst.c"
+    LOG "${stem}.c:3: warning: not instrumenting function"
+    "'int main(void)', which gets no setup code: "
+    NOT_OUT "TAU_PROFILE_SET_NODE" "TAU_PROFILE_TIMER")
+endforeach()
+# The warning names a source as the command line does, as in Fortran
+set(_out ${SALT_TEST_OUTPUT_DIR}/instrument/same_line_include_main_rel.inst.c)
+add_test(NAME same_line_include_main_rel
+  COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+          --tau_output=${_out} include_main_open.c
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/same_line)
+set_tests_properties(same_line_include_main_rel PROPERTIES
+  FIXTURES_REQUIRED instrument_dir
+  LABELS "lang:C;phase:instrument"
+  PASS_REGULAR_EXPRESSION
+    "(^|\n)\\[SALT\\] include_main_open[.]c:3: warning: not instrumenting")
+_salt_add_syntax_test(same_line_include_main_rel same_line/include_main_open.c
+  ${_out})
 
 # Unless --tau_excluded_main_setup=file, the main program of a source
 # that the file lists exclude gets no setup code, and saltfm warns about

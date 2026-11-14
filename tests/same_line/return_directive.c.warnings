@@ -1,4 +1,2 @@
-WARNING: return_directive.c: SALT-FM does not instrument "int cond(int)",
-  since a directive comes between a return statement and its `;`
-WARNING: return_directive.c: SALT-FM does not instrument "int incl(int)",
-  since a directive comes between a return statement and its `;`
+[SALT] return_directive.c:4: warning: not instrumenting function 'int cond(int)': a directive comes between a return statement and its `;`
+[SALT] return_directive.c:11: warning: not instrumenting function 'int incl(int)': a directive comes between a return statement and its `;`

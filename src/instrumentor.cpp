@@ -1024,6 +1024,10 @@ class FindFunctionVisitor : public RecursiveASTVisitor<FindFunctionVisitor>
         start->func_name = func_name_c;
         start->full_timer_name = timer_name_c;
         start->file = file_c;
+        // As makeFuncAndTimerNames gives them
+        const src_pos where = presumedPos(src_mgr, src_mgr.getExpansionLoc(func->getSourceRange().getBegin()));
+        start->where_file = where.file;
+        start->where_line = where.line;
         start->has_args = func->getNumParams() > 0;
         start->is_return_ptr = func->getReturnType()->isPointerType();
         start->needs_move = needs_move;
@@ -1307,15 +1311,22 @@ void instrumentor::instrument()
                 const std::string &why = loc->begin_skip.empty() && !use_cxx_api ? loc->end_skip : loc->begin_skip;
                 if (!why.empty())
                 {
+                    // main keeps its setup code, unless it has no place either
+                    const bool is_main = strcmp(loc->func_name, "main") == 0;
+                    const bool keeps_setup = is_main && loc->begin_skip.empty();
                     // Once for each function, as eq_inst_loc() below keeps one insert
                     if (loc->kind == BEGIN_FUNC && warned.emplace(loc->line, loc->col, loc->func_name).second)
                     {
-                        llvm::errs() << "WARNING: " << loc->file << ": SALT-FM does not instrument \""
-                                     << selectName(loc->full_timer_name) << "\",\n"
-                                     << "  since " << why << "\n";
+                        // As Fortran warnings give it: the source as the command line
+                        // names it, unless a `#line` directive names another file
+                        const std::string &file = loc->where_file == loc->file ? fname : loc->where_file;
+                        llvm::errs() << "[SALT] " << file << ":" << loc->where_line
+                                     << ": warning: not instrumenting function '"
+                                     << selectName(loc->full_timer_name)
+                                     << (is_main && !keeps_setup ? "', which gets no setup code: " : "': ") << why
+                                     << "\n";
                     }
-                    // main keeps its setup code, unless it has no place either
-                    if (loc->kind == BEGIN_FUNC && loc->begin_skip.empty() && strcmp(loc->func_name, "main") == 0)
+                    if (loc->kind == BEGIN_FUNC && keeps_setup)
                     {
                         loc->skip = true;
                         inst_locations.push_back(loc);

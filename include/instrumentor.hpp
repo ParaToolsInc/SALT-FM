@@ -54,6 +54,10 @@ typedef struct inst_loc {
     const char* full_timer_name;
     // The file that holds the function, not its computed file
     const char* file;
+    // The computed file and line of the start of the function, as its
+    // timer name gives them, for warnings; only for BEGIN_FUNC
+    std::string where_file;
+    unsigned where_line = 0;
     bool has_args = false;
     bool is_return_ptr = false;
     bool needs_move = false;

@@ -13,10 +13,11 @@ int g(void) {
 int h(void) {
   return 3;
 END
+#line 30 "body.y"
 int k(void) BEGIN
   return 4;
 }
 int main(void) {
-    timer_start("int main(void)  [{body.c} {19,1}-{21,1}]");
+    timer_start("int main(void)  [{body.y} {33,1}-{35,1}]");
 	{ int inst_ret_val =  f() + g() + h() + k(); timer_stop(); return inst_ret_val; }
 }

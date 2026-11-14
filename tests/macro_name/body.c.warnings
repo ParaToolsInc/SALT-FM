@@ -1,8 +1,4 @@
-WARNING: body.c: SALT-FM does not instrument "int f(void)",
-  since a macro gives its braces or a return statement
-WARNING: body.c: SALT-FM does not instrument "int g(void)",
-  since a macro gives its braces or a return statement
-WARNING: body.c: SALT-FM does not instrument "int h(void)",
-  since a macro gives its braces or a return statement
-WARNING: body.c: SALT-FM does not instrument "int k(void)",
-  since a macro gives its braces or a return statement
+[SALT] body.c:8: warning: not instrumenting function 'int f(void)': a macro gives its braces or a return statement
+[SALT] body.c:10: warning: not instrumenting function 'int g(void)': a macro gives its braces or a return statement
+[SALT] body.c:13: warning: not instrumenting function 'int h(void)': a macro gives its braces or a return statement
+[SALT] body.y:30: warning: not instrumenting function 'int k(void)': a macro gives its braces or a return statement
