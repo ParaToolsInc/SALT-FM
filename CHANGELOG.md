@@ -166,6 +166,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `return` statement has no place for timer code, keeps its setup code.
   Before, it lost its setup code too
   ([#116](https://github.com/ParaToolsInc/SALT-FM/issues/116)).
+- The C and C++ warnings about a function that gets no timer have the
+  format of the Fortran ones, with the file and line of the function,
+  as compiler messages give them, and its signature, as in
+  `[SALT] f.c:3: warning: not instrumenting function 'int f(void)': a macro gives its braces or a return statement`.
+  A warning about `main` says when it gets no setup code, as when its
+  opening brace comes from a macro or an included file. Before, the
+  warning named the file but not the line, took two lines, and did not
+  say that `main` got no setup code.
 - When the selective instrumentation lists exclude a Fortran subroutine
   or function, none of its internal procedures gets a timer, as the
   README says. Before, only the first one got no timer; the ones after
