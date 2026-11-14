@@ -1,0 +1,11 @@
+#!/bin/sh
+# Stands in for MPICH's configure in the tests of
+# cmake/modules/SALTMPIFiles.cmake, which runs it with sh: fails with
+# CC=false, else writes mpif.h as MPICH's configure does.
+for arg in "$@"; do
+    if [ "${arg}" = CC=false ]; then
+        exit 1
+    fi
+done
+mkdir -p src/binding/fortran/mpif_h
+echo "      integer mpi_comm_world" > src/binding/fortran/mpif_h/mpif.h

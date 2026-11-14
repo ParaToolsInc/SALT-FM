@@ -710,7 +710,51 @@ if(MLIR_FOUND AND Flang_FOUND)
     configure_file(${intrinsic_mod_file} ${SALT_INTRINSIC_MOD_FILE} COPYONLY)
   endforeach()
 
-  # Install the flang intrinsic module files into the salt include directory
+  # The MPI files that the Fortran parse reads (#92), in
+  # <SALT_INC_DIR>/../mpi/mpich: see cmake/modules/SALTMPI.cmake. MPICH's
+  # configure, which writes the module sources, needs Python 3.
+  include(SALTMPI)
+  set(SALT_MPICH download CACHE STRING
+    "MPICH for the MPI files of the Fortran parse: download, a tarball, a source directory, or OFF")
+  set(_salt_mpich_work ${CMAKE_BINARY_DIR}/mpich)
+  set(_salt_mpich_dir ${CMAKE_BINARY_DIR}/${SALT_INC_DIR}/../mpi/mpich)
+  cmake_path(NORMAL_PATH _salt_mpich_dir)
+  set(_salt_mpich_src "")
+  # Also without Python 3 or a Flang driver, which the files need
+  salt_mpi_check_source(SALT_MPICH)
+  if(SALT_MPICH AND _salt_test_flang)
+    find_package(Python3 COMPONENTS Interpreter)
+    if(Python3_FOUND)
+      salt_mpi_source(SALT_MPICH ${SALT_MPICH_URL} ${SALT_MPICH_SHA256}
+        ${_salt_mpich_work} _salt_mpich_src)
+    else()
+      message(WARNING
+        "MPICH's configure needs Python 3, so SALT-FM is built without MPICH "
+        "files. Install Python 3, or set SALT_MPICH=OFF.")
+    endif()
+  endif()
+  set(_salt_mpich_stamp ${_salt_mpich_work}/files.stamp)
+  if(_salt_mpich_src)
+    add_custom_command(OUTPUT ${_salt_mpich_stamp}
+      COMMAND ${CMAKE_COMMAND} -DSRC=${_salt_mpich_src} -DWORK=${_salt_mpich_work}/build
+        -DOUT=${_salt_mpich_dir} -DFC=${_salt_test_flang} -DCC=${CMAKE_C_COMPILER}
+        -DPYTHON=${Python3_EXECUTABLE} -DSUFFIX=${SALT_MOD_SUFFIX}
+        -DSTAMP=${_salt_mpich_stamp}
+        -P ${CMAKE_SOURCE_DIR}/cmake/modules/SALTMPIFiles.cmake
+      DEPENDS ${_salt_mpich_src}/configure
+        ${CMAKE_SOURCE_DIR}/cmake/modules/SALTMPI.cmake
+        ${CMAKE_SOURCE_DIR}/cmake/modules/SALTMPIFiles.cmake
+      COMMENT "Making the MPICH files of the Fortran parse; MPICH's configure can take many minutes"
+      VERBATIM)
+    add_custom_target(salt-mpich-files ALL DEPENDS ${_salt_mpich_stamp}
+      COMMENT "MPICH files of the Fortran parse")
+  else()
+    # Files of an earlier build would stay, and be installed
+    file(REMOVE_RECURSE ${_salt_mpich_dir} ${_salt_mpich_stamp})
+  endif()
+
+  # Install the flang intrinsic module files, and the MPI files, into the
+  # salt include directory
   install(DIRECTORY ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_INCLUDEDIR}/salt
     TYPE INCLUDE)
 
@@ -3251,7 +3295,7 @@ if(TEST_FORTRAN)
   string(CONCAT _shell_var_shown "^fparse-llvm --show "
     "--tau_parse_excluded_modules=modules-only --tau_excluded_main_setup=routine ")
   foreach(var excluded_main_setup=none parse_excluded_modules=off
-      tool=cparse-llvm version=true build_uses_salt_flang=true)
+      tool=cparse-llvm version=true build_uses_salt_flang=true mpi=none)
     string(REGEX REPLACE "=.*" "" name "${var}")
     add_test(NAME saltfm_shell_var_${name}
       COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
@@ -3311,13 +3355,20 @@ if(TEST_FORTRAN)
         ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm ${_arg})
     _salt_in_test_output(instrument fparse_${name})
   endforeach()
+  # With MPICH files, the -fc1 command ends with their module directory,
+  # after the arguments that fparse-llvm forwards and -I for each -J
+  # directory (#92).
+  set(_mpi_cmd_end "\n")
+  if(_salt_mpich_src)
+    set(_mpi_cmd_end " -I[^\n]*/mpi/mpich/modules\n")
+  endif()
   # fparse-llvm takes a Fortran source after a flag as the input file,
   # and without one, the first argument that is not a flag (#102).
   add_test(NAME fparse_input_after_flag
     COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show
             -fopenmp foo.f08)
   string(CONCAT _input_after_flag "(^|\n)input file: foo\\.f08\n.*\n"
-    "cmd: [^\n]* foo\\.f08 -o [^\n]*/foo\\.inst\\.F90 -fopenmp\n")
+    "cmd: [^\n]* foo\\.f08 -o [^\n]*/foo\\.inst\\.F90 -fopenmp${_mpi_cmd_end}")
   set_tests_properties(fparse_input_after_flag PROPERTIES
     PASS_REGULAR_EXPRESSION "${_input_after_flag}")
   add_test(NAME fparse_input_not_flag
@@ -3332,9 +3383,10 @@ if(TEST_FORTRAN)
     add_test(NAME ${_name}
       COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/${tool} --show
               hello.f90 -- -DSRC=util.f08)
+    string(CONCAT _input_not_macro "(^|\n)input file: hello\\.f90\n.*\n"
+      "cmd: [^\n]* hello\\.f90 -o [^\n]* -DSRC=util\\.f08${_mpi_cmd_end}")
     set_tests_properties(${_name} PROPERTIES
-      PASS_REGULAR_EXPRESSION
-        "(^|\n)input file: hello\\.f90\n.*\ncmd: [^\n]* hello\\.f90 -o [^\n]* -DSRC=util\\.f08\n")
+      PASS_REGULAR_EXPRESSION "${_input_not_macro}")
     list(APPEND _shell_var_tests ${_name})
   endforeach()
   # fparse-llvm reports each argument that is not a flag and that it does
@@ -4516,7 +4568,7 @@ if(TEST_FORTRAN)
   set(_fx_flags "-fopenmp -Werror -Ifoo -Iinc-Wave -DBAR=1 -Jdir -std=f2018")
   string(CONCAT _fx_pass
     "Remaining Arguments: ${_fx_flags}\n.*"
-    "${_fx_match_cmd}[^\n]* ${_fx_flags}\n")
+    "${_fx_match_cmd}[^\n]* ${_fx_flags}${_mpi_cmd_end}")
   _salt_add_flang_exe_test(fparse_whole_flag_names
     "${_fx_pass}" "cmd:[^\n]*decoy-"
     ${_fx_bin}/fparse-llvm --show --flang_exe=${_fx_dir}/match/flang
@@ -4763,7 +4815,8 @@ if(TEST_FORTRAN)
     # A main program whose first executable statement is in an included
     # file cannot get its setup code or its timer: a warning that says so,
     # and the other procedures keep their timers. With the main program
-    # excluded and --tau_excluded_main_setup=none, there is no warning.
+    # excluded and --tau_excluded_main_setup=none, there is no warning;
+    # --mpi=none, as a build without MPICH files warns otherwise (#92).
     string(CONCAT _main_w "include_main[.]inc:12: warning: not "
       "instrumenting main program '(main|MAIN)', which gets no setup code: "
       "its first executable statement is in an included file")
@@ -4774,7 +4827,7 @@ if(TEST_FORTRAN)
       fortran/same_line/include_main.f90 EXIT_ZERO
       CHECK "-s fortran_same_line_include_main_none.inst.F90"
       ARGS --tau_select_file=${_dir}/exclude_main.tau
-      --tau_excluded_main_setup=none
+      --tau_excluded_main_setup=none --mpi=none
       NOT_LOG "ERROR" "warning")
     # With the main program excluded and the default setup, the warning,
     # and `work` keeps its timer
@@ -4953,14 +5006,19 @@ if(TEST_FORTRAN)
     REQUIRED_FILES "${_required_files}"
     ENVIRONMENT "SALT_FORTRAN_VERBOSE=1"
     PASS_REGULAR_EXPRESSION "SALT Instrumentor Plugin finished")
-  # Instruments `src` with the user module directory given by `flag`.
-  # With BUILD_USES_SALT_FLANG, the directory has only the .mod file that
-  # the Flang driver writes, and saltfm gets --tau_build_uses_salt_flang.
+  # Instruments `src` (relative to tests/fortran) with the user module
+  # directory given by `flag`, after FIXTURE (default: the one that
+  # writes the iso_fortran_env module). With BUILD_USES_SALT_FLANG, the
+  # directory has only the .mod file that the Flang driver writes, and
+  # saltfm gets --tau_build_uses_salt_flang.
   function(_salt_add_user_mod_test src flag)
-    cmake_parse_arguments(PARSE_ARGV 2 ARG "BUILD_USES_SALT_FLANG" "" "")
+    cmake_parse_arguments(PARSE_ARGV 2 ARG "BUILD_USES_SALT_FLANG" "FIXTURE" "")
     get_filename_component(base ${src} NAME_WLE)
     set(dir ${_user_mod_dir})
     set(fixture user_iso_fortran_env_mod)
+    if(ARG_FIXTURE)
+      set(fixture ${ARG_FIXTURE})
+    endif()
     set(option "")
     if(ARG_BUILD_USES_SALT_FLANG)
       string(APPEND base _build_uses_salt_flang)
@@ -5093,9 +5151,10 @@ if(TEST_FORTRAN)
   # A source with a module and a submodule is a module source.
   _salt_add_excluded_test(mod_smod excluded_mod_smod.f90 MOD mod_smod_m
     LOG "Running:")
+  # --mpi=none: a build without MPICH files warns otherwise (#92).
   _salt_add_excluded_test(smod_parse excluded_smod.f90 MOD smod_m-smod_s
     ARGS -I${_excluded_dir}/smod_parent
-    --tau_parse_excluded_modules=submodules-and-modules
+    --tau_parse_excluded_modules=submodules-and-modules --mpi=none
     LOG "Running:" NOT_LOG "WARNING:")
   # Without its module files, only the child submodules can fail, at
   # `off` and when Flang cannot parse it (here, without the parent's).
@@ -5622,6 +5681,255 @@ if(TEST_FORTRAN)
     set_property(TEST fparse_show_build_uses_salt_flang_env APPEND PROPERTY
       ENVIRONMENT_MODIFICATION "SALT_BUILD_USES_SALT_FLANG=set:1")
   endif()
+
+  # The SALT_MPICH forms of cmake/modules/SALTMPI.cmake (#92), each with
+  # the text that its output must have
+  set(_mpi_tree "source tree: [^\n]*/fake-mpich\n")
+  set(_mpi_none "source tree: none\n")
+  set(_mpi_stop "Set SALT_MPICH to download, a tarball, a source directory, or OFF")
+  set(_mpi_no_download "warning: Could not download file://[^\n]*/fake-mpich.tar.gz: ")
+  foreach(form_pass
+      "download|Downloading file://.*${_mpi_tree}"
+      "download_again|Downloading file://.*${_mpi_tree}"
+      "download_hash|${_mpi_no_download}its SHA-256 is [0-9a-f]+, not 0+\\..*${_mpi_none}"
+      "download_fail|${_mpi_no_download}[^\n]* set SALT_MPICH=OFF\\.\n${_mpi_none}"
+      "tarball|${_mpi_tree}"
+      "tarball_hash|warning: [^\n]* has the SHA-256 [0-9a-f]+, not 0+ of .*${_mpi_tree}"
+      "directory|${_mpi_tree}"
+      "no_configure|error: [^\n]* is a directory without configure\\. ${_mpi_stop}"
+      "off|${_mpi_none}"
+      "missing|error: [^\n]*/missing.tar.gz does not exist\\. ${_mpi_stop}")
+    string(REPLACE "|" ";" _form_pass "${form_pass}")
+    list(GET _form_pass 0 _form)
+    list(GET _form_pass 1 _pass)
+    add_test(NAME mpich_source_${_form}
+      COMMAND ${CMAKE_COMMAND} -DFORM=${_form}
+        -DFAKE=${CMAKE_SOURCE_DIR}/tests/mpi/fake-mpich
+        -DDIR=${SALT_TEST_OUTPUT_DIR}/mpich_source/${_form}
+        -P ${CMAKE_SOURCE_DIR}/tests/check_salt_mpi_source.cmake)
+    set_tests_properties(mpich_source_${_form} PROPERTIES
+      PASS_REGULAR_EXPRESSION "${_pass}"
+      LABELS "lang:Fortran;phase:check")
+  endforeach()
+  # Only a hash that differs, and a failed download, warn, and a tarball
+  # downloaded before is not downloaded again.
+  set(_mpi_quiet "warning: ;error: ;CMake Error")
+  set_tests_properties(mpich_source_download mpich_source_tarball
+    mpich_source_directory mpich_source_off PROPERTIES
+    FAIL_REGULAR_EXPRESSION "${_mpi_quiet}")
+  set_tests_properties(mpich_source_download_again PROPERTIES
+    FAIL_REGULAR_EXPRESSION "${_mpi_quiet};Downloading[^\n]*\n.*Downloading")
+  # A configure of SALT-FM checks the path in SALT_MPICH also without
+  # Python 3, with which it makes no MPICH files.
+  add_test(NAME mpich_source_missing_no_python
+    COMMAND ${CMAKE_COMMAND} -G ${CMAKE_GENERATOR} -S ${CMAKE_SOURCE_DIR}
+      -B ${SALT_TEST_OUTPUT_DIR}/mpich_source/missing_no_python
+      -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+      -DLLVM_DIR=${LLVM_DIR} -DClang_DIR=${Clang_DIR} -DMLIR_DIR=${MLIR_DIR}
+      -DFlang_DIR=${Flang_DIR} -DSALT_INSTALL_GIT_HOOKS=OFF
+      -DCMAKE_DISABLE_FIND_PACKAGE_Python3=ON
+      -DSALT_MPICH=${SALT_TEST_OUTPUT_DIR}/mpich_source/missing.tar.gz)
+  set_tests_properties(mpich_source_missing_no_python PROPERTIES
+    PASS_REGULAR_EXPRESSION "missing\\.tar\\.gz[ \n]+does[ \n]+not[ \n]+exist"
+    LABELS "lang:Fortran;phase:check")
+  # When MPICH's configure or a compile of a module fails, the build warns
+  # and goes on, without the files that failed, and without any MPICH
+  # files when there is no `mpi` module. Files made from the same
+  # inputs, as a CI cache restores them, are not made again; another
+  # input makes them again.
+  foreach(form_pass
+      "configure|MPICH configure failed with exit status 1, so SALT-FM has no MPICH files"
+      "compile|false could not compile [^ ]*/mpi_constants.f90, so SALT-FM has no mpi module"
+      "again|second run:\n[^\n]*MPICH files in [^\n]* are up to date\n"
+      "again_cc|second run:\n[^\n]*Running MPICH configure"
+      "again_cc_version|second run:\n[^\n]*Running MPICH configure")
+    string(REPLACE "|" ";" _form_pass "${form_pass}")
+    list(GET _form_pass 0 _form)
+    list(GET _form_pass 1 _pass)
+    add_test(NAME mpich_files_${_form}
+      COMMAND ${CMAKE_COMMAND} -DFORM=${_form}
+        -DFAKE=${CMAKE_SOURCE_DIR}/tests/mpi/fake-mpich-files
+        -DDIR=${SALT_TEST_OUTPUT_DIR}/mpich_files/${_form}
+        -P ${CMAKE_SOURCE_DIR}/tests/check_salt_mpi_files.cmake)
+    set_tests_properties(mpich_files_${_form} PROPERTIES
+      PASS_REGULAR_EXPRESSION "${_pass}.*\nstamp: "
+      LABELS "lang:Fortran;phase:check")
+  endforeach()
+  # No output directory stays after either failure, and the rest of a
+  # module's sources need the one that failed.
+  set_tests_properties(mpich_files_configure PROPERTIES
+    FAIL_REGULAR_EXPRESSION "\nout: ")
+  set_tests_properties(mpich_files_compile PROPERTIES
+    FAIL_REGULAR_EXPRESSION "mpi_sizeofs;\nout: ")
+  set_tests_properties(mpich_files_again PROPERTIES
+    FAIL_REGULAR_EXPRESSION "second run:.*Running MPICH configure")
+
+  # The MPI files that SALT-FM makes from MPICH (#92). The parse reads
+  # SALT-FM's mpif.h, also when a -I directory of the build has one that
+  # Flang cannot parse, and the output keeps the include line, so that
+  # the build compiles it with the mpif.h of its MPI. The syntax checks
+  # read the module files from which the build copied SALT-FM's.
+  if(_salt_mpich_src)
+    set(_mpi_syntax -I${_salt_mpich_work}/build/mods -I${_salt_mpich_dir}/include)
+    set(_mpi_modules mpi/use-mpi.f90)
+    # Flang 19 fails a Fortran 2008 check of MPICH's configure, which then
+    # makes no mpi_f08 sources, so SALT-FM has no mpi_f08 module; the
+    # parse still reads SALT-FM's other module files.
+    if(LLVM_VERSION_MAJOR GREATER_EQUAL 20)
+      list(APPEND _mpi_modules mpi/use-mpi-f08.f90)
+    else()
+      _salt_add_clang_error_test(mpi_use_mpi_f08_flang19 mpi_use_mpi_f08.inst.F90
+        "lang:Fortran" mpi/use-mpi-f08.f90
+        LOG "Source file 'mpi_f08${SALT_MOD_SUFFIX}' was not found" "/mpi/mpich/modules")
+    endif()
+    foreach(src IN LISTS _mpi_modules)
+      get_filename_component(_name ${src} NAME_WE)
+      string(REPLACE "-" "_" _name "mpi_${_name}")
+      _salt_add_clang_error_test(${_name} ${_name}.inst.F90 "lang:Fortran" ${src}
+        EXIT_ZERO CHECK "-s ${_name}.inst.F90" OUT "TAU_PROFILE_START"
+        SYNTAX_FLAGS ${_mpi_syntax})
+    endforeach()
+    foreach(dir none bad)
+      set(_args "")
+      if(dir STREQUAL "bad")
+        set(_args -I${CMAKE_SOURCE_DIR}/tests/mpi/bad-mpif)
+      endif()
+      _salt_add_clang_error_test(mpi_include_mpif_${dir} mpi_include_mpif_${dir}.inst.F90
+        "lang:Fortran" mpi/include-mpif.f90 EXIT_ZERO
+        CHECK "-s mpi_include_mpif_${dir}.inst.F90"
+        OUT "TAU_PROFILE_START" "include 'mpif.h'"
+        ARGS ${_args} SYNTAX_FLAGS ${_mpi_syntax})
+    endforeach()
+    # With --mpi=none, the parse fails as before the MPI files.
+    _salt_add_clang_error_test(mpi_none mpi_none.inst.F90 "lang:Fortran"
+      mpi/use-mpi.f90 ARGS --mpi=none
+      LOG "Source file 'mpi${SALT_MOD_SUFFIX}' was not found"
+      NOT_LOG "Removed unknown flag")
+    # SALT-FM's mpif.h comes before the -I directories of the build, and
+    # its module files after the -I and -J directories, in each form; a
+    # path has no `..`, as Flang then takes minutes to read the modules.
+    add_test(NAME mpi_show_order
+      COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
+        -I/build/include -J/build/modules -J /build/mods2 -module-dir /build/mods3
+        ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+    string(CONCAT _mpi_order "\ncmd: [^\n]* -I[^ ]*/mpi/mpich/include [^\n]*"
+      " -I/build/include -J/build/modules -J /build/mods2 -module-dir /build/mods3"
+      " -I/build/modules -I/build/mods2 -I/build/mods3 -I[^ ]*/mpi/mpich/modules\n")
+    set_tests_properties(mpi_show_order PROPERTIES
+      PASS_REGULAR_EXPRESSION "${_mpi_order}"
+      FAIL_REGULAR_EXPRESSION "/\\.\\./mpi/"
+      LABELS "lang:Fortran;phase:smoke")
+    # So a module named mpi of the build comes before SALT-FM's.
+    add_test(NAME make_user_mpi_mod
+      COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm -J${_user_mod_dir}
+        --tau_output=${_user_mod_dir}/user-mpi.inst.F90
+        ${CMAKE_SOURCE_DIR}/tests/mpi/user-mpi.f90)
+    set_tests_properties(make_user_mpi_mod PROPERTIES
+      WORKING_DIRECTORY ${_user_mod_dir}
+      FIXTURES_SETUP user_mpi_mod
+      FIXTURES_REQUIRED user-mod_dir
+      ENVIRONMENT "SALT_FORTRAN_VERBOSE=1"
+      PASS_REGULAR_EXPRESSION "SALT Instrumentor Plugin finished"
+      LABELS "lang:Fortran;phase:setup")
+    foreach(flag -I -J)
+      _salt_add_user_mod_test(../mpi/use-user-mpi.f90 ${flag} FIXTURE user_mpi_mod)
+    endforeach()
+    add_test(NAME mpi_install
+      COMMAND ${CMAKE_COMMAND} -DBUILD=${CMAKE_BINARY_DIR}
+        -DPREFIX=${SALT_TEST_OUTPUT_DIR}/mpi_install
+        -DSRC=${CMAKE_SOURCE_DIR}/tests/mpi/use-mpi.f90
+        -P ${CMAKE_SOURCE_DIR}/tests/check_mpi_install.cmake)
+    set_tests_properties(mpi_install PROPERTIES LABELS "lang:Fortran;phase:check")
+  endif()
+  # saltfm passes --mpi, in any case and in both forms, to fparse-llvm as
+  # written in lower case, and only when given; fparse-llvm takes only
+  # those values.
+  set(_mpi_hello ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
+  # A missing or empty value is the default, which saltfm does not pass.
+  set(_mpi_default "fparse-llvm --show --tau_parse_excluded_modules=")
+  string(CONCAT _mpi_no_value "WARNING: --mpi needs a value. using\n  the default\n"
+    ".*${_mpi_default}")
+  foreach(name_args_pass
+      "saltfm_mpi_value|--mpi=NONE|fparse-llvm --show --mpi=none "
+      "saltfm_mpi_next|--mpi;None|fparse-llvm --show --mpi=none "
+      "saltfm_mpi_unknown|--mpi=openmpi|ERROR: unknown value 'openmpi' for --mpi\n.*USAGE:"
+      "saltfm_mpi_no_value|--mpi|${_mpi_no_value}"
+      "saltfm_mpi_empty|--mpi=|${_mpi_default}"
+      "fparse_mpi_canonical_only|--mpi=None|ERROR: unknown value 'None' for --mpi")
+    string(REPLACE "|" ";" _name_args_pass "${name_args_pass}")
+    list(GET _name_args_pass 0 _name)
+    list(GET _name_args_pass -1 _pass)
+    list(SUBLIST _name_args_pass 1 -1 _args)
+    list(REMOVE_AT _args -1)
+    string(REGEX REPLACE "_.*" "" _tool ${_name})
+    string(REPLACE "fparse" "fparse-llvm" _tool ${_tool})
+    add_test(NAME ${_name}
+      COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/${_tool} --show ${_mpi_hello} ${_args})
+    set_tests_properties(${_name} PROPERTIES
+      PASS_REGULAR_EXPRESSION "${_pass}"
+      LABELS "lang:Fortran;phase:smoke")
+  endforeach()
+  set_tests_properties(saltfm_mpi_unknown fparse_mpi_canonical_only PROPERTIES
+    FAIL_REGULAR_EXPRESSION "cmd: ")
+  # An explicit --mpi=mpich needs the MPICH files; without them, the
+  # default warns once and reads no MPI files, and --mpi=none is silent.
+  # noselect/fparse-llvm finds no MPI directory beside it,
+  # empty_files/bin/fparse-llvm one without the files, as an older build
+  # left it when MPICH's configure failed, and mpif_only/bin/fparse-llvm
+  # one with mpif.h but no `mpi` module.
+  foreach(form empty_files mpif_only)
+    set(_mpi_dir ${_fx_dir}/${form}/${SALT_INC_DIR}/../mpi/mpich)
+    file(REMOVE_RECURSE ${_fx_dir}/${form})
+    file(MAKE_DIRECTORY ${_fx_dir}/${form}/${SALT_INC_DIR}
+      ${_mpi_dir}/include ${_mpi_dir}/modules)
+    _salt_configure_fparse_llvm(${_fx_dir}/${form}/bin/fparse-llvm ${_fx_dir}/match/flang)
+  endforeach()
+  file(TOUCH ${_fx_dir}/mpif_only/${SALT_INC_DIR}/../mpi/mpich/include/mpif.h)
+  string(CONCAT _mpi_no_files_error
+    "ERROR: SALT-FM was built without MPICH files. [^\n]*\n"
+    "  with -DSALT_MPICH=download, or give --mpi=none\\.\n")
+  string(CONCAT _mpi_no_files
+    "WARNING: SALT-FM was built without MPI module support\\. A Fortran\n"
+    "  source that uses the MPI module will fail\\. To add MPI module\n"
+    "  support, configure and build SALT-FM again with\n"
+    "  -DSALT_MPICH=download\\. To stop this warning, use --mpi=none\\.\n")
+  foreach(form_script "no_files|${_fx_dir}/noselect/fparse-llvm"
+      "empty_files|${_fx_dir}/empty_files/bin/fparse-llvm"
+      "mpif_only|${_fx_dir}/mpif_only/bin/fparse-llvm")
+    string(REPLACE "|" ";" _form_script "${form_script}")
+    list(GET _form_script 0 _form)
+    list(GET _form_script 1 _script)
+    _salt_add_flang_exe_test(fparse_mpi_${_form} "${_mpi_no_files_error}"
+      "${_fx_stub_ran};cmd: "
+      ${_script} --show --mpi=mpich ${_fx_src})
+    _salt_add_flang_exe_test(fparse_mpi_${_form}_default
+      "${_mpi_no_files}.*${_fx_match_cmd}"
+      "${_fx_stub_ran};ERROR;/mpi/mpich/;without MPI.*without MPI"
+      ${_script} --show ${_fx_src})
+  endforeach()
+  _salt_add_flang_exe_test(fparse_mpi_no_files_none "${_fx_match_cmd}"
+    "${_fx_stub_ran};ERROR;WARNING;/mpi/mpich/"
+    ${_fx_dir}/noselect/fparse-llvm --show --mpi=none ${_fx_src})
+  # With --tau_build_uses_salt_flang, the parse reads the MPI files of the
+  # build: no MPI directory, and an explicit --mpi=mpich warns.
+  set(_mpi_warning "WARNING: --mpi=mpich has no effect with --tau_build_uses_salt_flang")
+  foreach(mpi "" --mpi=mpich)
+    set(_name fparse_mpi_build_uses_salt_flang${mpi})
+    string(REPLACE "--mpi=" "_" _name "${_name}")
+    set(_pass "\ncmd: ")
+    set(_fail "/mpi/mpich/;WARNING")
+    if(mpi)
+      set(_pass "${_mpi_warning}.*\ncmd: ")
+      set(_fail "/mpi/mpich/")
+    endif()
+    add_test(NAME ${_name}
+      COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show
+        --tau_build_uses_salt_flang ${mpi} ${_mpi_hello})
+    set_tests_properties(${_name} PROPERTIES
+      PASS_REGULAR_EXPRESSION "${_pass}"
+      FAIL_REGULAR_EXPRESSION "${_fail}"
+      LABELS "lang:Fortran;phase:smoke")
+  endforeach()
 
   _salt_add_output_error_tests(fortran hello.inst.F90 "lang:Fortran"
     ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)

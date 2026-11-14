@@ -104,6 +104,18 @@ TAU instrumentor options:
                                  With --tau_excluded_main_setup=file, SALT-FM parses all
                                  files, and this option has no effect.
                                  (default: modules-only)
+  --mpi=<mpich|none>           - Selects the MPI files that the parse reads: the
+                                 mpi and mpi_f08 modules and mpif.h.
+                                   mpich: the files that SALT-FM made from MPICH.
+                                          This is the default. SALT-FM reads its
+                                          mpif.h, not the one of the build.
+                                   none:  no MPI files.
+                                 If SALT-FM was built without the MPICH files, the
+                                 default warns and reads no MPI files, and
+                                 --mpi=mpich stops with an error.
+                                 With --tau_build_uses_salt_flang, the parse reads
+                                 the MPI files of the build, and this option has no
+                                 effect.
   --tau_output=<filename>      - Specify name of output instrumented file; needs exactly one source
   -o <filename>                - Same as --tau_output, before --; after --, a build option
   --tau_select_file=<filename> - Provide a selective instrumentation specification file
@@ -236,6 +248,7 @@ expecting_select_file=false
 expecting_flang_exe=false
 expecting_excluded_main_setup=false
 expecting_parse_excluded_modules=false
+expecting_mpi=false
 # After `--`, -o is a build option, not the output, and its value is no source
 after_dashes=false
 expecting_build_output=false
@@ -243,7 +256,7 @@ expecting_build_output=false
 output_options=0
 unknown_o_option=
 # Only the arguments set these, not environment variables of the same names
-unset FORTRAN_CONFIG_FILE flang_exe input_file output_file select_file
+unset FORTRAN_CONFIG_FILE flang_exe input_file output_file select_file mpi
 excluded_main_setup=routine
 parse_excluded_modules=modules-only
 build_uses_salt_flang=false
@@ -299,6 +312,11 @@ for arg in "$@"; do
         expecting_parse_excluded_modules=false
         shift
         continue
+    elif $expecting_mpi; then
+        mpi="$arg"
+        expecting_mpi=false
+        shift
+        continue
     elif [[ $arg == --flang_exe ]]; then
         expecting_flang_exe=true
         shift || true
@@ -319,6 +337,12 @@ for arg in "$@"; do
         shift || true
     elif [[ $arg == --tau_build_uses_salt_flang ]]; then
         build_uses_salt_flang=true
+        shift || true
+    elif [[ $arg == --mpi ]]; then
+        expecting_mpi=true
+        shift || true
+    elif [[ $arg == --mpi=* ]]; then
+        mpi="${arg#*=}"
         shift || true
     # As in LLVM's option parser for C, -o and --o take `<file>` or `=<file>`
     elif [[ $arg == --tau_output || ($arg =~ ^--?o$ && $after_dashes == false) ]]; then
@@ -482,6 +506,9 @@ fi
 if $expecting_parse_excluded_modules; then
     echo "WARNING: --tau_parse_excluded_modules needs a value; using ${parse_excluded_modules}" >&2
 fi
+if $expecting_mpi; then
+    echo "WARNING: --mpi needs a value; using mpich" >&2
+fi
 case ${excluded_main_setup} in
     none | routine | file) ;;
     *)
@@ -493,6 +520,13 @@ case ${parse_excluded_modules} in
     off | modules-only | submodules-and-modules) ;;
     *)
         echo "ERROR: unknown value '${parse_excluded_modules}' for --tau_parse_excluded_modules" >&2
+        exit 1
+        ;;
+esac
+case ${mpi-mpich} in
+    mpich | none) ;;
+    *)
+        echo "ERROR: unknown value '${mpi}' for --mpi" >&2
         exit 1
         ;;
 esac
@@ -632,6 +666,57 @@ if $build_uses_salt_flang; then
         fi
     fi
 fi
+# The MPI files that SALT-FM made (#92): its mpif.h comes before the
+# include directories of the build, whose mpif.h can be one that Flang
+# cannot parse, and its module files after the module directories of the
+# build. An explicit --mpi=mpich needs the files, at least mpif.h and the
+# `mpi` module; without them, the default warns and goes on, and a source
+# that uses MPI can fail to parse.
+# --tau_build_uses_salt_flang reads the .mod files of the build's MPI.
+# The directory has no `..`: with `..` in it and in the intrinsic module
+# directory, Flang takes minutes to read the module files.
+mpi_include=()
+mpi_modules=()
+no_mpi_files=false
+if [[ ${mpi-mpich} == mpich ]]; then
+    if $build_uses_salt_flang; then
+        if [[ -n ${mpi+set} ]]; then
+            echo "WARNING: --mpi=mpich has no effect with --tau_build_uses_salt_flang;" >&2
+            echo "  SALT-FM reads the MPI files of the build" >&2
+        fi
+    elif mpi_dir="$(cd "${_SALT_INC_DIR}/../mpi/mpich" 2>/dev/null && pwd)" &&
+        [[ -f ${mpi_dir}/include/mpif.h && -f ${mpi_dir}/modules/mpi${_SALT_MOD_SUFFIX} ]]; then
+        mpi_include=("-I${mpi_dir}/include")
+        # Flang searches the -J directory after all -I directories, so it
+        # also gets -I, before SALT-FM's module directory
+        prev=
+        for arg in ${args[@]+"${args[@]}"}; do
+            if [[ ${prev} == -J || ${prev} == -module-dir ]]; then
+                mpi_modules+=("-I${arg}")
+            elif [[ ${arg} == -J?* ]]; then
+                mpi_modules+=("-I${arg#-J}")
+            fi
+            prev="${arg}"
+        done
+        mpi_modules+=("-I${mpi_dir}/modules")
+    elif [[ -n ${mpi+set} ]]; then
+        echo "ERROR: SALT-FM was built without MPICH files. Configure SALT-FM" >&2
+        echo "  with -DSALT_MPICH=download, or give --mpi=none." >&2
+        exit 1
+    else
+        no_mpi_files=true
+    fi
+fi
+# Warns, when the default --mpi finds no MPICH files, before a parse or
+# with --show, but not before an exact copy of an excluded source
+function warn_no_mpi_files {
+    if $no_mpi_files; then
+        echo "WARNING: SALT-FM was built without MPI module support. A Fortran" >&2
+        echo "  source that uses the MPI module will fail. To add MPI module" >&2
+        echo "  support, configure and build SALT-FM again with" >&2
+        echo "  -DSALT_MPICH=download. To stop this warning, use --mpi=none." >&2
+    fi
+}
 # This script invokes an LLVM flang frontend plugin to parse and instrument Fortran code
 cmd=("${flang_exe}"
     -fc1
@@ -641,15 +726,18 @@ cmd=("${flang_exe}"
     # Flang 23+ resolves `use, intrinsic` only from intrinsic module paths;
     # on Flang 19-22 the plugin adds these directories to them
     ${intrinsic_mods[@]+"${intrinsic_mods[@]}"}
+    ${mpi_include[@]+"${mpi_include[@]}"}
     "${input_file:-}"
     -o "${output_file}"
-    ${args[@]+"${args[@]}"})
+    ${args[@]+"${args[@]}"}
+    ${mpi_modules[@]+"${mpi_modules[@]}"})
 # With --show, the environment of the command is its output, on stdout;
 # else it goes to stderr, as the messages above do, apart from the output
 # of -o -
 env_fd=2
 if $show; then
     env_fd=1
+    warn_no_mpi_files
 fi
 echo "SALT_FORTRAN_CONFIG_FILE=\"${FORTRAN_CONFIG_FILE}\"" >&"${env_fd}"
 echo "SALT_FORTRAN_SELECT_FILE=\"${select_file:-}\"" >&"${env_fd}"
@@ -666,6 +754,7 @@ fi
 
 # Runs Flang with the plugin
 function run_flang {
+    warn_no_mpi_files
     echo "Running: ${cmd[*]}" >&2
     if ! $build_uses_salt_flang; then
         run_cmd
