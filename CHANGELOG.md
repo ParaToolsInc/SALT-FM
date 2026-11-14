@@ -139,6 +139,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the stop of a `contains` from a macro went after the internal
   procedures, so the output did not compile
   ([#116](https://github.com/ParaToolsInc/SALT-FM/issues/116)).
+- A C or C++ function with a place for timer code in a file that an
+  `#include` brings in, at its opening or closing brace or a `return`
+  statement, gets no timer, and `saltfm` prints a warning that names
+  the function and the file. Before, the timer code went by the line
+  number in the included file onto a line of the input, which could
+  split that line, so that the output did not compile, and a `return`
+  in the included file did not stop the timer. A function that
+  includes only declarations keeps its timer. With `--tau_use_cxx_api`,
+  only the opening brace counts, as the timer code goes only there
+  ([#116](https://github.com/ParaToolsInc/SALT-FM/issues/116)).
+- A C or C++ `main` that gets no timer, as its closing brace or a
+  `return` statement has no place for timer code, keeps its setup code.
+  Before, it lost its setup code too
+  ([#116](https://github.com/ParaToolsInc/SALT-FM/issues/116)).
 - When the selective instrumentation lists exclude a Fortran subroutine
   or function, none of its internal procedures gets a timer, as the
   README says. Before, only the first one got no timer; the ones after
