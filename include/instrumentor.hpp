@@ -58,6 +58,11 @@ typedef struct inst_loc {
     bool is_return_ptr = false;
     bool needs_move = false;
     bool skip = false;
+    // For a `return` statement, the physical line and the column, from 0,
+    // of the `;` that ends it; -1 for a brace, or when that `;` has no
+    // place for timer code
+    int semi_line = -1;
+    int semi_col = -1;
     // Why the function gets no timer, when timer code has no place in its
     // file: at its opening brace (begin_skip), or, without the C++ API, at
     // its closing brace or a `return` statement (end_skip); else empty

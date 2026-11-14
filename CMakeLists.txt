@@ -3772,10 +3772,17 @@ _salt_add_same_line_test(return_comment.c)
 _salt_add_same_line_test(return_code.c)
 _salt_add_same_line_test(return_string.c EXPECTED)
 _salt_add_same_line_test(two_routines.c EXPECTED)
-# A function gets no timer, with a warning, when a timer call would go
-# in an included file (#116), and no `#line` directives either
+# The `;` that ends a `return` statement is the one that Clang reads, not
+# one in a literal, a comment, or a lambda, and a function gets no timer,
+# with a warning, when a timer call has no place in the input file: in
+# an included file, at a `;` from a macro or after a directive, or in a
+# `return` statement that holds another one (#116)
+foreach(src return_semi.c return_semi.cpp include_return.cpp
+    macro_return.c return_directive.c return_nested.c)
+  _salt_add_same_line_test(${src} EXPECTED)
+endforeach()
+# The functions with no timer get no `#line` directives either
 _salt_add_same_line_test(include_return.c EXPECTED LINES)
-_salt_add_same_line_test(include_return.cpp EXPECTED)
 # A main function with a `return` statement in an included file keeps
 # its setup code, but gets no timer
 _salt_add_clang_error_test(same_line_include_main_c

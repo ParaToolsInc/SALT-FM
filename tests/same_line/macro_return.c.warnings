@@ -1,0 +1,4 @@
+WARNING: macro_return.c: SALT-FM does not instrument "int zero(void)",
+  since a timer stop would go at a statement that ends in a macro
+WARNING: macro_return.c: SALT-FM does not instrument "int check(int)",
+  since a macro gives its braces or a return statement

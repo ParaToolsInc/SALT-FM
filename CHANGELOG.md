@@ -149,6 +149,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   includes only declarations keeps its timer. With `--tau_use_cxx_api`,
   only the opening brace counts, as the timer code goes only there
   ([#116](https://github.com/ParaToolsInc/SALT-FM/issues/116)).
+- Without `--tau_use_cxx_api`, the timer code of a C or C++ `return`
+  statement takes the statement up to the `;` that the compiler reads.
+  Before, it took the first `;` after `return` in the text, so a `;` in
+  a character or string literal, a comment, or a lambda, as in
+  `return strcmp(s, ";") == 0;`, cut the statement, and the output did
+  not compile. A function gets no timer, and `saltfm` prints a warning
+  that names it, when a macro gives that `;`, as in `return ZERO` with
+  `#define ZERO 0;`, or when a `return` statement holds another one, as
+  a GNU statement expression can. Before, the output of both did not
+  compile. A function also gets no timer, with a warning that says why,
+  when a directive, such as `#if` or an `#include` that gives the `;`,
+  comes between a `return` statement and its `;`
+  ([#116](https://github.com/ParaToolsInc/SALT-FM/issues/116)).
 - A C or C++ `main` that gets no timer, as its closing brace or a
   `return` statement has no place for timer code, keeps its setup code.
   Before, it lost its setup code too

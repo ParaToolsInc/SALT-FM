@@ -1,0 +1,4 @@
+WARNING: return_nested.c: SALT-FM does not instrument "int lines(int)",
+  since a return statement holds another return statement
+WARNING: return_nested.c: SALT-FM does not instrument "int one(int)",
+  since a return statement holds another return statement
