@@ -1,0 +1,2 @@
+Stands in for the configure script of an MPI source tree in the tests of
+salt_mpi_source() in cmake/modules/SALTMPI.cmake.

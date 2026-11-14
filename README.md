@@ -98,6 +98,23 @@ cmake --install build --prefix <dir>
 This puts `saltfm` in `<dir>/bin`, and the configuration files in
 `<dir>/share/saltfm/config_files`.
 
+For Fortran, the build also makes the MPI files that the parse reads
+(see [Fortran sources that use MPI](#fortran-sources-that-use-mpi))
+from MPICH. MPICH's `configure` needs Python 3. Without Python 3, CMake
+warns and builds without these files. The CMake variable `SALT_MPICH`
+gives the MPICH source:
+
+- `download` (default): download the MPICH release that SALT-FM pins
+  into the build directory, and check its SHA-256. If the download
+  fails, CMake warns and builds without these files.
+- the path of an MPICH tarball, for a system without network access. If
+  its SHA-256 is not the pinned one, CMake warns and uses it.
+- the path of an unpacked MPICH source directory.
+- `OFF`: no MPI files.
+
+MPICH's `configure` adds many minutes to the build. To skip it, set
+`SALT_MPICH=OFF`.
+
 #### macOS (Homebrew LLVM 23)
 
 Apple's clang does not include `flang`. Install LLVM, Flang, and Ninja
@@ -217,6 +234,37 @@ directories, and reads those of its libraries, such as MPI or HDF5. The
 libraries must be built with that Flang version too. Otherwise, Flang
 refuses their module files, and SALT-FM fails with a note that names
 the version.
+
+### Fortran sources that use MPI
+
+Flang cannot read the `mpi.mod` files of an MPI that another compiler
+built, such as gfortran. Thus SALT-FM makes its own MPI files from
+MPICH when it is built: the `mpi` and `mpi_f08` modules, and `mpif.h`.
+By default (`--mpi=mpich`), the Fortran parse reads these files. It
+reads SALT-FM's `mpif.h`, not the one in the `-I` directories of the
+build, which Flang can fail to parse; an `mpif.h` in the directory of
+the source still comes first. A module in a `-I` or `-J` directory of
+the build comes before SALT-FM's modules. The output keeps each
+`include 'mpif.h'` line, so the build compiles it with the files of its
+own MPI. To parse without these files, give `--mpi=none`.
+
+The values of the MPI constants are those of MPICH, which can differ
+from those of your MPI. The parse does not need the values. The limits:
+
+- Code compiled with `-fdefault-integer-8` is not supported.
+- With LLVM 19, SALT-FM has no `mpi_f08` module: MPICH's `configure`
+  turns it off, because Flang 19 fails one of its Fortran 2008 checks.
+- If SALT-FM was built without these files (`SALT_MPICH=OFF`, no
+  Python 3, a failed download, a failed MPICH `configure`, or an `mpi`
+  module that failed to compile), the parse warns and reads no MPI
+  files by default, so a source that uses MPI can fail to parse.
+  `--mpi=mpich` stops with an error, and `--mpi=none` does not warn.
+- With `--tau_build_uses_salt_flang`, the parse reads the MPI files of
+  the build, and `--mpi` has no effect.
+
+MPICH has a permissive license. The install keeps MPICH's `COPYRIGHT`
+file with these files, in `include/salt/mpi/mpich`. It has no `mpi.mod`,
+`mpi.h`, or MPI library.
 
 ### C and C++ sources with errors
 

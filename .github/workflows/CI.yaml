@@ -29,12 +29,51 @@ jobs:
             echo "Working directory: $(pwd)"
             echo "Working directory contents:"
             ls -la
-      # Require MLIR and Flang so the Fortran tests cannot drop out.
+      # MPICH's configure, which writes the sources of the MPI modules
+      # that the Fortran parse reads, needs Python 3
+      - name: Install Python 3
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends python3
+      # The pinned MPICH tarball, cached under its SHA-256, where the
+      # build downloads it; the build does not download it again. The
+      # Flang version is for the key of the MPI files, as an image tag
+      # can get a new LLVM release.
+      - name: Get the SHA-256 of the MPICH tarball and the Flang version
+        id: mpich
+        run: |
+          sed -n 's/^set(SALT_MPICH_SHA256 \([0-9a-f]*\))$/sha256=\1/p' \
+            cmake/modules/SALTMPI.cmake >> "$GITHUB_OUTPUT"
+          flang="$(command -v flang-new || command -v flang)"
+          "$flang" --version |
+            sed -n '1s/.*version \([^ ]*\).*/flang=\1/p' >> "$GITHUB_OUTPUT"
+      - name: Restore the MPICH tarball
+        id: mpich-tarball
+        uses: actions/cache/restore@v4
+        with:
+          path: build/mpich/mpich-*.tar.gz
+          key: mpich-${{ steps.mpich.outputs.sha256 }}
+      # The MPI files that the build makes from MPICH, which take many
+      # minutes. Their stamp file holds a hash of their inputs; with the
+      # same hash, the build does not make them again.
+      - name: Restore the MPICH files
+        id: mpich-files
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/include/salt/mpi
+            build/mpich/build/mods
+            build/mpich/files.stamp
+          key: >-
+            mpich-files-${{ runner.os }}-${{ matrix.image }}-${{ steps.mpich.outputs.flang }}-${{ steps.mpich.outputs.sha256 }}-${{ hashFiles('cmake/modules/SALTMPI*.cmake') }}
+      # Require MLIR, Flang, and Python 3 so the Fortran and MPI tests
+      # cannot drop out.
       - name: Configure SALT-FM
         run: >
           cmake -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
           -DSALT_REQUIRE_TAU=ON -DCMAKE_REQUIRE_FIND_PACKAGE_MLIR=ON
           -DCMAKE_REQUIRE_FIND_PACKAGE_Flang=ON
+          -DCMAKE_REQUIRE_FIND_PACKAGE_Python3=ON
           -Wdev -Wdeprecated -G Ninja -S . -B build
       - name: Compile SALT-FM
         id: build
@@ -52,6 +91,27 @@ jobs:
               exit 1
             fi
           fi
+      # Saved now, as a cache that is saved at the end of the job is saved
+      # only when every step passed
+      - name: Save the MPICH tarball
+        if: steps.mpich-tarball.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/mpich/mpich-*.tar.gz
+          key: ${{ steps.mpich-tarball.outputs.cache-primary-key }}
+      # Not without the `mpi` module, as after a failed MPICH configure:
+      # the key would then never get the files of a build that works
+      - name: Save the MPICH files
+        if: >-
+          steps.mpich-files.outputs.cache-hit != 'true' &&
+          hashFiles('build/include/salt/mpi/mpich/modules/mpi.saltmod') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            build/include/salt/mpi
+            build/mpich/build/mods
+            build/mpich/files.stamp
+          key: ${{ steps.mpich-files.outputs.cache-primary-key }}
       - name: Run Tests
         working-directory: build
         run: |
