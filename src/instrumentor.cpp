@@ -726,14 +726,32 @@ std::string makeFuncAndTimerNames(FunctionDecl *func, ASTContext *context, Sourc
     return src_mgr.getFilename(begin).str();
 }
 
+// Why timer code cannot go at `loc`, in `file`, the file that holds the
+// function, or "" if it can
+static std::string whyNoCodeAt(const SourceManager &src_mgr, SourceLocation loc, FileID file)
+{
+    if (loc.isMacroID())
+    {
+        return "a macro gives its braces or a return statement";
+    }
+    if (src_mgr.getFileID(loc) != file)
+    {
+        return "a timer call would go in the included file " + src_mgr.getFilename(loc).str();
+    }
+    return "";
+}
+
 class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
 {
     ASTContext *context;
     SourceManager &src_mgr;
     FunctionDecl *encl_function;
     std::vector<SourceRange> lambda_locs;
-    // Whether a macro gives the `return` of a return statement of `encl_function`
-    bool macro_return = false;
+    // The file that holds `encl_function`
+    FileID file;
+    // Why the first return statement of `encl_function` that has no place
+    // for its timer code has none, or ""
+    std::string end_skip;
 
   public:
     explicit FindReturnVisitor(ASTContext *context, SourceManager &SM) : context(context), src_mgr(SM)
@@ -750,7 +768,10 @@ class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
                 return true;
             }
         }
-        macro_return = macro_return || ret->getReturnLoc().isMacroID();
+        if (end_skip.empty())
+        {
+            end_skip = whyNoCodeAt(src_mgr, ret->getReturnLoc(), file);
+        }
         makeRetInstLoc(ret);
         return true;
     }
@@ -867,15 +888,22 @@ class FindFunctionVisitor : public RecursiveASTVisitor<FindFunctionVisitor>
             const size_t first = inst_locs.size();
             makeFuncInstLoc(func);
             return_visitor.encl_function = func;
-            return_visitor.macro_return = false;
+            // As makeFuncAndTimerNames gives it
+            return_visitor.file = src_mgr.getFileID(src_mgr.getExpansionLoc(func->getSourceRange().getBegin()));
+            return_visitor.end_skip.clear();
             return_visitor.TraverseDecl(func);
-            // The inserts go on the lines of the source text, so they cannot go
-            // where a macro gives the braces or a `return`
+            // The inserts go on the lines of the file that holds the function,
+            // so they cannot go where a macro or another file gives the braces
+            // or a `return`
             const SourceRange body = func->getBody()->getSourceRange();
+            const std::string begin_skip = whyNoCodeAt(src_mgr, body.getBegin(), return_visitor.file);
+            const std::string end_skip = return_visitor.end_skip.empty()
+                                             ? whyNoCodeAt(src_mgr, body.getEnd(), return_visitor.file)
+                                             : return_visitor.end_skip;
             for (size_t i = first; i < inst_locs.size(); i++)
             {
-                inst_locs[i]->begin_in_macro = body.getBegin().isMacroID();
-                inst_locs[i]->end_in_macro = body.getEnd().isMacroID() || return_visitor.macro_return;
+                inst_locs[i]->begin_skip = begin_skip;
+                inst_locs[i]->end_skip = end_skip;
             }
         }
         return true;
@@ -1227,14 +1255,21 @@ void instrumentor::instrument()
                     continue;
                 }
                 // The C++ API inserts only at the opening brace
-                if (loc->begin_in_macro || (!use_cxx_api && loc->end_in_macro))
+                const std::string &why = loc->begin_skip.empty() && !use_cxx_api ? loc->end_skip : loc->begin_skip;
+                if (!why.empty())
                 {
                     // Once for each function, as eq_inst_loc() below keeps one insert
                     if (loc->kind == BEGIN_FUNC && warned.emplace(loc->line, loc->col, loc->func_name).second)
                     {
                         llvm::errs() << "WARNING: " << loc->file << ": SALT-FM does not instrument \""
                                      << selectName(loc->full_timer_name) << "\",\n"
-                                     << "  since a macro gives its braces or a return statement\n";
+                                     << "  since " << why << "\n";
+                    }
+                    // main keeps its setup code, unless it has no place either
+                    if (loc->kind == BEGIN_FUNC && loc->begin_skip.empty() && strcmp(loc->func_name, "main") == 0)
+                    {
+                        loc->skip = true;
+                        inst_locations.push_back(loc);
                     }
                     continue;
                 }

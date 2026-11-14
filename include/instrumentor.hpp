@@ -3,6 +3,7 @@
 
 #include <ryml_all.hpp>
 #include "clang/Tooling/Tooling.h"
+#include <string>
 #include <vector>
 
 #include "selectfile.hpp"
@@ -57,10 +58,11 @@ typedef struct inst_loc {
     bool is_return_ptr = false;
     bool needs_move = false;
     bool skip = false;
-    // Whether a macro gives the opening brace of the function
-    bool begin_in_macro = false;
-    // Whether a macro gives the closing brace or a `return` of the function
-    bool end_in_macro = false;
+    // Why the function gets no timer, when timer code has no place in its
+    // file: at its opening brace (begin_skip), or, without the C++ API, at
+    // its closing brace or a `return` statement (end_skip); else empty
+    std::string begin_skip;
+    std::string end_skip;
 } inst_loc;
 
 #endif

@@ -1791,7 +1791,7 @@ _salt_in_test_output(output_error make_clang_error_outputs)
 # SPACE passes `--tau_output <out>` as two arguments, and DEFAULT_OUTPUT
 # passes no --tau_output, so `out` is saltfm's default output. TAIL
 # arguments follow `src`. Each LOG text must be in saltfm's output, no
-# NOT_LOG text, and each OUT text in `out`.
+# NOT_LOG text, each OUT text in `out`, and no NOT_OUT text.
 # COPY_OF `fixture` (relative to tests/) instead expects the error that
 # `out`, a copy of the fixture that is also `src` or another input, is
 # an input file, and `out` unchanged.
@@ -1800,7 +1800,7 @@ _salt_in_test_output(output_error make_clang_error_outputs)
 function(_salt_add_clang_error_test name out labels src)
   cmake_parse_arguments(PARSE_ARGV 4 ARG
     "EXIT_ZERO;NOT_ROOT;SPACE;DEFAULT_OUTPUT;NO_SYNTAX"
-    "CHECK;COPY_OF" "ARGS;TAIL;LOG;NOT_LOG;OUT;SYNTAX_FLAGS")
+    "CHECK;COPY_OF" "ARGS;TAIL;LOG;NOT_LOG;OUT;NOT_OUT;SYNTAX_FLAGS")
   set(out_args --tau_output=${out})
   if(ARG_SPACE)
     set(out_args --tau_output ${out})
@@ -1826,9 +1826,12 @@ function(_salt_add_clang_error_test name out labels src)
         { echo \"Expected ${text} in ${${kind}_file}\"; exit 1; }\n")
     endforeach()
   endforeach()
-  foreach(text IN LISTS ARG_NOT_LOG)
-    string(APPEND text_checks "! grep -qF -- \"${text}\" ${log_file} ||
-      { echo \"Did not expect ${text} in ${log_file}\"; exit 1; }\n")
+  foreach(kind IN ITEMS log out)
+    string(TOUPPER ${kind} keyword)
+    foreach(text IN LISTS ARG_NOT_${keyword})
+      string(APPEND text_checks "! grep -qF -- \"${text}\" ${${kind}_file} ||
+        { echo \"Did not expect ${text} in ${${kind}_file}\"; exit 1; }\n")
+    endforeach()
   endforeach()
   set(rc_ok "[ $rc -ge 1 ] && [ $rc -le 127 ]")
   set(rc_want "from 1 to 127")
@@ -3679,16 +3682,26 @@ _salt_add_macro_name_test(cxx_api cxx_api.cpp --tau_use_cxx_api)
 # C++, same_line_<stem>_cpp_cxxapi: saltfm, run in
 # test-output/instrument with tests/line_directive/config.yaml, without
 # and with --tau_use_cxx_api. The output, compiled with the timer calls
-# of timer.h there by the compiler of the language, must exit with the
-# status of the compiled `src`. With EXPECTED, the output must also be
-# <stem>.expected<ext> of `src`, or <stem>.cxx.expected.cpp with
-# --tau_use_cxx_api, without the `#line` directives that saltfm writes
-# and the blank lines.
+# of timer.h there and -I of tests/same_line by the compiler of the
+# language, must exit with the status of the compiled `src`. With
+# EXPECTED, the output must also be <stem>.expected<ext> of `src`, or
+# <stem>.cxx.expected.cpp with --tau_use_cxx_api, without the `#line`
+# directives that saltfm writes, unless LINES, and the blank lines.
+# saltfm must print the warnings of <src>.warnings without
+# --tau_use_cxx_api, or else none.
 function(_salt_add_same_line_test src)
-  cmake_parse_arguments(PARSE_ARGV 1 ARG "EXPECTED" "" "")
+  cmake_parse_arguments(PARSE_ARGV 1 ARG "EXPECTED;LINES" "" "")
   set(dir ${CMAKE_SOURCE_DIR}/tests/same_line)
+  set(drop_lines "-e '^#line [0-9]+( \"${dir}/${src}\")?$'")
+  if(ARG_LINES)
+    set(drop_lines "")
+  endif()
   get_filename_component(stem ${src} NAME_WLE)
   get_filename_component(ext ${src} LAST_EXT)
+  set(warnings /dev/null)
+  if(EXISTS ${dir}/${src}.warnings)
+    set(warnings ${dir}/${src}.warnings)
+  endif()
   set(compiler ${CMAKE_C_COMPILER})
   set(label "lang:C")
   set(lang c)
@@ -3707,19 +3720,20 @@ function(_salt_add_same_line_test src)
     if(api STREQUAL "cxxapi")
       set(args --tau_use_cxx_api)
       set(expected ${stem}.cxx.expected.cpp)
+      set(warnings /dev/null)
     endif()
     set(diff "")
     if(ARG_EXPECTED)
-      set(diff "grep -Ev -e '^#line [0-9]+( \"${dir}/${src}\")?$' \
-        -e '^[[:space:]]*$' ${name}.inst${ext} |
+      set(diff "grep -Ev ${drop_lines} -e '^[[:space:]]*$' ${name}.inst${ext} |
         sed -e 's|${dir}/||g' -e 's/[[:space:]]*$//' |
         diff -u ${dir}/${expected} - || exit 1")
     endif()
     add_test(NAME ${name}
-      COMMAND sh -c "\"$0\" \"$@\" || exit 1
+      COMMAND sh -c "\"$0\" \"$@\" 2> ${name}.err || { cat ${name}.err; exit 1; }
+        sed 's|${dir}/||g' ${name}.err | diff -u ${warnings} - || exit 1
         ${diff}
         \"${compiler}\" -o ${name}.orig ${dir}/${src} &&
-        \"${compiler}\" -o ${name}.inst \
+        \"${compiler}\" -o ${name}.inst -I${dir} \
           -include ${CMAKE_SOURCE_DIR}/tests/line_directive/timer.h \
           ${name}.inst${ext} || exit 1
         ./${name}.orig; orig=$?
@@ -3758,6 +3772,18 @@ _salt_add_same_line_test(return_comment.c)
 _salt_add_same_line_test(return_code.c)
 _salt_add_same_line_test(return_string.c EXPECTED)
 _salt_add_same_line_test(two_routines.c EXPECTED)
+# A function gets no timer, with a warning, when a timer call would go
+# in an included file (#116), and no `#line` directives either
+_salt_add_same_line_test(include_return.c EXPECTED LINES)
+_salt_add_same_line_test(include_return.cpp EXPECTED)
+# A main function with a `return` statement in an included file keeps
+# its setup code, but gets no timer
+_salt_add_clang_error_test(same_line_include_main_c
+  same_line_include_main_c.inst.c "lang:C" same_line/include_main.c
+  EXIT_ZERO CHECK "-s same_line_include_main_c.inst.c"
+  LOG "SALT-FM does not instrument" "int main(int, char **)"
+  "since a timer call would go in the included file"
+  OUT "TAU_INIT(&argc, &argv);" NOT_OUT "TAU_PROFILE_TIMER")
 
 # Unless --tau_excluded_main_setup=file, the main program of a source
 # that the file lists exclude gets no setup code, and saltfm warns about
