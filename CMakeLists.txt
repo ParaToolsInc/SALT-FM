@@ -3791,6 +3791,19 @@ _salt_add_clang_error_test(same_line_return_local_inline
   same_line_return_local_inline.inst.cpp "lang:CXX" same_line/return_local.cpp
   EXIT_ZERO CHECK "-s same_line_return_local_inline.inst.cpp"
   ARGS --tau_instrument_inline OUT "::S::m(void)" "::T::n(int)")
+# A function whose `return` statement holds such a method, in a lambda,
+# gets no timer, but the method, later functions, and main keep theirs
+_salt_add_clang_error_test(same_line_return_method_inline
+  same_line_return_method_inline.inst.cpp "lang:CXX"
+  same_line/return_method.cpp
+  EXIT_ZERO CHECK "-s same_line_return_method_inline.inst.cpp"
+  ARGS --tau_instrument_inline
+  LOG "return_method.cpp:6: warning: not instrumenting function 'int f(void)'"
+  "return_method.cpp:7: warning: not instrumenting function 'int g(void)'"
+  "': a return statement holds a method that gets timer code"
+  OUT "::S::m(void)" "::T::n(void)" "return_method.cpp} {14,1}"
+  "return_method.cpp} {15,1}" "TAU_PROFILE_SET_NODE(0);"
+  NOT_OUT "return_method.cpp} {6,1}" "return_method.cpp} {7,1}")
 _salt_add_clang_error_test(same_line_return_block_c
   same_line_return_block_c.inst.c "lang:C" same_line/return_block.c
   EXIT_ZERO CHECK "-s same_line_return_block_c.inst.c"
