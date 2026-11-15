@@ -13,7 +13,15 @@ int check(int n)
     return n;
 }
 int later(int n) { return n + 1; }
+// A function whose `return` statement ends at a `;` inside a macro call
+// gets no timer either, even with a `;` after the call
+#define RESULT 0; ++hits
+int hits;
+int result(void) {
+  return RESULT;
+}
 int main(void)
 {
-    return zero() + check(2) + later(3);
+    int n = result();
+    return zero() + check(2) + later(3) + n + hits;
 }

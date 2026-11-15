@@ -816,8 +816,10 @@ class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
         // end of the statement, or, where a macro gives that end, after the
         // macro call, unless a macro gives the `;` too, or a directive, such
         // as `#if` or an `#include` that gives the `;`, comes before it. The
-        // lexer skips comments, but not directives.
-        const SourceLocation end = src_mgr.getExpansionRange(ret->getEndLoc()).getEnd();
+        // lexer skips comments, but not directives. `findNextToken` gives
+        // the token after a macro call that the statement ends with, or none
+        // if it ends inside one, as `return R;` does with `#define R 0; f`.
+        const SourceLocation end = ret->getEndLoc();
         const std::optional<Token> next =
             end.isValid() ? Lexer::findNextToken(end, src_mgr, context->getLangOpts()) : std::nullopt;
         if (next && next->is(tok::hash))
