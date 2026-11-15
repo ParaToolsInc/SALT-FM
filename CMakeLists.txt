@@ -753,6 +753,8 @@ if(MLIR_FOUND AND Flang_FOUND)
         -DSTAMP=${_salt_mpich_stamp}
         -P ${CMAKE_SOURCE_DIR}/cmake/modules/SALTMPIFiles.cmake
       DEPENDS ${_salt_mpich_src}/configure
+        # A new compiler at the same path, as after an upgrade, runs it
+        ${_salt_test_flang} ${CMAKE_C_COMPILER}
         ${CMAKE_SOURCE_DIR}/cmake/modules/SALTMPI.cmake
         ${CMAKE_SOURCE_DIR}/cmake/modules/SALTMPIFiles.cmake
       COMMENT "Making the MPICH files of the Fortran parse; MPICH's configure can take many minutes"
@@ -5746,13 +5748,21 @@ if(TEST_FORTRAN)
     LABELS "lang:Fortran;phase:check")
   # A build of SALT-FM with a relative SALT_MPICH, which is relative to
   # the directory where cmake runs, makes the MPICH files of the fake
-  # MPICH, which has no `mpi` module sources.
+  # MPICH, which has no `mpi` module sources. A change to the C compiler
+  # or the Flang driver, here wrappers of this build's, makes them again.
   find_package(Python3 COMPONENTS Interpreter)
-  if(Python3_FOUND)
+  if(Python3_FOUND AND _salt_test_flang)
     set(_mpi_build ${SALT_TEST_OUTPUT_DIR}/mpich_build)
+    file(WRITE ${_mpi_build}/cc
+      "#!/usr/bin/env bash\nexec \"${CMAKE_C_COMPILER}\" \"$@\"\n")
+    file(WRITE ${_mpi_build}/flang
+      "#!/usr/bin/env bash\nexec \"${_salt_test_flang}\" \"$@\"\n")
+    execute_process(COMMAND chmod +x ${_mpi_build}/cc ${_mpi_build}/flang
+      COMMAND_ERROR_IS_FATAL ANY)
     add_test(NAME mpich_build_configure
       COMMAND ${_mpi_configure} -B ${_mpi_build}/build
-        -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER} -DSALT_MPICH=fake-mpich-files
+        -DCMAKE_C_COMPILER=${_mpi_build}/cc -D_salt_flang_driver=${_mpi_build}/flang
+        -DSALT_MPICH=fake-mpich-files
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/mpi)
     add_test(NAME mpich_build_cleanup
       COMMAND ${CMAKE_COMMAND} -E rm -rf ${_mpi_build}/build)
@@ -5763,10 +5773,21 @@ if(TEST_FORTRAN)
     set_tests_properties(mpich_build_cleanup PROPERTIES
       FIXTURES_CLEANUP mpich_build LABELS "lang:Fortran;phase:check")
     set_tests_properties(mpich_build_relative PROPERTIES
-      FIXTURES_REQUIRED mpich_build
+      FIXTURES_REQUIRED mpich_build FIXTURES_SETUP mpich_built
       PASS_REGULAR_EXPRESSION "Running MPICH configure"
       FAIL_REGULAR_EXPRESSION "MPICH configure failed"
       LABELS "lang:Fortran;phase:check")
+    foreach(compiler cc flang)
+      add_test(NAME mpich_build_rerun_${compiler}
+        COMMAND ${CMAKE_COMMAND} -DBUILD=${_mpi_build}/build
+          -DFILE=${_mpi_build}/${compiler}
+          -P ${CMAKE_SOURCE_DIR}/tests/check_salt_mpi_rerun.cmake)
+      set_tests_properties(mpich_build_rerun_${compiler} PROPERTIES
+        FIXTURES_REQUIRED "mpich_build;mpich_built" RESOURCE_LOCK mpich_build
+        PASS_REGULAR_EXPRESSION "Making the MPICH files"
+        FAIL_REGULAR_EXPRESSION "CMake Error"
+        LABELS "lang:Fortran;phase:check")
+    endforeach()
   endif()
   # When MPICH's configure or a compile of a module fails, the build warns
   # and goes on, without the files that failed, and without any MPICH
