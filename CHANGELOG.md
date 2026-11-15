@@ -166,6 +166,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `return` statement has no place for timer code, keeps its setup code.
   Before, it lost its setup code too
   ([#116](https://github.com/ParaToolsInc/SALT-FM/issues/116)).
+- Without `--tau_use_cxx_api`, a `return` statement in the body of a
+  C++ lambda gets no timer code, as it returns from the lambda, not
+  from the function. Before, one that ended in a macro, as `return NIL;`
+  with `#define NIL nullptr`, got the timer code of the function, so
+  the output could fail to compile, and a lambda body from a macro, as
+  `[] BODY` with `#define BODY { return 0; }`, left the function and
+  every later function in the source without timer stops. A `return`
+  statement in a GNU statement expression in a lambda capture gets its
+  timer code; before, it got none
+  ([#116](https://github.com/ParaToolsInc/SALT-FM/issues/116)).
 - The C and C++ warnings about a function that gets no timer have the
   format of the Fortran ones, with the file and line of the function,
   as compiler messages give them, and its signature, as in

@@ -747,7 +747,6 @@ class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
     ASTContext *context;
     SourceManager &src_mgr;
     FunctionDecl *encl_function;
-    std::vector<SourceRange> lambda_locs;
     // The file that holds `encl_function`
     FileID file;
     // How many return statements hold the one that is visited, itself
@@ -772,16 +771,22 @@ class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
         return result;
     }
 
-    bool VisitReturnStmt(ReturnStmt *ret)
+    // Visits the captures of a lambda, which its function runs, but not its
+    // body, whose return statements return from the lambda
+    bool TraverseLambdaExpr(LambdaExpr *lambda)
     {
-        for (SourceRange lambda : lambda_locs)
+        for (Expr *init : lambda->capture_inits())
         {
-            if (lambda.fullyContains(ret->getSourceRange()))
+            if (!TraverseStmt(init))
             {
-                // ignore lambdas
-                return true;
+                return false;
             }
         }
+        return true;
+    }
+
+    bool VisitReturnStmt(ReturnStmt *ret)
+    {
         SourceLocation semi;
         const std::string why = checkReturn(ret, semi);
         if (end_skip.empty())
@@ -789,12 +794,6 @@ class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
             end_skip = why;
         }
         makeRetInstLoc(ret, semi);
-        return true;
-    }
-
-    bool VisitLambdaExpr(LambdaExpr *lambda)
-    {
-        lambda_locs.push_back(lambda->getSourceRange());
         return true;
     }
 
