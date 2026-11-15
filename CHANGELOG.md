@@ -180,7 +180,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   compile where the return types differed, stopped the timer of the
   function on each call of the method or block where they matched, and
   with `--tau_instrument_inline` had the timer code of such a `return`
-  statement twice
+  statement twice. With `--tau_instrument_inline`, a function gets no
+  timer, with a warning, when one of its `return` statements holds such
+  a method, as a lambda can, since the method gets its own timer code
+  there. Before, the output did not compile
   ([#116](https://github.com/ParaToolsInc/SALT-FM/issues/116)).
 - The C and C++ warnings about a function that gets no timer have the
   format of the Fortran ones, with the file and line of the function,

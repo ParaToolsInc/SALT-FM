@@ -742,6 +742,39 @@ static std::string whyNoCodeAt(const SourceManager &src_mgr, SourceLocation loc,
     return "";
 }
 
+// Whether `func` is a function to instrument: the declaration with the
+// body, since a prototype does not visit its returns, not a defaulted
+// function, whose body, in or outside its class, is not in the source
+// (#119), and inline only with --tau_instrument_inline or in the include
+// list. The body is checked first to protect check_func_against_list (and
+// makeFuncInstLoc) from segfaults.
+static bool getsTimer(FunctionDecl *func, ASTContext *context, SourceManager &src_mgr)
+{
+    return func->doesThisDeclarationHaveABody() && !func->isDefaulted() &&
+           (!func->isInlined() || do_inline || check_func_against_list(includelist, func, context, src_mgr));
+}
+
+// Finds a function to instrument in a statement, such as a method of a
+// class in a lambda
+class FindTimedFunction : public RecursiveASTVisitor<FindTimedFunction>
+{
+    ASTContext *context;
+    SourceManager &src_mgr;
+
+  public:
+    bool found = false;
+
+    FindTimedFunction(ASTContext *context, SourceManager &SM) : context(context), src_mgr(SM)
+    {
+    }
+
+    bool VisitFunctionDecl(FunctionDecl *func)
+    {
+        found = getsTimer(func, context, src_mgr);
+        return !found;
+    }
+};
+
 class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
 {
     ASTContext *context;
@@ -817,6 +850,17 @@ class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
         if (return_depth > 1)
         {
             return "a return statement holds another return statement";
+        }
+        // Without the C++ API, the timer code of `ret` replaces its text,
+        // which then cannot also take the timer code of a function in it.
+        // shortcut: ignores the routine exclude list, so a method that the
+        // list excludes still costs the enclosing function its timer; check
+        // the list if needed.
+        FindTimedFunction timed(context, src_mgr);
+        timed.TraverseStmt(ret);
+        if (timed.found)
+        {
+            return "a return statement holds a method that gets timer code";
         }
         std::string why = whyNoCodeAt(src_mgr, ret->getReturnLoc(), file);
         if (!why.empty())
@@ -946,11 +990,7 @@ class FindFunctionVisitor : public RecursiveASTVisitor<FindFunctionVisitor>
         // if (func->isInlined()) {
         //     printf("Function %s is inline\n", func->getQualifiedNameAsString().c_str());
         // }
-        // short circuit on the body first to protect check_func_against_list (and makeFuncInstLoc) from segfaults;
-        // only the declaration with the body, since a prototype does not visit its returns;
-        // a defaulted function, in or outside its class, has a body that is not in the source (#119)
-        if (func->doesThisDeclarationHaveABody() && !func->isDefaulted() &&
-            (!func->isInlined() || do_inline || check_func_against_list(includelist, func, context, src_mgr)))
+        if (getsTimer(func, context, src_mgr))
         { //
             const size_t first = inst_locs.size();
             makeFuncInstLoc(func);
