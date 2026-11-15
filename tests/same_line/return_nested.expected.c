@@ -12,8 +12,17 @@ int later(int x) {
     timer_start("int later(int)  [{return_nested.c} {11,1}-{11,34}]");
 	{ int inst_ret_val =  x + 1; timer_stop(); return inst_ret_val; }
 }
+// Two `return` statements, the first one ending in a macro, do not hold
+// one another, so their function keeps its timer
+#define ZERO 0
+int sibling(int x) {
+    timer_start("int sibling(int)  [{return_nested.c} {15,1}-{15,52}]");
+ if (x)
+	{ int inst_ret_val =  ZERO; timer_stop(); return inst_ret_val; }
+	{ int inst_ret_val =  1; timer_stop(); return inst_ret_val; }
+}
 int main(void)
 {
-    timer_start("int main(void)  [{return_nested.c} {12,1}-{15,1}]");
-	{ int inst_ret_val =  lines(1) + one(0) + later(1); timer_stop(); return inst_ret_val; }
+    timer_start("int main(void)  [{return_nested.c} {16,1}-{19,1}]");
+	{ int inst_ret_val =  lines(1) + one(0) + later(1) + sibling(0); timer_stop(); return inst_ret_val; }
 }

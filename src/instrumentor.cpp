@@ -750,8 +750,9 @@ class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
     std::vector<SourceRange> lambda_locs;
     // The file that holds `encl_function`
     FileID file;
-    // The return statements of `encl_function`
-    std::vector<SourceRange> return_ranges;
+    // How many return statements hold the one that is visited, itself
+    // included
+    unsigned return_depth = 0;
     // Why the first return statement of `encl_function` that has no place
     // for its timer code has none, or ""
     std::string end_skip;
@@ -759,6 +760,16 @@ class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
   public:
     explicit FindReturnVisitor(ASTContext *context, SourceManager &SM) : context(context), src_mgr(SM)
     {
+    }
+
+    // Counts the return statements that hold the one visited. It takes no
+    // queue argument, so the statements in `ret` are visited before it ends.
+    bool TraverseReturnStmt(ReturnStmt *ret)
+    {
+        ++return_depth;
+        const bool result = RecursiveASTVisitor::TraverseReturnStmt(ret);
+        --return_depth;
+        return result;
     }
 
     bool VisitReturnStmt(ReturnStmt *ret)
@@ -792,14 +803,10 @@ class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
     // one; then sets `semi` to the `;` that ends `ret`
     std::string checkReturn(ReturnStmt *ret, SourceLocation &semi)
     {
-        for (SourceRange outer : return_ranges)
+        if (return_depth > 1)
         {
-            if (outer.fullyContains(ret->getSourceRange()))
-            {
-                return "a return statement holds another return statement";
-            }
+            return "a return statement holds another return statement";
         }
-        return_ranges.push_back(ret->getSourceRange());
         std::string why = whyNoCodeAt(src_mgr, ret->getReturnLoc(), file);
         if (!why.empty())
         {
@@ -937,7 +944,6 @@ class FindFunctionVisitor : public RecursiveASTVisitor<FindFunctionVisitor>
             return_visitor.encl_function = func;
             // As makeFuncAndTimerNames gives it
             return_visitor.file = src_mgr.getFileID(src_mgr.getExpansionLoc(func->getSourceRange().getBegin()));
-            return_visitor.return_ranges.clear();
             return_visitor.end_skip.clear();
             return_visitor.TraverseDecl(func);
             // The inserts go on the lines of the file that holds the function,
