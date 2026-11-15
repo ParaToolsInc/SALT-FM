@@ -716,6 +716,17 @@ if(MLIR_FOUND AND Flang_FOUND)
   include(SALTMPI)
   set(SALT_MPICH download CACHE STRING
     "MPICH for the MPI files of the Fortran parse: download, a tarball, a source directory, or OFF")
+  # A relative path is relative to the directory where cmake runs, as for
+  # a PATH variable. Store it absolute: the build uses it from other
+  # directories, and runs cmake again in the build directory.
+  if(SALT_MPICH AND NOT SALT_MPICH STREQUAL "download"
+      AND NOT IS_ABSOLUTE "${SALT_MPICH}")
+    execute_process(COMMAND pwd OUTPUT_VARIABLE _salt_cwd
+      OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+    cmake_path(ABSOLUTE_PATH SALT_MPICH BASE_DIRECTORY "${_salt_cwd}" NORMALIZE
+      OUTPUT_VARIABLE _salt_mpich_path)
+    set_property(CACHE SALT_MPICH PROPERTY VALUE "${_salt_mpich_path}")
+  endif()
   set(_salt_mpich_work ${CMAKE_BINARY_DIR}/mpich)
   set(_salt_mpich_dir ${CMAKE_BINARY_DIR}/${SALT_INC_DIR}/../mpi/mpich)
   cmake_path(NORMAL_PATH _salt_mpich_dir)
@@ -5802,19 +5813,44 @@ if(TEST_FORTRAN)
     FAIL_REGULAR_EXPRESSION "${_mpi_quiet}")
   set_tests_properties(mpich_source_download_again PROPERTIES
     FAIL_REGULAR_EXPRESSION "${_mpi_quiet};Downloading[^\n]*\n.*Downloading")
+  # A configure of SALT-FM in another build tree, with this LLVM
+  set(_mpi_configure ${CMAKE_COMMAND} -G ${CMAKE_GENERATOR} -S ${CMAKE_SOURCE_DIR}
+    -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+    -DLLVM_DIR=${LLVM_DIR} -DClang_DIR=${Clang_DIR} -DMLIR_DIR=${MLIR_DIR}
+    -DFlang_DIR=${Flang_DIR} -DSALT_INSTALL_GIT_HOOKS=OFF)
   # A configure of SALT-FM checks the path in SALT_MPICH also without
   # Python 3, with which it makes no MPICH files.
   add_test(NAME mpich_source_missing_no_python
-    COMMAND ${CMAKE_COMMAND} -G ${CMAKE_GENERATOR} -S ${CMAKE_SOURCE_DIR}
-      -B ${SALT_TEST_OUTPUT_DIR}/mpich_source/missing_no_python
-      -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
-      -DLLVM_DIR=${LLVM_DIR} -DClang_DIR=${Clang_DIR} -DMLIR_DIR=${MLIR_DIR}
-      -DFlang_DIR=${Flang_DIR} -DSALT_INSTALL_GIT_HOOKS=OFF
-      -DCMAKE_DISABLE_FIND_PACKAGE_Python3=ON
+    COMMAND ${_mpi_configure} -B ${SALT_TEST_OUTPUT_DIR}/mpich_source/missing_no_python
+      -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER} -DCMAKE_DISABLE_FIND_PACKAGE_Python3=ON
       -DSALT_MPICH=${SALT_TEST_OUTPUT_DIR}/mpich_source/missing.tar.gz)
   set_tests_properties(mpich_source_missing_no_python PROPERTIES
     PASS_REGULAR_EXPRESSION "missing\\.tar\\.gz[ \n]+does[ \n]+not[ \n]+exist"
     LABELS "lang:Fortran;phase:check")
+  # A build of SALT-FM with a relative SALT_MPICH, which is relative to
+  # the directory where cmake runs, makes the MPICH files of the fake
+  # MPICH, which has no `mpi` module sources.
+  find_package(Python3 COMPONENTS Interpreter)
+  if(Python3_FOUND)
+    set(_mpi_build ${SALT_TEST_OUTPUT_DIR}/mpich_build)
+    add_test(NAME mpich_build_configure
+      COMMAND ${_mpi_configure} -B ${_mpi_build}/build
+        -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER} -DSALT_MPICH=fake-mpich-files
+      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/mpi)
+    add_test(NAME mpich_build_cleanup
+      COMMAND ${CMAKE_COMMAND} -E rm -rf ${_mpi_build}/build)
+    add_test(NAME mpich_build_relative
+      COMMAND ${CMAKE_COMMAND} --build ${_mpi_build}/build --target salt-mpich-files)
+    set_tests_properties(mpich_build_configure PROPERTIES
+      FIXTURES_SETUP mpich_build LABELS "lang:Fortran;phase:check")
+    set_tests_properties(mpich_build_cleanup PROPERTIES
+      FIXTURES_CLEANUP mpich_build LABELS "lang:Fortran;phase:check")
+    set_tests_properties(mpich_build_relative PROPERTIES
+      FIXTURES_REQUIRED mpich_build
+      PASS_REGULAR_EXPRESSION "Running MPICH configure"
+      FAIL_REGULAR_EXPRESSION "MPICH configure failed"
+      LABELS "lang:Fortran;phase:check")
+  endif()
   # When MPICH's configure or a compile of a module fails, the build warns
   # and goes on, without the files that failed, and without any MPICH
   # files when there is no `mpi` module. Files made from the same
