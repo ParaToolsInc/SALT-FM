@@ -3777,9 +3777,10 @@ _salt_add_same_line_test(two_routines.c EXPECTED)
 # one in a literal, a comment, or a lambda, and a function gets no timer,
 # with a warning, when a timer call has no place in the input file: in
 # an included file, at a `;` from a macro or after a directive, or in a
-# `return` statement that holds another one (#116)
+# `return` statement that holds another one. A `return` statement in the
+# body of a lambda gets no timer stop (#116)
 foreach(src return_semi.c return_semi.cpp include_return.cpp
-    macro_return.c return_directive.c return_nested.c)
+    macro_return.c return_directive.c return_nested.c return_lambda.cpp)
   _salt_add_same_line_test(${src} EXPECTED)
 endforeach()
 # The functions with no timer get no `#line` directives either
