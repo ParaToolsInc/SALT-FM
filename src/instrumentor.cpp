@@ -785,6 +785,18 @@ class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
         return true;
     }
 
+    // Skip the classes and blocks in a function: their return statements
+    // return from their methods and blocks
+    bool TraverseCXXRecordDecl(CXXRecordDecl *)
+    {
+        return true;
+    }
+
+    bool TraverseBlockDecl(BlockDecl *)
+    {
+        return true;
+    }
+
     bool VisitReturnStmt(ReturnStmt *ret)
     {
         SourceLocation semi;

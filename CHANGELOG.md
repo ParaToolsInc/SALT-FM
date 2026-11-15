@@ -174,7 +174,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `[] BODY` with `#define BODY { return 0; }`, left the function and
   every later function in the source without timer stops. A `return`
   statement in a GNU statement expression in a lambda capture gets its
-  timer code; before, it got none
+  timer code; before, it got none. A `return` statement in a method of
+  a class in a function, or in a block with `-fblocks`, no longer gets
+  the timer code of the function either. Before, the output did not
+  compile where the return types differed, stopped the timer of the
+  function on each call of the method or block where they matched, and
+  with `--tau_instrument_inline` had the timer code of such a `return`
+  statement twice
   ([#116](https://github.com/ParaToolsInc/SALT-FM/issues/116)).
 - The C and C++ warnings about a function that gets no timer have the
   format of the Fortran ones, with the file and line of the function,
