@@ -3783,6 +3783,18 @@ foreach(src return_semi.c return_semi.cpp include_return.cpp
     macro_return.c return_directive.c return_nested.c return_lambda.cpp)
   _salt_add_same_line_test(${src} EXPECTED)
 endforeach()
+# Nor does one in a method of a class in a function, which gets its own
+# timer code with --tau_instrument_inline, or in a block. The output with
+# a block is only checked, as linking it needs the blocks runtime
+_salt_add_same_line_test(return_local.cpp EXPECTED)
+_salt_add_clang_error_test(same_line_return_local_inline
+  same_line_return_local_inline.inst.cpp "lang:CXX" same_line/return_local.cpp
+  EXIT_ZERO CHECK "-s same_line_return_local_inline.inst.cpp"
+  ARGS --tau_instrument_inline OUT "::S::m(void)" "::T::n(int)")
+_salt_add_clang_error_test(same_line_return_block_c
+  same_line_return_block_c.inst.c "lang:C" same_line/return_block.c
+  EXIT_ZERO CHECK "-s same_line_return_block_c.inst.c"
+  TAIL -- -fblocks SYNTAX_FLAGS -fblocks)
 # The functions with no timer get no `#line` directives either
 _salt_add_same_line_test(include_return.c EXPECTED LINES)
 # A main function with a `return` statement in an included file keeps
