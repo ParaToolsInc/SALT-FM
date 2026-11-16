@@ -171,12 +171,17 @@ force_lang=
 version=false
 show=false
 build_uses_salt_flang=false
+after_dashes=false
+# The value of the last -x after `--`
+x_lang=
+c_sources=false
+headers=()
 unset excluded_main_setup parse_excluded_modules
 for arg in "$@"; do
     #echo "working on arg: $arg"
     if [[ -n ${expecting_value_of} ]]; then
         printf -v "${expecting_value_of}" '%s' "${arg}"
-        if [[ ${expecting_value_of} == forwarded_value ]]; then
+        if [[ ${expecting_value_of} == forwarded_value || ${expecting_value_of} == x_lang ]]; then
             args+=("$arg")
         fi
         expecting_value_of=
@@ -228,10 +233,32 @@ for arg in "$@"; do
         if [[ -z "${tool:-}" ]]; then
             tool=fparse-llvm
         fi
-    elif [[ $arg != -* && ($arg == *.[cC] || $arg == *.[cC][cC] || $arg == *.cpp || $arg == *.CPP) ]]; then
+    # The extensions that Clang reads as C or C++ sources
+    elif [[ $arg != -* && $arg =~ \.(c|C|cc|CC|cp|cpp|CPP|cxx|CXX|c\+\+|C\+\+)$ ]]; then
         args+=("$arg")
+        c_sources=true
         if [[ -z "${tool:-}" ]]; then
             tool=cparse-llvm
+        fi
+    # The extensions that Clang reads as C or C++ headers; it reads .h as
+    # C. After `--`, a header is a compiler flag value, such as that of
+    # -include
+    elif [[ $arg != -* && $arg =~ \.(h|H|hh|hpp|hxx)$ && ${after_dashes} == false ]]; then
+        args+=("$arg")
+        headers+=("$arg")
+        if [[ -z "${tool:-}" ]]; then
+            tool=cparse-llvm
+        fi
+    elif [[ $arg == -- ]]; then
+        args+=("$arg")
+        after_dashes=true
+    # An -x after `--` chooses the language, as --lang does, except -x none.
+    # The separate -x takes the next argument as its value
+    elif [[ $arg == -x* && ${after_dashes} == true ]]; then
+        args+=("$arg")
+        x_lang="${arg#-x}"
+        if [[ -z ${x_lang} ]]; then
+            expecting_value_of=x_lang
         fi
     elif [[ $arg == --show ]]; then
         show=true
@@ -270,10 +297,23 @@ if [[ -z "${tool:-}" ]]; then
     exit 1
 fi
 
+if [[ ${tool} == cparse-llvm && -z ${force_lang} && ${x_lang:-none} == none ]]; then
+    for header in ${headers[@]+"${headers[@]}"}; do
+        if [[ ${header} == *.h ]]; then
+            echo "WARNING: SALT-FM reads this header as C, as Clang does, but it could be C++:" >&2
+            echo "  ${header}" >&2
+            echo "Give --lang=c or --lang=c++ to choose." >&2
+        fi
+    done
+fi
+
 # Clang reads the C or C++ sources in the language of --lang, not of
-# their extensions. The -x goes first after `--`, so that an -x in the
-# compiler flags still wins.
+# their extensions, and as headers when all of them are. The -x goes
+# first after `--`, so that an -x in the compiler flags still wins.
 if [[ ${tool} == cparse-llvm && -n ${force_lang} ]]; then
+    if [[ ${#headers[@]} -gt 0 && ${c_sources} == false ]]; then
+        force_lang+=-header
+    fi
     i=0
     while [[ $i -lt ${#args[@]} && ${args[i]} != -- ]]; do
         i=$((i + 1))
