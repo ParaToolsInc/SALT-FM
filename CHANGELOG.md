@@ -159,6 +159,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `unknown type name 'template'`. An `-x` in the compiler flags after
   `--` still sets the language
   ([#142](https://github.com/ParaToolsInc/SALT-FM/issues/142)).
+- `saltfm` reads sources and headers with the extensions `.cp`,
+  `.cxx`, `.CXX`, `.c++`, `.C++`, `.H`, `.hh`, `.hpp`, and `.hxx` as
+  C++, as Clang does. Before, a run with only such sources stopped
+  with `language not detected` unless given `--lang`. Without
+  `--lang`, `saltfm` now also takes a `.h` header and reads it as C,
+  as Clang does, with a warning that it could be C++ and that
+  `--lang=c` or `--lang=c++` chooses. The last `-x` in the compiler
+  flags after `--` also chooses, without the warning, unless it is
+  `-x none`
+  ([#142](https://github.com/ParaToolsInc/SALT-FM/issues/142)).
 
 ## [0.6.0] - 2026-10-26
 

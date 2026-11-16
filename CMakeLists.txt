@@ -950,10 +950,11 @@ endif()
 # -fsyntax-only, the FLAGS, and -I of the directory of source `src`
 # (relative to tests/, or absolute), as TAU's compiler wrapper does. The
 # extension of `src` gives the language, unless LANG gives C or CXX for
-# a header, which is then checked as a header. Fortran output calls
-# external TAU subroutines, so it needs no TAU flags, and is checked
-# only when the tests have a Flang driver, by the Fortran COMPILER if
-# given, else by Flang.
+# a header, which is then checked as a header, so that Clang does not
+# warn about its `#pragma once`. Fortran output calls external TAU
+# subroutines, so it needs no TAU flags, and is checked only when the
+# tests have a Flang driver, by the Fortran COMPILER if given, else by
+# Flang.
 function(_salt_add_syntax_test test src)
   cmake_parse_arguments(PARSE_ARGV 2 ARG "" "COMPILER;LANG" "FLAGS")
   cmake_path(ABSOLUTE_PATH src BASE_DIRECTORY ${CMAKE_SOURCE_DIR}/tests)
@@ -1004,6 +1005,10 @@ function(_salt_add_syntax_test test src)
     LABELS "${label};phase:compile")
   if(wd)
     set_tests_properties(syntax_${test} PROPERTIES WORKING_DIRECTORY ${wd})
+  endif()
+  if(header)
+    set_tests_properties(syntax_${test} PROPERTIES
+      FAIL_REGULAR_EXPRESSION "#pragma once in main file")
   endif()
 endfunction()
 # The stand-in must be what tests/stub/update-profiler-stub writes from
@@ -1413,13 +1418,144 @@ _salt_in_test_output(instrument instrument_lang_cxx_header_issue142
 _salt_add_syntax_test(instrument_lang_cxx_header_issue142
   lang_cxx_header_issue142.h lang_cxx_header_issue142.inst.h LANG CXX)
 # saltfm gives Clang the language before the compiler flags after `--`,
-# so that an -x among them still wins.
+# so that an -x among them still wins. When all sources are headers, it
+# gives the header language, so that Clang reads them as headers.
 add_test(NAME saltfm_lang_before_compiler_flags
   COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
           --lang=c++ x.h -- -x c)
 set_tests_properties(saltfm_lang_before_compiler_flags PROPERTIES
-  PASS_REGULAR_EXPRESSION "^cparse-llvm [^\n]* x\\.h -- -x c\\+\\+ -x c\n"
+  PASS_REGULAR_EXPRESSION "^cparse-llvm [^\n]* x\\.h -- -x c\\+\\+-header -x c\n"
   LABELS "lang:CXX;phase:smoke")
+add_test(NAME saltfm_lang_header_and_source
+  COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
+          --lang=c++ x.h y.cpp)
+set_tests_properties(saltfm_lang_header_and_source PROPERTIES
+  PASS_REGULAR_EXPRESSION "^cparse-llvm [^\n]* x\\.h y\\.cpp -- -x c\\+\\+\n"
+  LABELS "lang:CXX;phase:smoke")
+# After `--`, a header is a compiler flag value, not a source.
+add_test(NAME saltfm_lang_header_flag_value
+  COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
+          --lang=c++ x.inc -- -include y.hpp)
+set_tests_properties(saltfm_lang_header_flag_value PROPERTIES
+  PASS_REGULAR_EXPRESSION "^cparse-llvm [^\n]* x\\.inc -- -x c\\+\\+ -include y\\.hpp\n"
+  LABELS "lang:CXX;phase:smoke")
+# Clang warns about a `#pragma once` in a source, but not in a header.
+add_test(NAME instrument_lang_cxx_pragma_once
+  COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --lang=c++
+          --tau_output=lang_cxx_pragma_once.inst.h
+          ${CMAKE_SOURCE_DIR}/tests/lang_cxx_pragma_once.h)
+set_tests_properties(instrument_lang_cxx_pragma_once PROPERTIES
+  LABELS "lang:CXX;phase:instrument"
+  PASS_REGULAR_EXPRESSION "[Ii]nstrumentation:"
+  FAIL_REGULAR_EXPRESSION "#pragma once in main file;error:")
+add_test(NAME check_lang_cxx_pragma_once
+  COMMAND ${CMAKE_COMMAND} -E cat lang_cxx_pragma_once.inst.h)
+set_tests_properties(check_lang_cxx_pragma_once PROPERTIES
+  FIXTURES_REQUIRED instrument_lang_cxx_pragma_once
+  LABELS "lang:CXX;phase:check"
+  PASS_REGULAR_EXPRESSION "TAU_PROFILE_TIMER[^\n]*\"int pragma_once::twice\\(int\\) ")
+_salt_in_test_output(instrument instrument_lang_cxx_pragma_once
+  check_lang_cxx_pragma_once)
+_salt_add_syntax_test(instrument_lang_cxx_pragma_once lang_cxx_pragma_once.h
+  lang_cxx_pragma_once.inst.h LANG CXX)
+# Without --lang, saltfm reads a header with an extension that Clang
+# reads as C++, such as .hpp, as C++.
+set(_src ${CMAKE_BINARY_DIR}/lang_cxx_header_issue142.hpp)
+configure_file(tests/lang_cxx_header_issue142.h ${_src} COPYONLY)
+add_test(NAME instrument_ext_hpp
+  COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+          --tau_output=ext_hpp.inst.hpp ${_src})
+set_tests_properties(instrument_ext_hpp PROPERTIES
+  LABELS "lang:CXX;phase:instrument"
+  PASS_REGULAR_EXPRESSION "[Ii]nstrumentation:")
+_salt_in_test_output(instrument instrument_ext_hpp)
+_salt_add_syntax_test(instrument_ext_hpp ${_src} ext_hpp.inst.hpp LANG CXX)
+# Without --lang, saltfm reads a .h header as C, as Clang does, and warns
+# that it could be C++. With --lang, it does not warn.
+string(CONCAT _h_warning
+  "WARNING: SALT-FM reads this header as C, as Clang does, but it could be C\\+\\+:\n"
+  "  [^\n]*/lang_c_header\\.h\nGive --lang=c or --lang=c\\+\\+ to choose\\.\n")
+foreach(name c_header lang_c_header)
+  set(_lang "")
+  set(_pass "${_h_warning}.*[Ii]nstrumentation:")
+  set(_fail "error:")
+  if(name STREQUAL "lang_c_header")
+    set(_lang --lang=c)
+    set(_pass "[Ii]nstrumentation:")
+    set(_fail "error:;WARNING")
+  endif()
+  add_test(NAME instrument_${name}
+    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm ${_lang}
+            --tau_output=${name}.inst.h ${CMAKE_SOURCE_DIR}/tests/lang_c_header.h)
+  set_tests_properties(instrument_${name} PROPERTIES
+    LABELS "lang:C;phase:instrument"
+    PASS_REGULAR_EXPRESSION "${_pass}"
+    FAIL_REGULAR_EXPRESSION "${_fail}")
+  _salt_in_test_output(instrument instrument_${name})
+  _salt_add_syntax_test(instrument_${name} lang_c_header.h ${name}.inst.h LANG C)
+endforeach()
+set_property(TEST instrument_lang_cxx_header_issue142 APPEND
+  PROPERTY FAIL_REGULAR_EXPRESSION "reads this header as C")
+# Adds test saltfm_ext_<ext>, which runs `saltfm --show` with the
+# arguments in ARGN and x.<ext>, and passes if its output matches regex.
+function(_salt_add_saltfm_ext_test ext regex labels)
+  add_test(NAME saltfm_ext_${ext}
+    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show ${ARGN} x.${ext})
+  set_tests_properties(saltfm_ext_${ext} PROPERTIES
+    PASS_REGULAR_EXPRESSION "${regex}" LABELS "${labels}")
+endfunction()
+# saltfm gives cparse-llvm a source with each extension that Clang reads
+# as C or C++.
+_salt_add_saltfm_ext_test(c "^cparse-llvm " "lang:C;phase:smoke")
+foreach(ext C cc CC cp cpp CPP cxx CXX c++ C++ H hh hpp hxx)
+  _salt_add_saltfm_ext_test(${ext} "^cparse-llvm " "lang:CXX;phase:smoke")
+endforeach()
+# A .h gets the warning and no -x. After `--`, a .h is a compiler flag
+# value, as that of -include, so it gets no warning.
+string(CONCAT _ext_h "^WARNING: SALT-FM reads this header as C, [^\n]*\n  x\\.h\n"
+  "Give --lang=c or --lang=c\\+\\+ to choose\\.\ncparse-llvm [^\n]* x\\.h\n")
+_salt_add_saltfm_ext_test(h "${_ext_h}" "lang:C;phase:smoke")
+# An -x after `--`, as `-x c++` or `-xc++`, chooses the language of a .h,
+# so it gets no warning.
+add_test(NAME saltfm_ext_h_x
+  COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show x.h -- -x c++)
+add_test(NAME saltfm_ext_h_x_joined
+  COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show x.h -- -xc++)
+set_tests_properties(saltfm_ext_h_x PROPERTIES
+  PASS_REGULAR_EXPRESSION "^cparse-llvm [^\n]* x\\.h -- -x c\\+\\+\n")
+set_tests_properties(saltfm_ext_h_x_joined PROPERTIES
+  PASS_REGULAR_EXPRESSION "^cparse-llvm [^\n]* x\\.h -- -xc\\+\\+\n")
+set_tests_properties(saltfm_ext_h_x saltfm_ext_h_x_joined PROPERTIES
+  FAIL_REGULAR_EXPRESSION "WARNING"
+  LABELS "lang:CXX;phase:smoke")
+# The last -x wins, and `-x none` or `-xnone` gives the language back to
+# the extension, so a .h gets the warning.
+add_test(NAME saltfm_ext_h_x_none
+  COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show x.h -- -xc++ -x none)
+add_test(NAME saltfm_ext_h_xnone
+  COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show x.h -- -x c++ -xnone)
+string(CONCAT _ext_h_x "^WARNING: SALT-FM reads this header as C, [^\n]*\n  x\\.h\n"
+  "Give [^\n]*\ncparse-llvm [^\n]* x\\.h -- ")
+set_tests_properties(saltfm_ext_h_x_none PROPERTIES
+  PASS_REGULAR_EXPRESSION "${_ext_h_x}-xc\\+\\+ -x none\n")
+set_tests_properties(saltfm_ext_h_xnone PROPERTIES
+  PASS_REGULAR_EXPRESSION "${_ext_h_x}-x c\\+\\+ -xnone\n")
+set_tests_properties(saltfm_ext_h_x_none saltfm_ext_h_xnone PROPERTIES
+  LABELS "lang:C;phase:smoke")
+# An -x after `-x none` chooses again, so a .h gets no warning.
+add_test(NAME saltfm_ext_h_x_none_then_lang
+  COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show x.h -- -x none -xc++)
+set_tests_properties(saltfm_ext_h_x_none_then_lang PROPERTIES
+  PASS_REGULAR_EXPRESSION "^cparse-llvm [^\n]* x\\.h -- -x none -xc\\+\\+\n"
+  FAIL_REGULAR_EXPRESSION "WARNING"
+  LABELS "lang:CXX;phase:smoke")
+add_test(NAME saltfm_ext_h_flag_value
+  COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
+          x.c -- -include y.h)
+set_tests_properties(saltfm_ext_h_flag_value PROPERTIES
+  PASS_REGULAR_EXPRESSION "^cparse-llvm [^\n]* x\\.c -- -include y\\.h\n"
+  FAIL_REGULAR_EXPRESSION "WARNING"
+  LABELS "lang:C;phase:smoke")
 
 _salt_in_test_output(instrument
   check_forward_decl_skips_bodyless check_pure_virtual_skips_bodyless
@@ -3144,15 +3280,10 @@ if(TEST_FORTRAN)
   # saltfm gives fparse-llvm a source with each extension that Flang or
   # gfortran reads as Fortran, and fparse-llvm takes it as the input
   # file, not the argument before it (#102).
-  set(_ext_tests "")
   foreach(ext f F for FOR ftn FTN f77 fpp FPP f90 F90 f95 F95 f03 F03
       f08 F08 f18 F18)
-    add_test(NAME saltfm_ext_${ext}
-      COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
-              other x.${ext})
-    set_tests_properties(saltfm_ext_${ext} PROPERTIES
-      PASS_REGULAR_EXPRESSION "\ninput file: x\\.${ext}\n")
-    list(APPEND _ext_tests saltfm_ext_${ext})
+    _salt_add_saltfm_ext_test(${ext} "(^|\n)input file: x\\.${ext}\n"
+      "lang:Fortran;phase:smoke" other)
   endforeach()
   # Without --tau_output, fparse-llvm must neither remove nor write the
   # file that an exported output_file names.
@@ -3182,7 +3313,7 @@ if(TEST_FORTRAN)
     fparse_shell_var_output_file fparse_shell_var_select_file
     fparse_shell_var_build_uses_salt_flang fparse_no_input
     fparse_no_input_flag fparse_input_after_flag fparse_input_not_flag
-    fparse_unused_args fparse_unused_args_not_flag ${_ext_tests})
+    fparse_unused_args fparse_unused_args_not_flag)
   set_tests_properties(saltfm_main_setup_fortran fparse_main_setup_canonical_only
     saltfm_main_setup_fortran_next fparse_main_setup_next fparse_main_setup_no_value
     ${_shell_var_tests}
