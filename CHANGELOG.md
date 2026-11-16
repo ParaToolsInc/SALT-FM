@@ -169,6 +169,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   flags after `--` also chooses, without the warning, unless it is
   `-x none`
   ([#142](https://github.com/ParaToolsInc/SALT-FM/issues/142)).
+- For C and C++, `saltfm` drops the linker flags `-L`, `-l`, `-Wl,`,
+  and `-Xlinker` from the compiler flags after `--`, with the value of
+  a separate `-L`, `-l`, or `-Xlinker`. Before, it kept them, so Clang
+  warned, for example
+  `argument unused during compilation: '-L/usr/lib'`.
 
 ## [0.6.0] - 2026-10-26
 
