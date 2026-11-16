@@ -152,6 +152,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   comment after such a statement and a `;`, as `! continued` in
   `if (x > 0) return; & ! continued`, now stays on its line when the
   next statement is on a later line. Before, the output dropped it.
+- `saltfm --lang=c++` reads C and C++ sources as C++, and `--lang=c`
+  reads them as C. Before, `--lang` only chose the C and C++
+  instrumentor over the Fortran one, and Clang took the language from
+  the extension, so a C++ header named `.h` failed with errors such as
+  `unknown type name 'template'`. An `-x` in the compiler flags after
+  `--` still sets the language
+  ([#142](https://github.com/ParaToolsInc/SALT-FM/issues/142)).
 
 ## [0.6.0] - 2026-10-26
 

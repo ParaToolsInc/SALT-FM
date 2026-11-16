@@ -949,20 +949,29 @@ endif()
 # in ARGN after test `test`, in its working directory, with
 # -fsyntax-only, the FLAGS, and -I of the directory of source `src`
 # (relative to tests/, or absolute), as TAU's compiler wrapper does. The
-# extension of `src` gives the language. Fortran output calls external
-# TAU subroutines, so it needs no TAU flags, and is checked only when
-# the tests have a Flang driver, by the Fortran COMPILER if given, else
-# by Flang.
+# extension of `src` gives the language, unless LANG gives C or CXX for
+# a header, which is then checked as a header. Fortran output calls
+# external TAU subroutines, so it needs no TAU flags, and is checked
+# only when the tests have a Flang driver, by the Fortran COMPILER if
+# given, else by Flang.
 function(_salt_add_syntax_test test src)
-  cmake_parse_arguments(PARSE_ARGV 2 ARG "" "COMPILER" "FLAGS")
+  cmake_parse_arguments(PARSE_ARGV 2 ARG "" "COMPILER;LANG" "FLAGS")
   cmake_path(ABSOLUTE_PATH src BASE_DIRECTORY ${CMAKE_SOURCE_DIR}/tests)
   cmake_path(GET src PARENT_PATH dir)
   cmake_path(GET src EXTENSION LAST_ONLY ext)
+  set(header "")
+  if(ARG_LANG STREQUAL "C")
+    set(ext .c)
+    set(header -header)
+  elseif(ARG_LANG STREQUAL "CXX")
+    set(ext .cpp)
+    set(header -header)
+  endif()
   if(ext STREQUAL ".c")
-    set(compile ${CMAKE_C_COMPILER} -x c ${_salt_syntax_flags})
+    set(compile ${CMAKE_C_COMPILER} -x c${header} ${_salt_syntax_flags})
     set(label "lang:C")
   elseif(ext STREQUAL ".cpp")
-    set(compile ${CMAKE_CXX_COMPILER} -x c++ ${_salt_syntax_flags})
+    set(compile ${CMAKE_CXX_COMPILER} -x c++${header} ${_salt_syntax_flags})
     set(label "lang:CXX")
   elseif(_salt_test_flang)
     set(fortran ${_salt_test_flang})
@@ -1362,6 +1371,55 @@ set_tests_properties(check_brace_path
     "TAU_PROFILE_TIMER[^\n]*keep_routine[^\n]*/brace[{]d[}][.]c[}] [{]3,.*TAU_PROFILE_SET_NODE"
 )
 _salt_add_syntax_test(instrument_brace_path ${_src} ${_out})
+# --lang sets the language that Clang reads the sources in. The C++
+# header of #142, which Clang would read as C, gets the timer of its
+# member function with --lang=c++, and a copy of it named .cpp fails as
+# C with --lang=c.
+add_test(NAME instrument_lang_cxx_header_issue142
+  COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --lang=c++
+          --tau_instrument_inline --tau_output=lang_cxx_header_issue142.inst.h
+          ${CMAKE_SOURCE_DIR}/tests/lang_cxx_header_issue142.h)
+set_tests_properties(instrument_lang_cxx_header_issue142
+  PROPERTIES
+  LABELS "lang:CXX;phase:instrument"
+  PASS_REGULAR_EXPRESSION "[Ii]nstrumentation:"
+  FAIL_REGULAR_EXPRESSION "unknown type name 'template';error:"
+)
+add_test(NAME check_lang_cxx_header_issue142
+  COMMAND ${CMAKE_COMMAND} -E cat lang_cxx_header_issue142.inst.h)
+# A `;` in a test property splits the regular expression into a list, so
+# it is written [;].
+string(CONCAT _issue142_timer "TAU_PROFILE_TIMER[^\n]*\"int Test::hello\\(void\\) [^\n]*\n"
+  ".*\\{ int inst_ret_val = +1234[;] TAU_PROFILE_STOP\\(tautimer\\)[;] return inst_ret_val[;] \\}")
+set_tests_properties(check_lang_cxx_header_issue142
+  PROPERTIES
+  FIXTURES_REQUIRED instrument_lang_cxx_header_issue142
+  LABELS "lang:CXX;phase:check"
+  PASS_REGULAR_EXPRESSION "${_issue142_timer}"
+)
+# Clang fails on the C++ source, so there is no output to check.
+set(_src ${CMAKE_BINARY_DIR}/lang_cxx_header_issue142.cpp)
+configure_file(tests/lang_cxx_header_issue142.h ${_src} COPYONLY)
+add_test(NAME instrument_lang_c_cxx_source
+  COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --lang=c
+          --tau_output=lang_c_cxx_source.inst.cpp ${_src})
+set_tests_properties(instrument_lang_c_cxx_source
+  PROPERTIES
+  LABELS "lang:C;phase:instrument"
+  PASS_REGULAR_EXPRESSION "unknown type name 'template'"
+)
+_salt_in_test_output(instrument instrument_lang_cxx_header_issue142
+  check_lang_cxx_header_issue142 instrument_lang_c_cxx_source)
+_salt_add_syntax_test(instrument_lang_cxx_header_issue142
+  lang_cxx_header_issue142.h lang_cxx_header_issue142.inst.h LANG CXX)
+# saltfm gives Clang the language before the compiler flags after `--`,
+# so that an -x among them still wins.
+add_test(NAME saltfm_lang_before_compiler_flags
+  COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
+          --lang=c++ x.h -- -x c)
+set_tests_properties(saltfm_lang_before_compiler_flags PROPERTIES
+  PASS_REGULAR_EXPRESSION "^cparse-llvm [^\n]* x\\.h -- -x c\\+\\+ -x c\n"
+  LABELS "lang:CXX;phase:smoke")
 
 _salt_in_test_output(instrument
   check_forward_decl_skips_bodyless check_pure_virtual_skips_bodyless
