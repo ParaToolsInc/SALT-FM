@@ -173,21 +173,35 @@ char **addHeadersToCommand(int *argc, const char **argv)
                 new_i++;
             }
         }
-        else
+        // Keep the value of a flag that passes it to another tool, though it
+        // can look like a linker flag, as -lsr-... after -mllvm
+        else if (found_dash && i + 1 < *argc &&
+                 (strcmp(argv[i], "-Xclang") == 0 || strcmp(argv[i], "-mllvm") == 0 ||
+                  strcmp(argv[i], "-Xpreprocessor") == 0 || strcmp(argv[i], "-Xassembler") == 0))
         {
-            // ignore linker flags
-            if ((strncmp(argv[i], "-L", 2) != 0) ||        // ignore library paths
-                (strncmp(argv[i], "-l", 2) != 0) ||        // ignore libraries
-                (strncmp(argv[i], "-D_OPENMP", 9) != 0) || // ignore expanded OpenMP macro
-                (strncmp(argv[i], "-Wl", 3) != 0))
-            { // ignore linker options
-                new_argv[new_i] = strdup(argv[i]);
-                new_i++;
-            }
-            else
+            new_argv[new_i++] = strdup(argv[i++]);
+            new_argv[new_i++] = strdup(argv[i]);
+        }
+        // Drop the linker flags among the compiler flags after `--`: -L, -l,
+        // -Wl,<options>, and -Xlinker, but not a warning flag such as
+        // -Wlong-long. Keep -D_OPENMP, which selects the code that the build
+        // compiles
+        else if (found_dash && (strncmp(argv[i], "-L", 2) == 0 || strncmp(argv[i], "-l", 2) == 0 ||
+                                strncmp(argv[i], "-Wl,", 4) == 0 || strcmp(argv[i], "-Xlinker") == 0))
+        {
+            new_argc--;
+            // A separate -L, -l, or -Xlinker takes the next argument as its value
+            if (i + 1 < *argc && (strcmp(argv[i], "-L") == 0 || strcmp(argv[i], "-l") == 0 ||
+                                  strcmp(argv[i], "-Xlinker") == 0))
             {
+                i++;
                 new_argc--;
             }
+        }
+        else
+        {
+            new_argv[new_i] = strdup(argv[i]);
+            new_i++;
         }
     }
     *argc = new_argc;
