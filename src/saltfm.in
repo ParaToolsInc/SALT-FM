@@ -187,8 +187,12 @@ for arg in "$@"; do
                 force_lang=fortran
                 tool=fparse-llvm
             ;;
-            c|C|cxx|CXX|c++|C++)
+            c|C)
                 force_lang=c
+                tool=cparse-llvm
+            ;;
+            cxx|CXX|c++|C++)
+                force_lang=c++
                 tool=cparse-llvm
             ;;
             *)
@@ -264,6 +268,17 @@ fi
 if [[ -z "${tool:-}" ]]; then
     echo "No source files provided, language not detected."
     exit 1
+fi
+
+# Clang reads the C or C++ sources in the language of --lang, not of
+# their extensions. The -x goes first after `--`, so that an -x in the
+# compiler flags still wins.
+if [[ ${tool} == cparse-llvm && -n ${force_lang} ]]; then
+    i=0
+    while [[ $i -lt ${#args[@]} && ${args[i]} != -- ]]; do
+        i=$((i + 1))
+    done
+    args=(${args[@]+"${args[@]:0:i}"} -- -x "${force_lang}" ${args[@]+"${args[@]:i+1}"})
 fi
 
 canonical_value --tau_excluded_main_setup excluded_main_setup SALT_EXCLUDED_MAIN_SETUP \
