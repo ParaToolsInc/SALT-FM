@@ -182,8 +182,8 @@ lowercase or uppercase (but not `.F77`). For another extension, give
 `saltfm` reads a source as C if its extension is `.c`, and as C++ if it
 is `.C`, `.cc`, `.CC`, `.cp`, `.cpp`, `.CPP`, `.cxx`, `.CXX`, `.c++`,
 `.C++`, `.H`, `.hh`, `.hpp`, or `.hxx`. It reads a `.h` header as C, as
-Clang does, and warns that it could be C++. To choose the language of a
-`.h` header, or of another extension, give `--lang=c` or `--lang=c++`.
+Clang does. To choose the language of a `.h` header, or of another
+extension, give `--lang=c` or `--lang=c++`.
 
 To instrument and compile in one step, use TAU's compiler wrappers with
 `-optSaltInst`. For example, in a container of the latest [salt-dev]

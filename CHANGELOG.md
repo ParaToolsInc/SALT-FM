@@ -164,10 +164,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   C++, as Clang does. Before, a run with only such sources stopped
   with `language not detected` unless given `--lang`. Without
   `--lang`, `saltfm` now also takes a `.h` header and reads it as C,
-  as Clang does, with a warning that it could be C++ and that
-  `--lang=c` or `--lang=c++` chooses. The last `-x` in the compiler
-  flags after `--` also chooses, without the warning, unless it is
-  `-x none`
+  as Clang does; `--lang=c` or `--lang=c++` chooses, as does an `-x`
+  in the compiler flags after `--`
   ([#142](https://github.com/ParaToolsInc/SALT-FM/issues/142)).
 - For C and C++, `saltfm` drops the linker flags `-L`, `-l`, `-Wl,`,
   and `-Xlinker` from the compiler flags after `--`, with the value of
