@@ -2980,7 +2980,7 @@ endforeach()
 # the pattern lists. The `file` value parses the source that the file
 # list excludes.
 string(CONCAT _sif_oneline_pass
-  "\nint dropped[(]void[)] [{] return 11. [}]\n"
+  "(^|\n)int dropped[(]void[)] [{] return 11. [}]\n"
   ".*\n    if [(]n == 22[)] return 22.\n"
   ".* return dropped[(][)] [+] cond_dropped[(]0[)] [+] kept[(][)] - 44. [}]\n")
 foreach(sif include exclude file_exclude)
@@ -3198,7 +3198,7 @@ if(TEST_FORTRAN)
             --tau_excluded_main_setup=None
             ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
   set_tests_properties(saltfm_main_setup_fortran PROPERTIES
-    PASS_REGULAR_EXPRESSION "\nSALT_FORTRAN_EXCLUDED_MAIN_SETUP=none\ncmd: ")
+    PASS_REGULAR_EXPRESSION "(^|\n)SALT_FORTRAN_EXCLUDED_MAIN_SETUP=none\ncmd: ")
   set_tests_properties(fparse_main_setup_canonical_only PROPERTIES
     PASS_REGULAR_EXPRESSION "ERROR: unknown value 'None' for --tau_excluded_main_setup"
     FAIL_REGULAR_EXPRESSION "cmd: ")
@@ -3212,9 +3212,9 @@ if(TEST_FORTRAN)
             --tau_excluded_main_setup file
             ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
   set_tests_properties(saltfm_main_setup_fortran_next PROPERTIES
-    PASS_REGULAR_EXPRESSION "\nSALT_FORTRAN_EXCLUDED_MAIN_SETUP=none\ncmd: ")
+    PASS_REGULAR_EXPRESSION "(^|\n)SALT_FORTRAN_EXCLUDED_MAIN_SETUP=none\ncmd: ")
   set_tests_properties(fparse_main_setup_next PROPERTIES
-    PASS_REGULAR_EXPRESSION "\nSALT_FORTRAN_EXCLUDED_MAIN_SETUP=file\ncmd: ")
+    PASS_REGULAR_EXPRESSION "(^|\n)SALT_FORTRAN_EXCLUDED_MAIN_SETUP=file\ncmd: ")
   add_test(NAME fparse_main_setup_no_value
     COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show
             ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90 --tau_excluded_main_setup)
@@ -3361,7 +3361,7 @@ if(TEST_FORTRAN)
             ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
   set_tests_properties(fparse_shell_var_build_uses_salt_flang PROPERTIES
     ENVIRONMENT "build_uses_salt_flang=true"
-    PASS_REGULAR_EXPRESSION "\ncmd: [^\n]* -module-suffix ")
+    PASS_REGULAR_EXPRESSION "(^|\n)cmd: [^\n]* -module-suffix ")
   list(APPEND _shell_var_tests saltfm_shell_var_show saltfm_shell_var_force_lang
     fparse_shell_var_input_file fparse_shell_var_config_file
     fparse_shell_var_output_file fparse_shell_var_select_file
@@ -5764,7 +5764,7 @@ if(TEST_FORTRAN)
             --tau_output=out.inst.F90 -- -output
             ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
   set_tests_properties(o_single_dash_output_after_dashes_fortran PROPERTIES
-    PASS_REGULAR_EXPRESSION "\ninput file: [^\n]*/tests/fortran/hello[.]f90\n"
+    PASS_REGULAR_EXPRESSION "(^|\n)input file: [^\n]*/tests/fortran/hello[.]f90\n"
     LABELS "lang:Fortran;phase:smoke")
   # As in C, -o=<file>, --o <file>, and --o=<file> name the output, and
   # -o<file> is an error, which removes the setup's stale --tau_output.
