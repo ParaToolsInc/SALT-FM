@@ -12,3 +12,7 @@ long long twice(long long x)
 #ifdef LINK_FLAG_VALUE
 #error "saltfm kept the value of a separate -L, -l, or -Xlinker"
 #endif
+/* The test forces link_flags/-local.h with -include */
+#ifndef LOCAL_H_INCLUDED
+#error "saltfm dropped -include or its value -local.h"
+#endif

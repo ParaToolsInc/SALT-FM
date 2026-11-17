@@ -17,6 +17,7 @@
 #include "clang/Lex/Lexer.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "llvm/Config/llvm-config.h"
+#include "llvm/Option/ArgList.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -32,6 +33,15 @@
 #include "selectfile.hpp"
 
 using namespace clang;
+
+// LLVM 22 moved Clang's driver options from clang::driver to clang
+#if LLVM_VERSION_MAJOR >= 22
+#include "clang/Options/Options.h"
+namespace driver_opts = clang;
+#else
+#include "clang/Driver/Options.h"
+namespace driver_opts = clang::driver;
+#endif
 
 llvm::cl::opt<std::string> outputfile("tau_output",
                                       llvm::cl::desc("Specify name of output instrumented file; needs exactly one source"),
@@ -149,6 +159,8 @@ char **addHeadersToCommand(int *argc, const char **argv)
     char **new_argv = (char **)(calloc(new_argc, sizeof(char *)));
     int new_i = 0;
     bool found_dash = false; // Marker for finding "--"
+    // The arguments as Clang's driver reads them, for the flags after `--`
+    llvm::opt::InputArgList flags(argv, argv + *argc);
 
     for (int i = 0; i <= *argc; i++)
     {
@@ -173,30 +185,49 @@ char **addHeadersToCommand(int *argc, const char **argv)
                 new_i++;
             }
         }
-        // Keep the value of a flag that passes it to another tool, though it
-        // can look like a linker flag, as -lsr-... after -mllvm
-        else if (found_dash && i + 1 < *argc &&
-                 (strcmp(argv[i], "-Xclang") == 0 || strcmp(argv[i], "-mllvm") == 0 ||
-                  strcmp(argv[i], "-Xpreprocessor") == 0 || strcmp(argv[i], "-Xassembler") == 0))
+        // Drop the linker flags among the compiler flags after `--`, with their
+        // values: -L, -l, -Wl,<options>, and -Xlinker. Clang's driver reads the
+        // flags, so a flag that only looks like one, such as -Wlong-long or the
+        // value of `-include -local.h`, stays, as does -D_OPENMP, which selects
+        // the code that the build compiles
+        else if (found_dash)
         {
-            new_argv[new_i++] = strdup(argv[i++]);
-            new_argv[new_i++] = strdup(argv[i]);
-        }
-        // Drop the linker flags among the compiler flags after `--`: -L, -l,
-        // -Wl,<options>, and -Xlinker, but not a warning flag such as
-        // -Wlong-long. Keep -D_OPENMP, which selects the code that the build
-        // compiles
-        else if (found_dash && (strncmp(argv[i], "-L", 2) == 0 || strncmp(argv[i], "-l", 2) == 0 ||
-                                strncmp(argv[i], "-Wl,", 4) == 0 || strcmp(argv[i], "-Xlinker") == 0))
-        {
-            new_argc--;
-            // A separate -L, -l, or -Xlinker takes the next argument as its value
-            if (i + 1 < *argc && (strcmp(argv[i], "-L") == 0 || strcmp(argv[i], "-l") == 0 ||
-                                  strcmp(argv[i], "-Xlinker") == 0))
+            unsigned next = i;
+            const llvm::opt::OptTable &table = driver_opts::getDriverOptTable();
+            llvm::opt::Visibility clang_flags(driver_opts::options::ClangOption);
+            auto is_link = [](const std::unique_ptr<llvm::opt::Arg> &flag) {
+                return flag && (flag->getOption().matches(driver_opts::options::OPT_L) ||
+                                flag->getOption().matches(driver_opts::options::OPT_l) ||
+                                flag->getOption().matches(driver_opts::options::OPT_Wl_COMMA) ||
+                                flag->getOption().matches(driver_opts::options::OPT_Xlinker));
+            };
+            std::unique_ptr<llvm::opt::Arg> flag = table.ParseOneArg(flags, next, clang_flags);
+            bool link = is_link(flag);
+            // A flag at the end without its value, such as a lone -L, is read
+            // again with an empty value, so that a linker flag is dropped, else
+            // Clang would take the source as its value. Any other flag stays.
+            // The flag read again can point into the strings of `end`, so it
+            // is checked and freed before `end` is
+            if (!flag)
             {
-                i++;
-                new_argc--;
+                const char *with_value[] = {argv[i], ""};
+                llvm::opt::InputArgList end(with_value, with_value + 2);
+                unsigned end_next = 0;
+                link = is_link(table.ParseOneArg(end, end_next, clang_flags));
             }
+            for (; i < (int)next && i < *argc; i++)
+            {
+                if (link)
+                {
+                    new_argc--;
+                }
+                else
+                {
+                    new_argv[new_i++] = strdup(argv[i]);
+                }
+            }
+            // The loop moves to the next flag
+            i--;
         }
         else
         {

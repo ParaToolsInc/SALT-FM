@@ -1559,16 +1559,18 @@ set_tests_properties(saltfm_ext_h_flag_value PROPERTIES
 # cparse-llvm drops the linker flags from the compiler flags after `--`,
 # so Clang does not warn that they are unused, and the value of a
 # separate -L or -l with them, even one that looks like a flag. It drops
-# -Xlinker with its value, and keeps the value of -Xclang. It keeps
-# -D_OPENMP, which the build compiles with, and -Wlong-long. -Xclang
-# goes last, so that Clang fails if cparse-llvm drops its value.
+# -Xlinker with its value, and keeps the values of -include and -Xclang,
+# though they look like -l. It keeps -D_OPENMP, which the build compiles
+# with, and -Wlong-long. -Xclang goes last, so that Clang fails if
+# cparse-llvm drops its value.
+set(_link_flags_include -I${CMAKE_SOURCE_DIR}/tests/link_flags -include -local.h)
 add_test(NAME instrument_link_flags
   COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
           --tau_output=link_flags.inst.c ${CMAKE_SOURCE_DIR}/tests/link_flags.c --
           -L/nonexistent -L /nonexistent -lm -l m -Wl,-rpath,/nonexistent
           -L -DLINK_FLAG_VALUE -l -DLINK_FLAG_VALUE
-          -Xlinker -DLINK_FLAG_VALUE -D_OPENMP -std=c89 -Wlong-long
-          -Xclang -llvm-verify-each)
+          -Xlinker -DLINK_FLAG_VALUE ${_link_flags_include}
+          -D_OPENMP -std=c89 -Wlong-long -Xclang -llvm-verify-each)
 set_tests_properties(instrument_link_flags PROPERTIES
   LABELS "lang:C;phase:instrument"
   PASS_REGULAR_EXPRESSION "'long long' is an extension"
@@ -1580,7 +1582,34 @@ set_tests_properties(check_link_flags PROPERTIES
   PASS_REGULAR_EXPRESSION "TAU_PROFILE_TIMER[^\n]*twice")
 _salt_in_test_output(instrument instrument_link_flags check_link_flags)
 _salt_add_syntax_test(instrument_link_flags link_flags.c link_flags.inst.c
-  FLAGS -D_OPENMP)
+  FLAGS -D_OPENMP ${_link_flags_include})
+# cparse-llvm also drops a linker flag that ends the compiler flags
+# without its value, else Clang would take the source as that value.
+foreach(flag -L -l -Xlinker --for-linker)
+  string(REGEX REPLACE "^-+" "" name "${flag}")
+  string(REPLACE "-" "_" name "${name}")
+  add_test(NAME instrument_link_flags_end_${name}
+    COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+            --tau_output=link_flags_end_${name}.inst.c
+            ${CMAKE_SOURCE_DIR}/tests/link_flags.c -- ${_link_flags_include} ${flag})
+  set_tests_properties(instrument_link_flags_end_${name} PROPERTIES
+    LABELS "lang:C;phase:instrument"
+    FAIL_REGULAR_EXPRESSION "unused;error")
+  _salt_in_test_output(instrument instrument_link_flags_end_${name})
+  _salt_add_syntax_test(instrument_link_flags_end_${name} link_flags.c
+    link_flags_end_${name}.inst.c FLAGS ${_link_flags_include})
+endforeach()
+# It keeps any other flag without its value, such as -include, which
+# then takes the source as its value, so Clang finds no input file. The
+# test writes no output, so it has no syntax test.
+add_test(NAME instrument_include_end
+  COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+          --tau_output=include_end.inst.c ${CMAKE_SOURCE_DIR}/tests/link_flags.c --
+          ${_link_flags_include} -include)
+set_tests_properties(instrument_include_end PROPERTIES
+  LABELS "lang:C;phase:instrument"
+  PASS_REGULAR_EXPRESSION "no input files")
+_salt_in_test_output(instrument instrument_include_end)
 
 _salt_in_test_output(instrument
   check_forward_decl_skips_bodyless check_pure_virtual_skips_bodyless
