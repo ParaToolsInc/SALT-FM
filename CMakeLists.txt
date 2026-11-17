@@ -2552,7 +2552,7 @@ add_test(NAME fixture_sif_exclusion_no_warning_cpp
 set_tests_properties(fixture_sif_exclusion_no_warning_cpp
   PROPERTIES
   LABELS "lang:CXX;phase:check;sif"
-  PASS_REGULAR_EXPRESSION "\n#\tcomment\n.*\n\"#noinst#\"   \n"
+  PASS_REGULAR_EXPRESSION "(^|\n)#\tcomment\n.*\n\"#noinst#\"   \n"
 )
 
 # Suspicious quoting in routine list entries must produce a stderr warning
@@ -2970,7 +2970,7 @@ endforeach()
 add_sif_test(oneline_exclude_cpp cpp tests/sif_oneline.cpp tests/sif/oneline_exclude_cpp.tau
   ARGS --tau_use_cxx_api)
 string(CONCAT _sif_oneline_pass
-  "\nint dropped[(][)] [{] return 11. [}]\n"
+  "(^|\n)int dropped[(][)] [{] return 11. [}]\n"
   "\nvoid vdrop[(]int n[)] [{] if [(]n[)] return. g = 1. [}]\n"
   ".*TAU_PROFILE[(]\"int kept[(]"
   ".* vdrop[(]0[)]. return dropped[(][)] [+] kept[(][)] - 44 [+] g. [}]\n")
@@ -3236,7 +3236,7 @@ if(TEST_FORTRAN)
   add_test(NAME fparse_shell_var_config_file
     COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show
             ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
-  string(CONCAT _shell_var_config "\nSALT_FORTRAN_CONFIG_FILE=\"[^\n]*/"
+  string(CONCAT _shell_var_config "(^|\n)SALT_FORTRAN_CONFIG_FILE=\"[^\n]*/"
     "${CMAKE_INSTALL_DATADIR}/${CMAKE_PROJECT_NAME}/config_files/config\\.yaml\"\n")
   set_tests_properties(fparse_shell_var_config_file PROPERTIES
     ENVIRONMENT "FORTRAN_CONFIG_FILE=/env/leak.yaml"
@@ -3326,7 +3326,7 @@ if(TEST_FORTRAN)
             ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
   set_tests_properties(fparse_shell_var_select_file PROPERTIES
     ENVIRONMENT "select_file=shell_var.tau"
-    PASS_REGULAR_EXPRESSION "\nSALT_FORTRAN_SELECT_FILE=\"\"\n")
+    PASS_REGULAR_EXPRESSION "(^|\n)SALT_FORTRAN_SELECT_FILE=\"\"\n")
   add_test(NAME fparse_shell_var_build_uses_salt_flang
     COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/fparse-llvm --show
             ${CMAKE_SOURCE_DIR}/tests/fortran/hello.f90)
