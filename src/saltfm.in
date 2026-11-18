@@ -222,8 +222,10 @@ for arg in "$@"; do
         version=true
     # The tool takes the next argument as the value of these options, so
     # it names no source; LLVM's option parser takes one or two dashes.
-    # After `--`, -o is a build option, whose value names no source either
-    elif [[ $arg =~ ^--?(config_file|flang_exe|o|tau_output|tau_select_file)$ ]]; then
+    # After `--`, -o is a build option, whose value names no source either,
+    # and -p is Clang's, which takes no value
+    elif [[ $arg =~ ^--?(config_file|flang_exe|o|tau_output|tau_select_file)$ ||
+            ($arg =~ ^--?(extra-arg|extra-arg-before|p)$ && ${after_dashes} == false) ]]; then
         args+=("$arg")
         expecting_value_of=forwarded_value
     # The Fortran extensions that Flang or gfortran read, but not in an
@@ -278,6 +280,10 @@ for arg in "$@"; do
         build_uses_salt_flang=true
     else
         args+=("$arg")
+        # Before `--`, any other input is a source
+        if [[ $arg != -* && ${after_dashes} == false ]]; then
+            c_sources=true
+        fi
     fi
 done
 

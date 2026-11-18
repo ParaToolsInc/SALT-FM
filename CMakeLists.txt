@@ -1432,6 +1432,20 @@ add_test(NAME saltfm_lang_header_and_source
 set_tests_properties(saltfm_lang_header_and_source PROPERTIES
   PASS_REGULAR_EXPRESSION "^cparse-llvm [^\n]* x\\.h y\\.cpp -- -x c\\+\\+\n"
   LABELS "lang:CXX;phase:smoke")
+# An input with another extension is a source too, but the value of an
+# option that cparse-llvm takes from the next argument is not.
+add_test(NAME saltfm_lang_header_and_other_source
+  COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
+          --lang=c++ x.h y.gen)
+set_tests_properties(saltfm_lang_header_and_other_source PROPERTIES
+  PASS_REGULAR_EXPRESSION "^cparse-llvm [^\n]* x\\.h y\\.gen -- -x c\\+\\+\n"
+  LABELS "lang:CXX;phase:smoke")
+add_test(NAME saltfm_lang_header_option_values
+  COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
+          --lang=c++ -p build --extra-arg y --extra-arg-before z x.h)
+set_tests_properties(saltfm_lang_header_option_values PROPERTIES
+  PASS_REGULAR_EXPRESSION "^cparse-llvm [^\n]* x\\.h -- -x c\\+\\+-header\n"
+  LABELS "lang:CXX;phase:smoke")
 # After `--`, a header is a compiler flag value, not a source.
 add_test(NAME saltfm_lang_header_flag_value
   COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show
@@ -1547,6 +1561,14 @@ add_test(NAME saltfm_ext_h_x_none_then_lang
   COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show x.h -- -x none -xc++)
 set_tests_properties(saltfm_ext_h_x_none_then_lang PROPERTIES
   PASS_REGULAR_EXPRESSION "^cparse-llvm [^\n]* x\\.h -- -x none -xc\\+\\+\n"
+  FAIL_REGULAR_EXPRESSION "WARNING"
+  LABELS "lang:CXX;phase:smoke")
+# After `--`, -p is Clang's, which takes no value, so an -x after it
+# still chooses the language of a .h.
+add_test(NAME saltfm_ext_h_p_x
+  COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm --show x.h -- -p -x c++)
+set_tests_properties(saltfm_ext_h_p_x PROPERTIES
+  PASS_REGULAR_EXPRESSION "^cparse-llvm [^\n]* x\\.h -- -p -x c\\+\\+\n"
   FAIL_REGULAR_EXPRESSION "WARNING"
   LABELS "lang:CXX;phase:smoke")
 add_test(NAME saltfm_ext_h_flag_value
