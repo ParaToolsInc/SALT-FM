@@ -43,7 +43,37 @@ jobs:
           {
             echo "LLVM_PREFIX=$(brew --prefix llvm)"
             echo "NCPU=$(sysctl -n hw.ncpu)"
+            echo "FLANG_VERSION=$(brew list --versions flang | tr ' ' -)"
+            echo "LLVM_VERSION=$(brew list --versions llvm | tr ' ' -)"
           } >> "$GITHUB_OUTPUT"
+
+      # The pinned MPICH tarball, cached under its SHA-256, where the
+      # build downloads it; the build does not download it again
+      - name: Get the SHA-256 of the MPICH tarball
+        id: mpich
+        run: >
+          sed -n 's/^set(SALT_MPICH_SHA256 \([0-9a-f]*\))$/sha256=\1/p'
+          cmake/modules/SALTMPI.cmake >> "$GITHUB_OUTPUT"
+      - name: Restore the MPICH tarball
+        id: mpich-tarball
+        uses: actions/cache/restore@v4
+        with:
+          path: build/mpich/mpich-*.tar.gz
+          key: mpich-${{ steps.mpich.outputs.sha256 }}
+      # The MPI files that the build makes from MPICH, which take many
+      # minutes. Their stamp file holds a hash of their inputs; with the
+      # same hash, the build does not make them again. The hash has the
+      # versions of Flang and Clang, which Homebrew updates separately.
+      - name: Restore the MPICH files
+        id: mpich-files
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/include/salt/mpi
+            build/mpich/build/mods
+            build/mpich/files.stamp
+          key: >-
+            mpich-files-${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.FLANG_VERSION }}-${{ steps.paths.outputs.LLVM_VERSION }}-${{ steps.mpich.outputs.sha256 }}-${{ hashFiles('cmake/modules/SALTMPI*.cmake') }}
 
       # Only CC/CXX are pinned to Homebrew LLVM. CMAKE_PREFIX_PATH,
       # CMAKE_OSX_SYSROOT, and -stdlib=libc++ are intentionally left
@@ -52,7 +82,9 @@ jobs:
       # auto-detect breaks, the configure-time <ryml_all.hpp> probe
       # should fail fast here. Requiring MLIR and Flang (find_package(Flang)
       # only runs once MLIR is found) stops the Fortran tests from
-      # silently dropping out.
+      # silently dropping out. Requiring Python 3, which MPICH's
+      # configure needs for the MPI files of the Fortran parse, does the
+      # same for the MPI tests.
       - name: Configure SALT-FM (no TAU)
         run: >
           cmake -G Ninja -S . -B build
@@ -61,6 +93,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_REQUIRE_FIND_PACKAGE_MLIR=ON
           -DCMAKE_REQUIRE_FIND_PACKAGE_Flang=ON
+          -DCMAKE_REQUIRE_FIND_PACKAGE_Python3=ON
           -Wdev -Wdeprecated
 
       - name: Compile SALT-FM
@@ -78,6 +111,28 @@ jobs:
               exit 1
             fi
           fi
+
+      # Saved now, as a cache that is saved at the end of the job is saved
+      # only when every step passed
+      - name: Save the MPICH tarball
+        if: steps.mpich-tarball.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/mpich/mpich-*.tar.gz
+          key: ${{ steps.mpich-tarball.outputs.cache-primary-key }}
+      # Not without the `mpi` module, as after a failed MPICH configure:
+      # the key would then never get the files of a build that works
+      - name: Save the MPICH files
+        if: >-
+          steps.mpich-files.outputs.cache-hit != 'true' &&
+          hashFiles('build/include/salt/mpi/mpich/modules/mpi.saltmod') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            build/include/salt/mpi
+            build/mpich/build/mods
+            build/mpich/files.stamp
+          key: ${{ steps.mpich-files.outputs.cache-primary-key }}
 
       - name: Run tests (TAU-dependent tests are skipped automatically)
         working-directory: build

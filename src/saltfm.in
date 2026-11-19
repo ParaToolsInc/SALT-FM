@@ -104,6 +104,18 @@ TAU instrumentor options:
                                   With --tau_excluded_main_setup=file, SALT-FM parses all
                                   files, and this option has no effect.
                                   (default: \$SALT_PARSE_EXCLUDED_MODULES, else modules-only)
+  --mpi=<mpich|none>            - Fortran only. Selects the MPI files that the parse
+                                  reads: the mpi and mpi_f08 modules and mpif.h.
+                                    mpich: the files that SALT-FM made from MPICH.
+                                           This is the default. SALT-FM reads its
+                                           mpif.h, not the one of the build.
+                                    none:  no MPI files.
+                                  If SALT-FM was built without the MPICH files, the
+                                  default warns and reads no MPI files, and
+                                  --mpi=mpich stops with an error.
+                                  With --tau_build_uses_salt_flang, the parse reads
+                                  the MPI files of the build, and this option has no
+                                  effect.
   --tau_output=<filename>       - Specify name of output instrumented file; needs exactly one source
   -o <filename>                 - Same as --tau_output, before --; after --, a build option
   --tau_select_file=<filename>  - Provide a selective instrumentation specification file
@@ -117,14 +129,15 @@ function usage {
 
 # Sets `option_value` to the canonical value of option `$1`. The value
 # comes from variable `$2` if it is set, else from environment variable
-# `$3`. An empty value gives the default `$4`. Any other value must match
-# one of the space-separated values in `$5`, in any case, and gives that
-# value as `$5` writes it; else this stops with an error and the usage.
-# Warns when the option ends the arguments without its value.
+# `$3`, unless `$3` is empty. An empty value gives the default `$4`. Any
+# other value must match one of the space-separated values in `$5`, in
+# any case, and gives that value as `$5` writes it; else this stops with
+# an error and the usage. Warns when the option ends the arguments
+# without its value.
 function canonical_value {
     local name="$1"
     local value="${!2-}"
-    if [[ -z ${!2+set} ]]; then
+    if [[ -z ${!2+set} && -n $3 ]]; then
         name="$3"
         value="${!3-}"
     fi
@@ -176,7 +189,7 @@ after_dashes=false
 x_lang=
 c_sources=false
 headers=()
-unset excluded_main_setup parse_excluded_modules
+unset excluded_main_setup parse_excluded_modules mpi
 for arg in "$@"; do
     #echo "working on arg: $arg"
     if [[ -n ${expecting_value_of} ]]; then
@@ -278,6 +291,12 @@ for arg in "$@"; do
         parse_excluded_modules="${arg#*=}"
     elif [[ $arg == --tau_build_uses_salt_flang ]]; then
         build_uses_salt_flang=true
+    elif [[ $arg == --mpi ]]; then
+        expecting_value_of=mpi
+    elif [[ $arg == --mpi=* ]]; then
+        # canonical_value reads it by name
+        # shellcheck disable=SC2034
+        mpi="${arg#*=}"
     else
         args+=("$arg")
         # Before `--`, any other input is a source
@@ -335,6 +354,14 @@ if [[ ${tool} == fparse-llvm ]]; then
     canonical_value --tau_parse_excluded_modules parse_excluded_modules SALT_PARSE_EXCLUDED_MODULES \
         modules-only "off modules-only submodules-and-modules"
     args=("--tau_parse_excluded_modules=${option_value}" "${args[@]}")
+    # Only with a value, as an explicit --mpi=mpich needs the MPICH files;
+    # a missing or empty value is the default of fparse-llvm
+    if [[ -n ${mpi+set} || ${expecting_value_of} == mpi ]]; then
+        canonical_value --mpi mpi "" mpich "mpich none"
+        if [[ -n ${mpi-} ]]; then
+            args=("--mpi=${option_value}" "${args[@]}")
+        fi
+    fi
     if $build_uses_salt_flang; then
         args=(--tau_build_uses_salt_flang "${args[@]}")
     fi
