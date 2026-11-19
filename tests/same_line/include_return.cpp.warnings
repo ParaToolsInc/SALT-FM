@@ -1,0 +1,1 @@
+[SALT] include_return.cpp:6: warning: not instrumenting function 'int early(int)': a timer call would go in the included file include_return.inc

@@ -13,6 +13,7 @@ int g(void) {
 int h(void) {
   return 3;
 END
+#line 30 "body.y"
 int k(void) BEGIN
   return 4;
 }

@@ -1,0 +1,2 @@
+[SALT] return_directive.c:4: warning: not instrumenting function 'int cond(int)': a directive comes between a return statement and its `;`
+[SALT] return_directive.c:11: warning: not instrumenting function 'int incl(int)': a directive comes between a return statement and its `;`

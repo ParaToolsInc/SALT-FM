@@ -1,0 +1,3 @@
+[SALT] macro_return.c:7: warning: not instrumenting function 'int zero(void)': a timer stop would go at a statement that ends in a macro
+[SALT] macro_return.c:10: warning: not instrumenting function 'int check(int)': a macro gives its braces or a return statement
+[SALT] macro_return.c:20: warning: not instrumenting function 'int result(void)': a timer stop would go at a statement that ends in a macro

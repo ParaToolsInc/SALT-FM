@@ -247,8 +247,10 @@ static bool is_return_at(const std::string &line, size_t col)
 }
 
 // Appends the code for the end point `loc`: a `return` statement, which
-// runs from column `loc->col` of `line` to the next `;`, or the closing brace
-void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, ryml::Tree yaml_tree)
+// runs from column `loc->col` of `line` to its `;` at `last_pos`, or the
+// closing brace
+void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, size_t last_pos,
+                        ryml::Tree yaml_tree)
 {
     if (!is_return_at(line, loc->col))
     {
@@ -279,7 +281,6 @@ void make_end_func_code(inst_loc *loc, std::string &code, std::string &line, rym
     {
         // The text of the statement after `return`
         const size_t first_pos = loc->col + 6;
-        const size_t last_pos = line.find(";", first_pos);
         if (line.find_first_not_of(" \t\r\n\v\f", first_pos) == last_pos)
         {
             // also throw in brackets in case SOMEONE didn't put brackets around their if
@@ -726,56 +727,182 @@ std::string makeFuncAndTimerNames(FunctionDecl *func, ASTContext *context, Sourc
     return src_mgr.getFilename(begin).str();
 }
 
+// Why timer code cannot go at `loc`, in `file`, the file that holds the
+// function, or "" if it can
+static std::string whyNoCodeAt(const SourceManager &src_mgr, SourceLocation loc, FileID file)
+{
+    if (loc.isMacroID())
+    {
+        return "a macro gives its braces or a return statement";
+    }
+    if (src_mgr.getFileID(loc) != file)
+    {
+        return "a timer call would go in the included file " + src_mgr.getFilename(loc).str();
+    }
+    return "";
+}
+
+// Whether `func` is a function to instrument: the declaration with the
+// body, since a prototype does not visit its returns, not a defaulted
+// function, whose body, in or outside its class, is not in the source
+// (#119), and inline only with --tau_instrument_inline or in the include
+// list. The body is checked first to protect check_func_against_list (and
+// makeFuncInstLoc) from segfaults.
+static bool getsTimer(FunctionDecl *func, ASTContext *context, SourceManager &src_mgr)
+{
+    return func->doesThisDeclarationHaveABody() && !func->isDefaulted() &&
+           (!func->isInlined() || do_inline || check_func_against_list(includelist, func, context, src_mgr));
+}
+
+// Finds a function to instrument in a statement, such as a method of a
+// class in a lambda
+class FindTimedFunction : public RecursiveASTVisitor<FindTimedFunction>
+{
+    ASTContext *context;
+    SourceManager &src_mgr;
+
+  public:
+    bool found = false;
+
+    FindTimedFunction(ASTContext *context, SourceManager &SM) : context(context), src_mgr(SM)
+    {
+    }
+
+    bool VisitFunctionDecl(FunctionDecl *func)
+    {
+        found = getsTimer(func, context, src_mgr);
+        return !found;
+    }
+};
+
 class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
 {
     ASTContext *context;
     SourceManager &src_mgr;
     FunctionDecl *encl_function;
-    std::vector<SourceRange> lambda_locs;
-    // Whether a macro gives the `return` of a return statement of `encl_function`
-    bool macro_return = false;
+    // The file that holds `encl_function`
+    FileID file;
+    // How many return statements hold the one that is visited, itself
+    // included
+    unsigned return_depth = 0;
+    // Why the first return statement of `encl_function` that has no place
+    // for its timer code has none, or ""
+    std::string end_skip;
 
   public:
     explicit FindReturnVisitor(ASTContext *context, SourceManager &SM) : context(context), src_mgr(SM)
     {
     }
 
-    bool VisitReturnStmt(ReturnStmt *ret)
+    // Counts the return statements that hold the one visited. It takes no
+    // queue argument, so the statements in `ret` are visited before it ends.
+    bool TraverseReturnStmt(ReturnStmt *ret)
     {
-        for (SourceRange lambda : lambda_locs)
+        ++return_depth;
+        const bool result = RecursiveASTVisitor::TraverseReturnStmt(ret);
+        --return_depth;
+        return result;
+    }
+
+    // Visits the captures of a lambda, which its function runs, but not its
+    // body, whose return statements return from the lambda
+    bool TraverseLambdaExpr(LambdaExpr *lambda)
+    {
+        for (Expr *init : lambda->capture_inits())
         {
-            if (lambda.fullyContains(ret->getSourceRange()))
+            if (!TraverseStmt(init))
             {
-                // ignore lambdas
-                return true;
+                return false;
             }
         }
-        macro_return = macro_return || ret->getReturnLoc().isMacroID();
-        makeRetInstLoc(ret);
         return true;
     }
 
-    bool VisitLambdaExpr(LambdaExpr *lambda)
+    // Skip the classes and blocks in a function: their return statements
+    // return from their methods and blocks
+    bool TraverseCXXRecordDecl(CXXRecordDecl *)
     {
-        lambda_locs.push_back(lambda->getSourceRange());
+        return true;
+    }
+
+    bool TraverseBlockDecl(BlockDecl *)
+    {
+        return true;
+    }
+
+    bool VisitReturnStmt(ReturnStmt *ret)
+    {
+        SourceLocation semi;
+        const std::string why = checkReturn(ret, semi);
+        if (end_skip.empty())
+        {
+            end_skip = why;
+        }
+        makeRetInstLoc(ret, semi);
         return true;
     }
 
   private:
-    void makeRetInstLoc(ReturnStmt *retstmt)
+    // Why the timer code of `ret` has no place in `file`, or "" if it has
+    // one; then sets `semi` to the `;` that ends `ret`
+    std::string checkReturn(ReturnStmt *ret, SourceLocation &semi)
+    {
+        if (return_depth > 1)
+        {
+            return "a return statement holds another return statement";
+        }
+        // Without the C++ API, the timer code of `ret` replaces its text,
+        // which then cannot also take the timer code of a function in it.
+        // shortcut: ignores the routine exclude list, so a method that the
+        // list excludes still costs the enclosing function its timer; check
+        // the list if needed.
+        FindTimedFunction timed(context, src_mgr);
+        timed.TraverseStmt(ret);
+        if (timed.found)
+        {
+            return "a return statement holds a method that gets timer code";
+        }
+        std::string why = whyNoCodeAt(src_mgr, ret->getReturnLoc(), file);
+        if (!why.empty())
+        {
+            return why;
+        }
+        // Clang does not record where the `;` is. It is the token after the
+        // end of the statement, or, where a macro gives that end, after the
+        // macro call, unless a macro gives the `;` too, or a directive, such
+        // as `#if` or an `#include` that gives the `;`, comes before it. The
+        // lexer skips comments, but not directives. `findNextToken` gives
+        // the token after a macro call that the statement ends with, or none
+        // if it ends inside one, as `return R;` does with `#define R 0; f`.
+        const SourceLocation end = ret->getEndLoc();
+        const std::optional<Token> next =
+            end.isValid() ? Lexer::findNextToken(end, src_mgr, context->getLangOpts()) : std::nullopt;
+        if (next && next->is(tok::hash))
+        {
+            return "a directive comes between a return statement and its `;`";
+        }
+        if (!next || !next->is(tok::semi))
+        {
+            return "a timer stop would go at a statement that ends in a macro";
+        }
+        why = whyNoCodeAt(src_mgr, next->getLocation(), file);
+        if (why.empty())
+        {
+            semi = next->getLocation();
+        }
+        return why;
+    }
+
+    void makeRetInstLoc(ReturnStmt *retstmt, SourceLocation semi)
     {
         SourceRange range = retstmt->getSourceRange();
 
         FullSourceLoc start_loc = context->getFullLoc(range.getBegin());
-        FullSourceLoc end_loc = context->getFullLoc(range.getEnd());
 
         unsigned int start_line = start_loc.getSpellingLineNumber();
         unsigned int start_col = start_loc.getSpellingColumnNumber();
-        // The line of the last token in the source, or, where a macro gives it,
-        // of the end of the macro call, which may span lines
-        unsigned int end_line = src_mgr.getSpellingLineNumber(src_mgr.getExpansionRange(end_loc).getEnd());
-        // unused
-        // unsigned int end_col = end_loc.getSpellingColumnNumber();
+        // The line of the `;`, if the statement has a place for timer code
+        const unsigned int end_line = semi.isValid() ? src_mgr.getSpellingLineNumber(semi) : start_line;
 
         std::string func_name;
         std::string timer_name;
@@ -825,6 +952,11 @@ class FindReturnVisitor : public RecursiveASTVisitor<FindReturnVisitor>
         ret->line_shift = lineShift(src_mgr, range.getBegin());
         ret->col = start_col - 1;
         ret->kind = start_line == end_line ? RETURN_FUNC : MULTILINE_RETURN_FUNC;
+        if (semi.isValid())
+        {
+            ret->semi_line = end_line;
+            ret->semi_col = src_mgr.getSpellingColumnNumber(semi) - 1;
+        }
         ret->func_name = func_name_c;
         ret->return_type = ret_name_c;
         ret->full_timer_name = timer_name_c;
@@ -858,24 +990,27 @@ class FindFunctionVisitor : public RecursiveASTVisitor<FindFunctionVisitor>
         // if (func->isInlined()) {
         //     printf("Function %s is inline\n", func->getQualifiedNameAsString().c_str());
         // }
-        // short circuit on the body first to protect check_func_against_list (and makeFuncInstLoc) from segfaults;
-        // only the declaration with the body, since a prototype does not visit its returns;
-        // a defaulted function, in or outside its class, has a body that is not in the source (#119)
-        if (func->doesThisDeclarationHaveABody() && !func->isDefaulted() &&
-            (!func->isInlined() || do_inline || check_func_against_list(includelist, func, context, src_mgr)))
+        if (getsTimer(func, context, src_mgr))
         { //
             const size_t first = inst_locs.size();
             makeFuncInstLoc(func);
             return_visitor.encl_function = func;
-            return_visitor.macro_return = false;
+            // As makeFuncAndTimerNames gives it
+            return_visitor.file = src_mgr.getFileID(src_mgr.getExpansionLoc(func->getSourceRange().getBegin()));
+            return_visitor.end_skip.clear();
             return_visitor.TraverseDecl(func);
-            // The inserts go on the lines of the source text, so they cannot go
-            // where a macro gives the braces or a `return`
+            // The inserts go on the lines of the file that holds the function,
+            // so they cannot go where a macro or another file gives the braces
+            // or a `return`
             const SourceRange body = func->getBody()->getSourceRange();
+            const std::string begin_skip = whyNoCodeAt(src_mgr, body.getBegin(), return_visitor.file);
+            const std::string end_skip = return_visitor.end_skip.empty()
+                                             ? whyNoCodeAt(src_mgr, body.getEnd(), return_visitor.file)
+                                             : return_visitor.end_skip;
             for (size_t i = first; i < inst_locs.size(); i++)
             {
-                inst_locs[i]->begin_in_macro = body.getBegin().isMacroID();
-                inst_locs[i]->end_in_macro = body.getEnd().isMacroID() || return_visitor.macro_return;
+                inst_locs[i]->begin_skip = begin_skip;
+                inst_locs[i]->end_skip = end_skip;
             }
         }
         return true;
@@ -948,6 +1083,10 @@ class FindFunctionVisitor : public RecursiveASTVisitor<FindFunctionVisitor>
         start->func_name = func_name_c;
         start->full_timer_name = timer_name_c;
         start->file = file_c;
+        // As makeFuncAndTimerNames gives them
+        const src_pos where = presumedPos(src_mgr, src_mgr.getExpansionLoc(func->getSourceRange().getBegin()));
+        start->where_file = where.file;
+        start->where_line = where.line;
         start->has_args = func->getNumParams() > 0;
         start->is_return_ptr = func->getReturnType()->isPointerType();
         start->needs_move = needs_move;
@@ -1128,22 +1267,23 @@ void instrumentor::instrument_file(std::ifstream &og_file, std::ofstream &inst_f
                     // line ends, which end `//` comments and separate tokens
                     std::string text = line;
                     std::string next;
-                    while (is_return_at(text, curr_inst_loc->col) &&
-                           text.find(";", curr_inst_loc->col) == std::string::npos && getline(og_file, next))
+                    const bool is_return = is_return_at(text, curr_inst_loc->col) && curr_inst_loc->semi_line > 0;
+                    while (is_return && lineno < curr_inst_loc->semi_line && getline(og_file, next))
                     {
                         text += "\n" + next;
                         line = next;
                         lineno++;
                     }
-                    make_end_func_code(curr_inst_loc, inst_code, text, yaml_tree);
+                    // The `;` of the statement in `text`, on its last line, `line`
+                    const size_t semi =
+                        is_return ? text.size() - line.size() + curr_inst_loc->semi_col : std::string::npos;
+                    make_end_func_code(curr_inst_loc, inst_code, text, semi, yaml_tree);
                     inst_file << inst_code;
                     inst_file << "#line " << lineno + curr_inst_loc->line_shift << "\n";
-                    // The code replaces the statement: go on after its `;`, on the
-                    // last line of the statement
-                    const size_t semi = text.find(";", curr_inst_loc->col);
-                    if (is_return_at(text, curr_inst_loc->col) && semi != std::string::npos)
+                    // The code replaces the statement: go on after its `;`
+                    if (is_return)
                     {
-                        pos = semi + 1 - (text.size() - line.size());
+                        pos = curr_inst_loc->semi_col + 1;
                     }
                     pos = std::min(pos, line.size());
                 }
@@ -1227,14 +1367,28 @@ void instrumentor::instrument()
                     continue;
                 }
                 // The C++ API inserts only at the opening brace
-                if (loc->begin_in_macro || (!use_cxx_api && loc->end_in_macro))
+                const std::string &why = loc->begin_skip.empty() && !use_cxx_api ? loc->end_skip : loc->begin_skip;
+                if (!why.empty())
                 {
+                    // main keeps its setup code, unless it has no place either
+                    const bool is_main = strcmp(loc->func_name, "main") == 0;
+                    const bool keeps_setup = is_main && loc->begin_skip.empty();
                     // Once for each function, as eq_inst_loc() below keeps one insert
                     if (loc->kind == BEGIN_FUNC && warned.emplace(loc->line, loc->col, loc->func_name).second)
                     {
-                        llvm::errs() << "WARNING: " << loc->file << ": SALT-FM does not instrument \""
-                                     << selectName(loc->full_timer_name) << "\",\n"
-                                     << "  since a macro gives its braces or a return statement\n";
+                        // As Fortran warnings give it: the source as the command line
+                        // names it, unless a `#line` directive names another file
+                        const std::string &file = loc->where_file == loc->file ? fname : loc->where_file;
+                        llvm::errs() << "[SALT] " << file << ":" << loc->where_line
+                                     << ": warning: not instrumenting function '"
+                                     << selectName(loc->full_timer_name)
+                                     << (is_main && !keeps_setup ? "', which gets no setup code: " : "': ") << why
+                                     << "\n";
+                    }
+                    if (loc->kind == BEGIN_FUNC && keeps_setup)
+                    {
+                        loc->skip = true;
+                        inst_locations.push_back(loc);
                     }
                     continue;
                 }

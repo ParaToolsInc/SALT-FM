@@ -139,6 +139,60 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the stop of a `contains` from a macro went after the internal
   procedures, so the output did not compile
   ([#116](https://github.com/ParaToolsInc/SALT-FM/issues/116)).
+- A C or C++ function with a place for timer code in a file that an
+  `#include` brings in, at its opening or closing brace or a `return`
+  statement, gets no timer, and `saltfm` prints a warning that names
+  the function and the file. Before, the timer code went by the line
+  number in the included file onto a line of the input, which could
+  split that line, so that the output did not compile, and a `return`
+  in the included file did not stop the timer. A function that
+  includes only declarations keeps its timer. With `--tau_use_cxx_api`,
+  only the opening brace counts, as the timer code goes only there
+  ([#116](https://github.com/ParaToolsInc/SALT-FM/issues/116)).
+- Without `--tau_use_cxx_api`, the timer code of a C or C++ `return`
+  statement takes the statement up to the `;` that the compiler reads.
+  Before, it took the first `;` after `return` in the text, so a `;` in
+  a character or string literal, a comment, or a lambda, as in
+  `return strcmp(s, ";") == 0;`, cut the statement, and the output did
+  not compile. A function gets no timer, and `saltfm` prints a warning
+  that names it, when a macro gives that `;`, as in `return ZERO` with
+  `#define ZERO 0;`, or when a `return` statement holds another one, as
+  a GNU statement expression can. Before, the output of both did not
+  compile. A function also gets no timer, with a warning that says why,
+  when a directive, such as `#if` or an `#include` that gives the `;`,
+  comes between a `return` statement and its `;`
+  ([#116](https://github.com/ParaToolsInc/SALT-FM/issues/116)).
+- A C or C++ `main` that gets no timer, as its closing brace or a
+  `return` statement has no place for timer code, keeps its setup code.
+  Before, it lost its setup code too
+  ([#116](https://github.com/ParaToolsInc/SALT-FM/issues/116)).
+- Without `--tau_use_cxx_api`, a `return` statement in the body of a
+  C++ lambda gets no timer code, as it returns from the lambda, not
+  from the function. Before, one that ended in a macro, as `return NIL;`
+  with `#define NIL nullptr`, got the timer code of the function, so
+  the output could fail to compile, and a lambda body from a macro, as
+  `[] BODY` with `#define BODY { return 0; }`, left the function and
+  every later function in the source without timer stops. A `return`
+  statement in a GNU statement expression in a lambda capture gets its
+  timer code; before, it got none. A `return` statement in a method of
+  a class in a function, or in a block with `-fblocks`, no longer gets
+  the timer code of the function either. Before, the output did not
+  compile where the return types differed, stopped the timer of the
+  function on each call of the method or block where they matched, and
+  with `--tau_instrument_inline` had the timer code of such a `return`
+  statement twice. With `--tau_instrument_inline`, a function gets no
+  timer, with a warning, when one of its `return` statements holds such
+  a method, as a lambda can, since the method gets its own timer code
+  there. Before, the output did not compile
+  ([#116](https://github.com/ParaToolsInc/SALT-FM/issues/116)).
+- The C and C++ warnings about a function that gets no timer have the
+  format of the Fortran ones, with the file and line of the function,
+  as compiler messages give them, and its signature, as in
+  `[SALT] f.c:3: warning: not instrumenting function 'int f(void)': a macro gives its braces or a return statement`.
+  A warning about `main` says when it gets no setup code, as when its
+  opening brace comes from a macro or an included file. Before, the
+  warning named the file but not the line, took two lines, and did not
+  say that `main` got no setup code.
 - When the selective instrumentation lists exclude a Fortran subroutine
   or function, none of its internal procedures gets a timer, as the
   README says. Before, only the first one got no timer; the ones after

@@ -1791,7 +1791,7 @@ _salt_in_test_output(output_error make_clang_error_outputs)
 # SPACE passes `--tau_output <out>` as two arguments, and DEFAULT_OUTPUT
 # passes no --tau_output, so `out` is saltfm's default output. TAIL
 # arguments follow `src`. Each LOG text must be in saltfm's output, no
-# NOT_LOG text, and each OUT text in `out`.
+# NOT_LOG text, each OUT text in `out`, and no NOT_OUT text.
 # COPY_OF `fixture` (relative to tests/) instead expects the error that
 # `out`, a copy of the fixture that is also `src` or another input, is
 # an input file, and `out` unchanged.
@@ -1800,7 +1800,7 @@ _salt_in_test_output(output_error make_clang_error_outputs)
 function(_salt_add_clang_error_test name out labels src)
   cmake_parse_arguments(PARSE_ARGV 4 ARG
     "EXIT_ZERO;NOT_ROOT;SPACE;DEFAULT_OUTPUT;NO_SYNTAX"
-    "CHECK;COPY_OF" "ARGS;TAIL;LOG;NOT_LOG;OUT;SYNTAX_FLAGS")
+    "CHECK;COPY_OF" "ARGS;TAIL;LOG;NOT_LOG;OUT;NOT_OUT;SYNTAX_FLAGS")
   set(out_args --tau_output=${out})
   if(ARG_SPACE)
     set(out_args --tau_output ${out})
@@ -1826,9 +1826,12 @@ function(_salt_add_clang_error_test name out labels src)
         { echo \"Expected ${text} in ${${kind}_file}\"; exit 1; }\n")
     endforeach()
   endforeach()
-  foreach(text IN LISTS ARG_NOT_LOG)
-    string(APPEND text_checks "! grep -qF -- \"${text}\" ${log_file} ||
-      { echo \"Did not expect ${text} in ${log_file}\"; exit 1; }\n")
+  foreach(kind IN ITEMS log out)
+    string(TOUPPER ${kind} keyword)
+    foreach(text IN LISTS ARG_NOT_${keyword})
+      string(APPEND text_checks "! grep -qF -- \"${text}\" ${${kind}_file} ||
+        { echo \"Did not expect ${text} in ${${kind}_file}\"; exit 1; }\n")
+    endforeach()
   endforeach()
   set(rc_ok "[ $rc -ge 1 ] && [ $rc -le 127 ]")
   set(rc_want "from 1 to 127")
@@ -3662,7 +3665,8 @@ endfunction()
 _salt_add_macro_name_test(same_file same_file.c)
 _salt_add_macro_name_test(header header.c)
 # Braces or a return statement from a macro: no timers, and one warning
-# for each function, also with a prototype
+# for each function, also with a prototype, with the file and line of a
+# `#line` directive
 _salt_add_macro_name_test(body body.c)
 # A return statement whose last token is a macro, one on the next line
 # and the definition on the line of the `return`, or a macro call over
@@ -3679,16 +3683,26 @@ _salt_add_macro_name_test(cxx_api cxx_api.cpp --tau_use_cxx_api)
 # C++, same_line_<stem>_cpp_cxxapi: saltfm, run in
 # test-output/instrument with tests/line_directive/config.yaml, without
 # and with --tau_use_cxx_api. The output, compiled with the timer calls
-# of timer.h there by the compiler of the language, must exit with the
-# status of the compiled `src`. With EXPECTED, the output must also be
-# <stem>.expected<ext> of `src`, or <stem>.cxx.expected.cpp with
-# --tau_use_cxx_api, without the `#line` directives that saltfm writes
-# and the blank lines.
+# of timer.h there and -I of tests/same_line by the compiler of the
+# language, must exit with the status of the compiled `src`. With
+# EXPECTED, the output must also be <stem>.expected<ext> of `src`, or
+# <stem>.cxx.expected.cpp with --tau_use_cxx_api, without the `#line`
+# directives that saltfm writes, unless LINES, and the blank lines.
+# saltfm must print the warnings of <src>.warnings without
+# --tau_use_cxx_api, or else none.
 function(_salt_add_same_line_test src)
-  cmake_parse_arguments(PARSE_ARGV 1 ARG "EXPECTED" "" "")
+  cmake_parse_arguments(PARSE_ARGV 1 ARG "EXPECTED;LINES" "" "")
   set(dir ${CMAKE_SOURCE_DIR}/tests/same_line)
+  set(drop_lines "-e '^#line [0-9]+( \"${dir}/${src}\")?$'")
+  if(ARG_LINES)
+    set(drop_lines "")
+  endif()
   get_filename_component(stem ${src} NAME_WLE)
   get_filename_component(ext ${src} LAST_EXT)
+  set(warnings /dev/null)
+  if(EXISTS ${dir}/${src}.warnings)
+    set(warnings ${dir}/${src}.warnings)
+  endif()
   set(compiler ${CMAKE_C_COMPILER})
   set(label "lang:C")
   set(lang c)
@@ -3707,19 +3721,20 @@ function(_salt_add_same_line_test src)
     if(api STREQUAL "cxxapi")
       set(args --tau_use_cxx_api)
       set(expected ${stem}.cxx.expected.cpp)
+      set(warnings /dev/null)
     endif()
     set(diff "")
     if(ARG_EXPECTED)
-      set(diff "grep -Ev -e '^#line [0-9]+( \"${dir}/${src}\")?$' \
-        -e '^[[:space:]]*$' ${name}.inst${ext} |
+      set(diff "grep -Ev ${drop_lines} -e '^[[:space:]]*$' ${name}.inst${ext} |
         sed -e 's|${dir}/||g' -e 's/[[:space:]]*$//' |
         diff -u ${dir}/${expected} - || exit 1")
     endif()
     add_test(NAME ${name}
-      COMMAND sh -c "\"$0\" \"$@\" || exit 1
+      COMMAND sh -c "\"$0\" \"$@\" 2> ${name}.err || { cat ${name}.err; exit 1; }
+        sed 's|${dir}/||g' ${name}.err | diff -u ${warnings} - || exit 1
         ${diff}
         \"${compiler}\" -o ${name}.orig ${dir}/${src} &&
-        \"${compiler}\" -o ${name}.inst \
+        \"${compiler}\" -o ${name}.inst -I${dir} \
           -include ${CMAKE_SOURCE_DIR}/tests/line_directive/timer.h \
           ${name}.inst${ext} || exit 1
         ./${name}.orig; orig=$?
@@ -3758,6 +3773,74 @@ _salt_add_same_line_test(return_comment.c)
 _salt_add_same_line_test(return_code.c)
 _salt_add_same_line_test(return_string.c EXPECTED)
 _salt_add_same_line_test(two_routines.c EXPECTED)
+# The `;` that ends a `return` statement is the one that Clang reads, not
+# one in a literal, a comment, or a lambda, and a function gets no timer,
+# with a warning, when a timer call has no place in the input file: in
+# an included file, at a `;` from a macro or after a directive, or in a
+# `return` statement that holds another one. A `return` statement in the
+# body of a lambda gets no timer stop (#116)
+foreach(src return_semi.c return_semi.cpp include_return.cpp
+    macro_return.c return_directive.c return_nested.c return_lambda.cpp)
+  _salt_add_same_line_test(${src} EXPECTED)
+endforeach()
+# Nor does one in a method of a class in a function, which gets its own
+# timer code with --tau_instrument_inline, or in a block. The output with
+# a block is only checked, as linking it needs the blocks runtime
+_salt_add_same_line_test(return_local.cpp EXPECTED)
+_salt_add_clang_error_test(same_line_return_local_inline
+  same_line_return_local_inline.inst.cpp "lang:CXX" same_line/return_local.cpp
+  EXIT_ZERO CHECK "-s same_line_return_local_inline.inst.cpp"
+  ARGS --tau_instrument_inline OUT "::S::m(void)" "::T::n(int)")
+# A function whose `return` statement holds such a method, in a lambda,
+# gets no timer, but the method, later functions, and main keep theirs
+_salt_add_clang_error_test(same_line_return_method_inline
+  same_line_return_method_inline.inst.cpp "lang:CXX"
+  same_line/return_method.cpp
+  EXIT_ZERO CHECK "-s same_line_return_method_inline.inst.cpp"
+  ARGS --tau_instrument_inline
+  LOG "return_method.cpp:6: warning: not instrumenting function 'int f(void)'"
+  "return_method.cpp:7: warning: not instrumenting function 'int g(void)'"
+  "': a return statement holds a method that gets timer code"
+  OUT "::S::m(void)" "::T::n(void)" "return_method.cpp} {14,1}"
+  "return_method.cpp} {15,1}" "TAU_PROFILE_SET_NODE(0);"
+  NOT_OUT "return_method.cpp} {6,1}" "return_method.cpp} {7,1}")
+_salt_add_clang_error_test(same_line_return_block_c
+  same_line_return_block_c.inst.c "lang:C" same_line/return_block.c
+  EXIT_ZERO CHECK "-s same_line_return_block_c.inst.c"
+  TAIL -- -fblocks SYNTAX_FLAGS -fblocks)
+# The functions with no timer get no `#line` directives either
+_salt_add_same_line_test(include_return.c EXPECTED LINES)
+# A main function with a `return` statement in an included file keeps
+# its setup code, but gets no timer
+_salt_add_clang_error_test(same_line_include_main_c
+  same_line_include_main_c.inst.c "lang:C" same_line/include_main.c
+  EXIT_ZERO CHECK "-s same_line_include_main_c.inst.c"
+  LOG "include_main.c:3: warning: not instrumenting function"
+  "'int main(int, char **)': a timer call would go in the included file"
+  OUT "TAU_INIT(&argc, &argv);" NOT_OUT "TAU_PROFILE_TIMER")
+# One with its opening brace in an included file or from a macro gets
+# no setup code either, and its warning says so
+foreach(stem include_main_open macro_main_open)
+  _salt_add_clang_error_test(same_line_${stem}_c
+    same_line_${stem}_c.inst.c "lang:C" same_line/${stem}.c
+    EXIT_ZERO CHECK "-s same_line_${stem}_c.inst.c"
+    LOG "${stem}.c:3: warning: not instrumenting function"
+    "'int main(void)', which gets no setup code: "
+    NOT_OUT "TAU_PROFILE_SET_NODE" "TAU_PROFILE_TIMER")
+endforeach()
+# The warning names a source as the command line does, as in Fortran
+set(_out ${SALT_TEST_OUTPUT_DIR}/instrument/same_line_include_main_rel.inst.c)
+add_test(NAME same_line_include_main_rel
+  COMMAND ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/saltfm
+          --tau_output=${_out} include_main_open.c
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/same_line)
+set_tests_properties(same_line_include_main_rel PROPERTIES
+  FIXTURES_REQUIRED instrument_dir
+  LABELS "lang:C;phase:instrument"
+  PASS_REGULAR_EXPRESSION
+    "(^|\n)\\[SALT\\] include_main_open[.]c:3: warning: not instrumenting")
+_salt_add_syntax_test(same_line_include_main_rel same_line/include_main_open.c
+  ${_out})
 
 # Unless --tau_excluded_main_setup=file, the main program of a source
 # that the file lists exclude gets no setup code, and saltfm warns about
