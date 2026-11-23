@@ -226,6 +226,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a separate `-L`, `-l`, or `-Xlinker`. Before, it kept them, so Clang
   warned, for example
   `argument unused during compilation: '-L/usr/lib'`.
+- A C++ `constexpr` or `consteval` function, method, or constructor
+  gets no timer, as timer calls cannot run at compile time. `saltfm`
+  warns when an entry of the selective instrumentation include list
+  names one exactly, not through a wildcard, and the exclude list does
+  not match it. Before, it got a timer with `--tau_instrument_inline`
+  or when the include list matched it, so the output could fail to
+  compile. A function whose `return` statement holds a `constexpr`
+  method, as a lambda can, keeps its timer with
+  `--tau_instrument_inline`
+  ([#147](https://github.com/ParaToolsInc/SALT-FM/issues/147)).
 
 ## [0.6.0] - 2026-10-26
 

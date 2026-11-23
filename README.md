@@ -312,7 +312,10 @@ these rules in C, C++, and Fortran:
   list (`BEGIN_INCLUDE_LIST`) is not empty, SALT-FM instruments only
   the routines that it matches.
 - A C or C++ inline function gets a timer only with
-  `--tau_instrument_inline`, or when it matches the include list.
+  `--tau_instrument_inline`, or when it matches the include list. A
+  C++ `constexpr` or `consteval` function gets no timer, even with
+  `--tau_instrument_inline` or when it matches the include list, as it
+  can run at compile time.
 - Excluding a Fortran subroutine or function also excludes its internal
   procedures, the ones after its `contains` statement.
 

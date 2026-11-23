@@ -1,0 +1,9 @@
+# SIF: the include list matches the constexpr and consteval functions of
+# tests/constexpr.cpp only through the wildcards `#` and `?`, which
+# gives no warning, as it does not name them exactly.
+BEGIN_INCLUDE_LIST
+"#square#"
+"int cub?(int)"
+"int Point::#"
+"#main#"
+END_INCLUDE_LIST
