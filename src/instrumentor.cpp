@@ -380,6 +380,17 @@ bool check_func_against_list(std::list<std::string> list, FunctionDecl *func, AS
     return routineInList(list, selectName(timer_name));
 }
 
+// Whether an entry of `list` is the name of `func`, as written, with no
+// wildcard match
+static bool namedInList(const std::list<std::string> &list, FunctionDecl *func, ASTContext *context,
+                        SourceManager &src_mgr)
+{
+    std::string func_name;
+    std::string timer_name;
+    makeFuncAndTimerNames(func, context, src_mgr, func_name, timer_name);
+    return std::find(list.begin(), list.end(), selectName(timer_name)) != list.end();
+}
+
 // Strip the elaborations the semantic type printer introduces
 static std::string cleanSemanticTypeName(std::string name)
 {
@@ -745,12 +756,14 @@ static std::string whyNoCodeAt(const SourceManager &src_mgr, SourceLocation loc,
 // Whether `func` is a function to instrument: the declaration with the
 // body, since a prototype does not visit its returns, not a defaulted
 // function, whose body, in or outside its class, is not in the source
-// (#119), and inline only with --tau_instrument_inline or in the include
-// list. The body is checked first to protect check_func_against_list (and
-// makeFuncInstLoc) from segfaults.
+// (#119), not a constexpr or consteval function, which can run at compile
+// time, where timer calls cannot (#147), and inline only with
+// --tau_instrument_inline or in the include list. The body is checked
+// first to protect check_func_against_list (and makeFuncInstLoc) from
+// segfaults.
 static bool getsTimer(FunctionDecl *func, ASTContext *context, SourceManager &src_mgr)
 {
-    return func->doesThisDeclarationHaveABody() && !func->isDefaulted() &&
+    return func->doesThisDeclarationHaveABody() && !func->isDefaulted() && !func->isConstexpr() &&
            (!func->isInlined() || do_inline || check_func_against_list(includelist, func, context, src_mgr));
 }
 
@@ -1011,6 +1024,22 @@ class FindFunctionVisitor : public RecursiveASTVisitor<FindFunctionVisitor>
             {
                 inst_locs[i]->begin_skip = begin_skip;
                 inst_locs[i]->end_skip = end_skip;
+            }
+        }
+        // A constexpr or consteval function that an include list entry
+        // names exactly, not through a wildcard, gets a warning instead,
+        // unless the exclude list matches it too
+        else if (func->doesThisDeclarationHaveABody() && !func->isDefaulted() && func->isConstexpr() &&
+                 namedInList(includelist, func, context, src_mgr))
+        {
+            const size_t first = inst_locs.size();
+            makeFuncInstLoc(func);
+            const std::string why = std::string("timer calls cannot go in a ") +
+                                    (func->isConsteval() ? "consteval" : "constexpr") + " function";
+            for (size_t i = first; i < inst_locs.size(); i++)
+            {
+                inst_locs[i]->begin_skip = why;
+                inst_locs[i]->end_skip = why;
             }
         }
         return true;

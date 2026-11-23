@@ -1,0 +1,15 @@
+# SIF: the include list names the constexpr and consteval functions of
+# tests/constexpr.cpp, which get no timer but a warning, unless the
+# exclude list names them too, as it does the constructor, which then
+# gets none. run and main get their timers.
+BEGIN_INCLUDE_LIST
+"int square(int)"
+"int cube(int)"
+"void Point::Point(int)"
+"int Point::twice(void) const"
+"int run(int)"
+"int main(void)"
+END_INCLUDE_LIST
+BEGIN_EXCLUDE_LIST
+"void Point::Point(int)"
+END_EXCLUDE_LIST

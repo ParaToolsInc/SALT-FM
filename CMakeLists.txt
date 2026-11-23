@@ -3841,6 +3841,50 @@ set_tests_properties(same_line_include_main_rel PROPERTIES
     "(^|\n)\\[SALT\\] include_main_open[.]c:3: warning: not instrumenting")
 _salt_add_syntax_test(same_line_include_main_rel same_line/include_main_open.c
   ${_out})
+# A constexpr or consteval function gets no timer, as timer calls cannot
+# run at compile time: silently with --tau_instrument_inline or when the
+# include list matches it only through a wildcard, and with a warning
+# when an include list entry names it exactly, unless the exclude list
+# matches it too. A lambda, whose function Clang makes constexpr, keeps
+# its text, and a function that holds it or a constexpr method in its
+# `return` statement keeps its timer (#147). Both APIs are checked.
+# consteval needs C++20, which TAU's header does not compile with, so
+# the timer calls are those of tests/line_directive. Two spaces end the
+# name of a function in its timer name.
+set(_constexpr_names "int square(int)" "int cube(int)" "Point::Point(int)"
+  "Point::twice(void)" "S::m(void)")
+set(_dir ${CMAKE_SOURCE_DIR}/tests/line_directive)
+set(_w "warning: not instrumenting function")
+set(_why "': timer calls cannot go in a")
+set(_flags TAIL -- -std=c++20 SYNTAX_FLAGS -std=c++20 -include ${_dir}/timer.h)
+foreach(api capi cxxapi)
+  set(_args --config_file=${_dir}/config.yaml)
+  if(api STREQUAL "cxxapi")
+    list(APPEND _args --tau_use_cxx_api)
+  endif()
+  _salt_add_clang_error_test(constexpr_inline_${api} constexpr_inline_${api}.inst.cpp
+    "lang:CXX" constexpr.cpp EXIT_ZERO CHECK "-s constexpr_inline_${api}.inst.cpp"
+    ARGS ${_args} --tau_instrument_inline ${_flags} NOT_LOG "warning"
+    OUT "int run(int)  " "int local(void)  "
+    "[](int a, int b) { return a + b" NOT_OUT ${_constexpr_names})
+  _salt_add_clang_error_test(constexpr_sif_${api} constexpr_sif_${api}.inst.cpp
+    "lang:CXX" constexpr.cpp EXIT_ZERO CHECK "-s constexpr_sif_${api}.inst.cpp"
+    ARGS ${_args}
+    --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/include_constexpr.tau
+    ${_flags}
+    LOG "constexpr.cpp:6: ${_w} 'int square(int)${_why} constexpr function"
+    "constexpr.cpp:11: ${_w} 'int cube(int)${_why} consteval function"
+    "constexpr.cpp:21: ${_w} 'int Point::twice(void) const${_why} constexpr function"
+    NOT_LOG "Point::Point" "S::m"
+    OUT "int run(int)  " "int main(void)  " NOT_OUT ${_constexpr_names})
+  _salt_add_clang_error_test(constexpr_sif_wildcard_${api}
+    constexpr_sif_wildcard_${api}.inst.cpp "lang:CXX" constexpr.cpp EXIT_ZERO
+    CHECK "-s constexpr_sif_wildcard_${api}.inst.cpp"
+    ARGS ${_args}
+    --tau_select_file=${CMAKE_SOURCE_DIR}/tests/sif/include_constexpr_wildcard.tau
+    ${_flags} NOT_LOG "warning"
+    OUT "int main(void)  " NOT_OUT ${_constexpr_names})
+endforeach()
 
 # Unless --tau_excluded_main_setup=file, the main program of a source
 # that the file lists exclude gets no setup code, and saltfm warns about
