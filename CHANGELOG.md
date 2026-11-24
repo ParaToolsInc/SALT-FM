@@ -6,6 +6,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- `saltfm` parses Fortran sources that have `use mpi`, `use mpi_f08`,
+  or `include 'mpif.h'`. Before, the parse failed: Flang cannot read the
+  `mpi.mod` files of an MPI that another compiler built, and SALT-FM had
+  none of its own. Now the build makes the `mpi` and `mpi_f08` modules
+  and `mpif.h` from MPICH 5.0.2 for the parse, and the install keeps
+  them in `include/salt/mpi/mpich`, with MPICH's license. The parse
+  reads SALT-FM's `mpif.h`, also when a `-I` directory of the build has
+  one that Flang cannot parse; the output keeps the `include` line. The
+  new `--mpi=<mpich|none>` option selects the files; `none` reads no MPI
+  files, as before. The CMake variable `SALT_MPICH` gives the MPICH
+  source: `download` (the default), a tarball, a source directory, or
+  `OFF`. The build needs Python 3 for these files. With LLVM 19, there
+  is no `mpi_f08` module. If SALT-FM was built without these files
+  (`SALT_MPICH=OFF`, no Python 3, a failed download, a failed MPICH
+  `configure`, or an `mpi` module that failed to compile), the parse
+  warns and reads no MPI files by default, `--mpi=mpich` stops with an
+  error, and `--mpi=none` does not warn. With
+  `--tau_build_uses_salt_flang`, the parse reads the MPI files of the
+  build, and `--mpi` has no effect
+  ([#92](https://github.com/ParaToolsInc/SALT-FM/issues/92)).
+
 - `saltfm` keeps all of the code on a C or C++ line that holds more
   than one place for timer code: the opening brace of a routine, a
   `return` statement, or the closing brace. A one-line routine always
